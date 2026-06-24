@@ -1,34 +1,42 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>squiral</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
-    canvas { display: block; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script type="module">
+// squiral.js — squiral packaged as a mountable module.
+// start(canvas) returns { stop, reinit, config, params }; the host renders the
+// config box from `config`/`params`. Loop/sizing/units stay inline per hack.
+
+export const title = 'squiral';
+
+export function start(canvas) {
     // squiral - port of xscreensaver hack by Jeff Epler (1999)
     // https://www.jwz.org/xscreensaver/
 
-    const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
 
-    // Configuration (matching original defaults)
+    // Configuration. Units and defaults match xscreensaver's
+    // hacks/config/squiral.xml so the tuning UI maps 1:1 to the original.
     const config = {
-      fill: 0.75,
-      count: 0,          // 0 = auto (width/32)
-      ncolors: 100,
-      delay: 10,         // ms
-      disorder: 0.005,
-      handedness: 0.5,
-      cycle: false,
-      scale: 1
+      fill: 75,          // percent of screen filled before clearing (--fill)
+      count: 0,          // number of worms; 0 = auto (width / 32) (--count)
+      ncolors: 100,      // size of the hue cycle (--ncolors)
+      delay: 10000,      // microseconds between steps (--delay)
+      disorder: 0.005,   // chance per step of re-rolling winding (--disorder)
+      handedness: 0.5,   // 0 = all right-handed, 1 = all left-handed (--handedness)
+      cycle: false,      // animate each worm's hue as it travels (--cycle)
+      scale: 1,          // cell size / line thickness (--scale)
     };
+
+    // Ranges/defaults/labels transcribed from hacks/config/squiral.xml.
+    // live: true  -> the loop reads config every step, so it applies instantly.
+    // live: false -> the value sizes the grid/colors/worms, so changing it
+    //                re-runs init() via reinit().
+    const params = [
+      { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+      { key: 'disorder', label: 'Randomness', type: 'range', min: 0, max: 0.5, step: 0.005, default: 0.005, lowLabel: 'low', highLabel: 'high', live: true },
+      { key: 'count', label: 'Seeds (0 = auto)', type: 'range', min: 0, max: 200, step: 1, default: 0, live: false },
+      { key: 'scale', label: 'Scale', type: 'range', min: 1, max: 10, step: 1, default: 1, lowLabel: 'small', highLabel: 'large', live: false },
+      { key: 'handedness', label: 'Handedness', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5, lowLabel: 'left', highLabel: 'right', live: true },
+      { key: 'fill', label: 'Density', type: 'range', min: 0, max: 100, step: 1, default: 75, unit: '%', lowLabel: 'sparse', highLabel: 'dense', live: false },
+      { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
+      { key: 'cycle', label: 'Color cycling', type: 'checkbox', default: false, live: false },
+    ];
 
     // Map headings to their [dx, dy] step on the grid.
     const DIRS = [
@@ -83,7 +91,7 @@
       }
 
       coverage = 0;
-      clearThreshold = clamp(config.fill, 0.01, 0.99) * width * height;
+      clearThreshold = clamp(config.fill / 100, 0.01, 0.99) * width * height;
       inclear = height;
     }
 
@@ -194,24 +202,48 @@
     const MAX_CATCHUP_STEPS = 8;
     let lastTime = 0;
     let lag = 0;
+    let rafId = 0;
 
     function frame(now) {
       if (lastTime === 0) lastTime = now;
       lag += now - lastTime;
       lastTime = now;
 
-      lag = Math.min(lag, config.delay * MAX_CATCHUP_STEPS);
-      while (lag >= config.delay) {
+      // config.delay is microseconds (xml units); the rAF clock is milliseconds.
+      const delayMs = config.delay / 1000;
+      lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
+
+      // The step counter bounds the loop even when delayMs is 0 (max frame
+      // rate), which would otherwise spin forever since lag never drops below 0.
+      let steps = 0;
+      while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
         step();
-        lag -= config.delay;
+        lag -= delayMs;
+        steps++;
       }
 
-      requestAnimationFrame(frame);
+      rafId = requestAnimationFrame(frame);
+    }
+
+    // Rebuild the simulation after a non-live config change (clears the canvas
+    // because scale/colors may have changed, then re-seeds via init()).
+    function reinit() {
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      init();
     }
 
     window.addEventListener('resize', resize);
     resize();
-    requestAnimationFrame(frame);
-  </script>
-</body>
-</html>
+    rafId = requestAnimationFrame(frame);
+
+    return {
+      stop() {
+        cancelAnimationFrame(rafId);
+        window.removeEventListener('resize', resize);
+      },
+      reinit,   // re-seed the pattern, keeping the current config
+      config,   // host renders the config box from these
+      params,
+    };
+}

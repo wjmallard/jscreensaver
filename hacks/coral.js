@@ -1,17 +1,11 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>coral</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
-    canvas { display: block; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script type="module">
+// coral.js — coral packaged as a mountable module.
+// start(canvas) runs the hack on the given canvas and returns { stop } to tear
+// it down (cancel the rAF loop, drop the resize listener), so a host page can
+// cycle hacks on one shared canvas. Loop/sizing stay inline per hack for now.
+
+export const title = 'coral';
+
+export function start(canvas) {
     // coral - port of xscreensaver hack by Frederick G.M. Roeber (1997)
     // https://www.jwz.org/xscreensaver/
     //
@@ -20,7 +14,6 @@
     // sticks there and makes its neighbours sticky too, so the coral grows
     // outward branch by branch until every walker has been absorbed.
 
-    const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
 
     // Configuration (matching original defaults)
@@ -32,6 +25,16 @@
       holdTime: 5000,   // ms to hold the finished coral before regrowing
       scale: 1,
     };
+
+    // Tunable params for the host config box (current units).
+    const params = [
+      { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 200, step: 1, default: 20, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+      { key: 'density', label: 'Density', type: 'range', min: 1, max: 90, step: 1, default: 25, unit: '%', lowLabel: 'sparse', highLabel: 'dense', live: false },
+      { key: 'seeds', label: 'Seeds', type: 'range', min: 1, max: 100, step: 1, default: 20, lowLabel: 'few', highLabel: 'many', live: false },
+      { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 200, live: false },
+      { key: 'holdTime', label: 'Linger', type: 'range', min: 0, max: 20000, step: 500, default: 5000, unit: ' ms', live: true },
+      { key: 'scale', label: 'Scale', type: 'range', min: 1, max: 8, step: 1, default: 1, lowLabel: 'fine', highLabel: 'coarse', live: false },
+    ];
 
     let width, height, scale;
     let board;
@@ -179,6 +182,7 @@
     const MAX_CATCHUP_STEPS = 8;
     let lastTime = 0;
     let lag = 0;
+    let rafId = 0;
 
     function frame(now) {
       if (lastTime === 0) lastTime = now;
@@ -191,12 +195,20 @@
         lag -= config.delay;
       }
 
-      requestAnimationFrame(frame);
+      rafId = requestAnimationFrame(frame);
     }
 
     window.addEventListener('resize', resize);
     resize();
-    requestAnimationFrame(frame);
-  </script>
-</body>
-</html>
+    rafId = requestAnimationFrame(frame);
+
+    return {
+      stop() {
+        cancelAnimationFrame(rafId);
+        window.removeEventListener('resize', resize);
+      },
+      reinit: restart,   // clear + regrow with the current config
+      config,
+      params,
+    };
+}

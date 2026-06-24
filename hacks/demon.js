@@ -1,17 +1,11 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>demon</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
-    canvas { display: block; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <script type="module">
+// demon.js — demon packaged as a mountable module.
+// start(canvas) runs the hack on the given canvas and returns { stop } to tear
+// it down (cancel the rAF loop, drop the resize listener), so a host page can
+// cycle hacks on one shared canvas. Loop/sizing stay inline per hack for now.
+
+export const title = 'demon';
+
+export function start(canvas) {
     // demon - port of xscreensaver/xlockmore hack by David Bagley (1995),
     // after David Griffeath's cyclic cellular automata.
     // https://www.jwz.org/xscreensaver/
@@ -33,7 +27,6 @@
     // hexagons, a half-open point-in-triangle test for triangles -- so the
     // tiling has no gaps or anti-aliased seams.
 
-    const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
 
     // Configuration
@@ -45,6 +38,16 @@
       cycles: 1000,       // generations before reseeding with fresh noise
       delay: 80,          // ms per generation
     };
+
+    // Tunable params for the host config box.
+    const params = [
+      { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 200, step: 1, default: 80, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+      { key: 'neighbors', label: 'Grid', type: 'select', options: [{ label: 'Hexagon', value: 6 }, { label: 'Triangle', value: 3 }, { label: 'Square', value: 4 }], default: 6, live: false },
+      { key: 'cellSize', label: 'Cell size', type: 'range', min: 6, max: 48, step: 1, default: 16, unit: ' px', lowLabel: 'small', highLabel: 'big', live: false },
+      { key: 'border', label: 'Border', type: 'range', min: 0, max: 4, step: 1, default: 1, unit: ' px', lowLabel: 'none', highLabel: 'thick', live: false },
+      { key: 'states', label: 'States (0 = auto)', type: 'range', min: 0, max: 32, step: 1, default: 0, live: false },
+      { key: 'cycles', label: 'Cycles', type: 'range', min: 50, max: 5000, step: 50, default: 1000, live: true },
+    ];
 
     let hex, tri, cols, rows;
     let cellPx;                          // square grid: device px per cell
@@ -325,6 +328,7 @@
     const MAX_CATCHUP_STEPS = 8;
     let lastTime = 0;
     let lag = 0;
+    let rafId = 0;
 
     function frame(now) {
       if (lastTime === 0) lastTime = now;
@@ -337,12 +341,20 @@
         lag -= config.delay;
       }
 
-      requestAnimationFrame(frame);
+      rafId = requestAnimationFrame(frame);
     }
 
     window.addEventListener('resize', resize);
     resize();
-    requestAnimationFrame(frame);
-  </script>
-</body>
-</html>
+    rafId = requestAnimationFrame(frame);
+
+    return {
+      stop() {
+        cancelAnimationFrame(rafId);
+        window.removeEventListener('resize', resize);
+      },
+      reinit: resize,   // clear buffer + rebuild with the current config
+      config,
+      params,
+    };
+}
