@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>cloudlife</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script type="module">
+    // cloudlife - port of xscreensaver hack by Don Marti (2003)
+    // https://www.jwz.org/xscreensaver/
+    //
+    // Conway's Life (B3/S23) with two twists: cells track an age, and once a
+    // cell is older than maxAge it counts as 3 neighbours instead of 1 -- so
+    // stable blobs destabilise and "explode" rather than sitting forever.
+    // Only a few random sub-pixels of each cell are painted per tick (live
+    // cells in colour, dead cells in black), so the field fades in and out
+    // like clouds and moving cells leave comet trails.
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    // Configuration (matching original defaults)
+    const config = {
+      cellSize: 8,        // CSS pixels per cell (the original's 1 << cellSize)
+      density: 30,        // % of cells alive when (re)seeding
+      maxAge: 64,         // age past which a cell counts triple and explodes
+      ncolors: 64,
+      cycleColors: 2,     // advance the foreground colour every N ticks (0 = off)
+      delay: 40,          // ms per tick
+    };
+
+    let cellPx, dotsPerCell;
+    let width, height;          // grid size in cells, including a 1-cell border
+    let cells, newCells;        // age per cell; 0 = dead
+    let imageData, pixels;      // canvas-sized RGBA buffer, blitted once per tick
+    let colors, colorIndex, colorTimer, fgUint;
+    let cycles;
+
+    const BLACK = 0xFF000000;   // opaque black, little-endian packed 0xAABBGGRR
+
+    // HSL (h in degrees, s/l in [0,1]) packed into a little-endian RGBA uint.
+    function hslToUint(h, s, l) {
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const hp = h / 60;
+      const x = c * (1 - Math.abs(hp % 2 - 1));
+      let r = 0, g = 0, b = 0;
+      if (hp < 1)      { r = c; g = x; }
+      else if (hp < 2) { r = x; g = c; }
+      else if (hp < 3) { g = c; b = x; }
+      else if (hp < 4) { g = x; b = c; }
+      else if (hp < 5) { r = x; b = c; }
+      else             { r = c; b = x; }
+      const m = l - c / 2;
+      const R = Math.round((r + m) * 255);
+      const G = Math.round((g + m) * 255);
+      const B = Math.round((b + m) * 255);
+      return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
+    }
+
+    function populateField() {
+      for (let i = 0; i < cells.length; i++) {
+        cells[i] = Math.random() * 100 < config.density ? 1 : 0;
+      }
+    }
+
+    // Seed (or with density 0, clear) the off-screen border ring.
+    function populateEdges(density) {
+      for (let x = 0; x < width; x++) {
+        cells[x] = Math.random() * 100 < density ? 1 : 0;
+        cells[(height - 1) * width + x] = Math.random() * 100 < density ? 1 : 0;
+      }
+      for (let y = 0; y < height; y++) {
+        cells[y * width] = Math.random() * 100 < density ? 1 : 0;
+        cells[y * width + width - 1] = Math.random() * 100 < density ? 1 : 0;
+      }
+    }
+
+    function nextAge(x, y) {
+      // Sum the eight neighbours. A live cell counts 1, but one older than
+      // maxAge counts 3 -- the twist that keeps long-lived shapes from
+      // freezing in place.
+      let count = 0;
+      for (let j = y - 1; j <= y + 1; j++) {
+        const row = j * width;
+        for (let i = x - 1; i <= x + 1; i++) {
+          if (i === x && j === y) continue;
+          const c = cells[row + i];
+          count += c === 0 ? 0 : (c > config.maxAge ? 3 : 1);
+        }
+      }
+
+      const age = cells[y * width + x];
+      if (age) {
+        // Survives on 2 or 3 neighbours, ageing by one; otherwise dies.
+        return (count === 2 || count === 3) ? age + 1 : 0;
+      }
+      // A dead cell is born on exactly 3.
+      return count === 3 ? 1 : 0;
+    }
+
+    // Advance one generation into newCells, copy back, and return the total
+    // age-sum (a liveliness measure used to decide when to reseed).
+    function tick() {
+      let sum = 0;
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const v = nextAge(x, y);
+          newCells[y * width + x] = v;
+          sum += v;
+        }
+      }
+      cells.set(newCells);
+      return sum;
+    }
+
+    // Repaint a few random sub-pixels of every cell straight into the pixel
+    // buffer -- live cells in the cycling colour, dead cells in black -- then
+    // blit the whole buffer in one putImageData. (Per-pixel fillRect calls are
+    // hopelessly slow at this volume; this mirrors the original's batched
+    // XDrawPoints.) Old dots persist in the buffer, so cells fade in and out
+    // like clouds and movers leave comet trails.
+    function drawField() {
+      const cw = canvas.width;
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const color = cells[y * width + x] ? fgUint : BLACK;
+          for (let d = 0; d < dotsPerCell; d++) {
+            const rx = Math.floor(Math.random() * cellPx);
+            const ry = Math.floor(Math.random() * cellPx);
+            pixels[(y * cellPx - ry - 1) * cw + (x * cellPx - rx - 1)] = color;
+          }
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function init() {
+      const dpr = window.devicePixelRatio || 1;
+      cellPx = config.cellSize * dpr;
+      // Scatter ~1 dot per tick for an original-sized cell, scaled by area so
+      // the cloud's fade rate looks the same on any display.
+      dotsPerCell = Math.max(1, Math.round(dpr * dpr));
+
+      width = Math.floor(canvas.width / cellPx) + 2;
+      height = Math.floor(canvas.height / cellPx) + 2;
+
+      // Vivid full-spectrum rainbow -- intentionally brighter and more
+      // saturated than the C's softer smooth colormap.
+      colors = [];
+      for (let i = 0; i < config.ncolors; i++) {
+        colors.push(hslToUint(i * 360 / config.ncolors, 1, 0.5));
+      }
+      colorIndex = 0;
+      colorTimer = 0;
+      fgUint = colors[0];
+
+      cells = new Uint8Array(width * height);
+      newCells = new Uint8Array(width * height);
+      cycles = 0;
+
+      populateField();
+    }
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(window.innerWidth * dpr);
+      canvas.height = Math.round(window.innerHeight * dpr);
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      imageData = ctx.createImageData(canvas.width, canvas.height);
+      pixels = new Uint32Array(imageData.data.buffer);
+      pixels.fill(BLACK);
+      init();
+    }
+
+    function step() {
+      // Cycle the single foreground colour, walking the spectrum backwards to
+      // match the original.
+      if (config.cycleColors) {
+        if (colorTimer === 0) {
+          colorTimer = config.cycleColors;
+          colorIndex = (colorIndex + config.ncolors - 1) % config.ncolors;
+          fgUint = colors[colorIndex];
+        }
+        colorTimer--;
+      }
+
+      drawField();
+
+      // Advance a generation; if the population has nearly died out, reseed.
+      if (tick() < (width + height) / 4) {
+        populateField();
+      }
+
+      // Periodically stir in fresh activity from the border so it never stalls.
+      if (cycles % Math.floor(config.maxAge / 2) === 0) {
+        populateEdges(config.density);
+        tick();
+        populateEdges(0);
+      }
+
+      cycles++;
+    }
+
+    // Drive off requestAnimationFrame but keep the original pace: run one
+    // step() per config.delay ms, banking leftover time so the speed is the
+    // same at any refresh rate. Cap catch-up so a backgrounded tab (where rAF
+    // is paused) doesn't fire a burst of steps when it regains focus.
+    const MAX_CATCHUP_STEPS = 8;
+    let lastTime = 0;
+    let lag = 0;
+
+    function frame(now) {
+      if (lastTime === 0) lastTime = now;
+      lag += now - lastTime;
+      lastTime = now;
+
+      lag = Math.min(lag, config.delay * MAX_CATCHUP_STEPS);
+      while (lag >= config.delay) {
+        step();
+        lag -= config.delay;
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

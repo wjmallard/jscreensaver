@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>demon</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: black; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script type="module">
+    // demon - port of xscreensaver/xlockmore hack by David Bagley (1995),
+    // after David Griffeath's cyclic cellular automata.
+    // https://www.jwz.org/xscreensaver/
+    //
+    // Cyclic CA: each cell holds a state in [0, states). A cell advances to
+    // (state + 1) % states if any neighbour is already in that next state,
+    // otherwise it holds. From random soup this self-organises into rotating
+    // spiral waves ("debris -> droplets -> defects -> demons").
+    //
+    // Grids: hexagons (6 neighbours, the default and iconic look), squares
+    // (4 = von Neumann, 8 = Moore), or triangles (3). The original's denser
+    // triangle variants (9/12 neighbours) aren't ported. Every state gets a
+    // colour so the cyclic states map seamlessly onto the cyclic hue wheel
+    // (the C drew state 0 black).
+    //
+    // Rendering: each cell is a fixed shape, so we rasterise it once into a
+    // pixel "stamp" and blit it into an ImageData buffer (one putImageData per
+    // tick). Stamps partition the plane exactly -- a half-open Voronoi cell for
+    // hexagons, a half-open point-in-triangle test for triangles -- so the
+    // tiling has no gaps or anti-aliased seams.
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    // Configuration
+    const config = {
+      cellSize: 16,       // approx cell size in CSS pixels
+      border: 1,          // black gridline between cells, CSS px (0 = solid; ~1 matches the original)
+      neighbors: 6,       // 6 = hexagons (default), 4/8 = squares, 3 = triangles; the original's denser 9/12 triangles aren't ported
+      states: 0,          // 0 = auto-pair to the grid (tri 12, sq-4 16, hex 18, sq-8 20); or set a fixed count
+      cycles: 1000,       // generations before reseeding with fresh noise
+      delay: 80,          // ms per generation
+    };
+
+    let hex, tri, cols, rows;
+    let cellPx;                          // square grid: device px per cell
+    let r, colStep, rowStep, halfCol;    // hex / triangle grid geometry (integers)
+    let triX0, triY0, triX1, triY1;      // triangle stamps (left-pointing / right-pointing)
+    let borderPx;                        // black gutter between cells (device px)
+    let stampX, stampY;                  // pixel offsets covering one cell (hex / square)
+    let cells, newCells;                 // state per cell, in [0, states)
+    let evenDx, evenDy, oddDx, oddDy;    // neighbour offsets (by cell variant)
+    let imageData, pixels, cw, ch;       // canvas-sized RGBA buffer
+    let colors, states;
+    let generation;
+
+    const BLACK = 0xFF000000;            // opaque black, little-endian 0xAABBGGRR
+
+    // HSL (h in degrees, s/l in [0,1]) packed into a little-endian RGBA uint.
+    function hslToUint(h, s, l) {
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const hp = h / 60;
+      const x = c * (1 - Math.abs(hp % 2 - 1));
+      let rr = 0, gg = 0, bb = 0;
+      if (hp < 1)      { rr = c; gg = x; }
+      else if (hp < 2) { rr = x; gg = c; }
+      else if (hp < 3) { gg = c; bb = x; }
+      else if (hp < 4) { gg = x; bb = c; }
+      else if (hp < 5) { rr = x; bb = c; }
+      else             { rr = c; bb = x; }
+      const m = l - c / 2;
+      const R = Math.round((rr + m) * 255);
+      const G = Math.round((gg + m) * 255);
+      const B = Math.round((bb + m) * 255);
+      return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
+    }
+
+    function buildNeighbors() {
+      if (hex) {
+        // Offset-coordinate hexagons: E/W in-row, plus four diagonals whose
+        // column shifts with row parity.
+        evenDx = [-1, 1, 0, 1, 0, 1];  evenDy = [0, 0, -1, -1, 1, 1];
+        oddDx = [-1, 1, -1, 0, -1, 0]; oddDy = [0, 0, -1, -1, 1, 1];
+      } else if (tri) {
+        // 3-neighbour triangles: N and S always, plus E for left-pointing
+        // cells (variant 0) or W for right-pointing cells (variant 1).
+        evenDx = [1, 0, 0];  evenDy = [0, -1, 1];   // left  : E, N, S
+        oddDx = [-1, 0, 0];  oddDy = [0, -1, 1];    // right : W, N, S
+      } else if (config.neighbors === 8) {
+        evenDx = oddDx = [0, 1, 0, -1, -1, 1, 1, -1];
+        evenDy = oddDy = [-1, 0, 1, 0, -1, -1, 1, 1];
+      } else {
+        evenDx = oddDx = [0, 1, 0, -1];
+        evenDy = oddDy = [-1, 0, 1, 0];
+      }
+    }
+
+    // Rasterise a triangle (3 vertices, device-px offsets) to pixel offsets.
+    // inset > 0 erodes inward by that many px (a black gutter); inset 0 uses a
+    // half-open rule -- keep pixels exactly on a "claimed" edge, drop the others
+    // -- so the two orientations partition their shared edges with no seam.
+    function rasterTriangle(vx, vy, claim, inset) {
+      const sx = [];
+      const sy = [];
+      const minX = Math.min(vx[0], vx[1], vx[2]);
+      const maxX = Math.max(vx[0], vx[1], vx[2]);
+      const minY = Math.min(vy[0], vy[1], vy[2]);
+      const maxY = Math.max(vy[0], vy[1], vy[2]);
+      const area = (vx[1] - vx[0]) * (vy[2] - vy[0]) - (vy[1] - vy[0]) * (vx[2] - vx[0]);
+      const sign = area >= 0 ? 1 : -1;
+      const len = [];
+      for (let k = 0; k < 3; k++) {
+        const b = (k + 1) % 3;
+        len.push(Math.hypot(vx[b] - vx[k], vy[b] - vy[k]));
+      }
+      for (let py = minY; py <= maxY; py++) {
+        for (let px = minX; px <= maxX; px++) {
+          let inside = true;
+          for (let k = 0; k < 3; k++) {
+            const b = (k + 1) % 3;
+            const s = sign * ((vx[b] - vx[k]) * (py - vy[k]) - (vy[b] - vy[k]) * (px - vx[k]));
+            if (inset > 0) {
+              if (s < inset * len[k]) { inside = false; break; }
+            } else if (s < 0 || (s === 0 && !claim[k])) {
+              inside = false;
+              break;
+            }
+          }
+          if (inside) { sx.push(px); sy.push(py); }
+        }
+      }
+      return { sx, sy };
+    }
+
+    // Build the pixel offsets that make up one cell.
+    function buildStamp() {
+      if (tri) {
+        // Two interlocking orientations. Vertices relative to the cell origin
+        // (the left-pointing apex / the top of the right-pointing vertical edge).
+        // Edges, in vertex order, are [top-slant, *, bottom-slant]; claim the
+        // top slant (and the left vertical) so each shared edge lands once.
+        const inset = borderPx / 2;
+        let t = rasterTriangle([0, colStep, colStep], [0, -rowStep, rowStep], [true, false, false], inset);
+        triX0 = Int16Array.from(t.sx); triY0 = Int16Array.from(t.sy);   // left-pointing
+        t = rasterTriangle([0, colStep, 0], [-rowStep, 0, rowStep], [true, false, true], inset);
+        triX1 = Int16Array.from(t.sx); triY1 = Int16Array.from(t.sy);   // right-pointing
+        return;
+      }
+
+      const sx = [];
+      const sy = [];
+      if (hex) {
+        // Half-open Voronoi cell of a hex-lattice point: a pixel belongs here
+        // if this centre is nearest among the 6 neighbours, claiming ties on
+        // three edges (E/NE/NW) and ceding them on the opposite three, so each
+        // shared boundary pixel lands in exactly one hexagon.
+        const nbx = [colStep, -colStep, halfCol, -halfCol, halfCol, -halfCol];
+        const nby = [0, 0, -rowStep, -rowStep, rowStep, rowStep];
+        const claimTie = [true, false, true, true, false, false]; // E,W,NE,NW,SE,SW
+        for (let dy = -r - 1; dy <= r + 1; dy++) {
+          for (let dx = -halfCol - 1; dx <= halfCol + 1; dx++) {
+            const d0 = dx * dx + dy * dy;
+            let mine = true;
+            for (let i = 0; i < 6; i++) {
+              const ex = dx - nbx[i], ey = dy - nby[i];
+              const di = ex * ex + ey * ey;
+              if (claimTie[i] ? d0 > di : d0 >= di) { mine = false; break; }
+              // erode away from the edges to leave a black gutter
+              if (borderPx > 0 && di - d0 < colStep * borderPx) { mine = false; break; }
+            }
+            if (mine) { sx.push(dx); sy.push(dy); }
+          }
+        }
+      } else {
+        const size = cellPx - borderPx;
+        for (let dy = 0; dy < size; dy++) {
+          for (let dx = 0; dx < size; dx++) { sx.push(dx); sy.push(dy); }
+        }
+      }
+
+      stampX = Int16Array.from(sx);
+      stampY = Int16Array.from(sy);
+    }
+
+    // Stamp cell (x, y) into the pixel buffer in the given packed colour.
+    function drawCell(x, y, color) {
+      let ox, oy, sx, sy;
+      if (tri) {
+        ox = x * colStep;
+        oy = (y + 1) * rowStep;
+        if ((x + y) & 1) { sx = triX1; sy = triY1; } else { sx = triX0; sy = triY0; }
+      } else if (hex) {
+        ox = x * colStep + ((y & 1) ? 0 : halfCol);
+        oy = y * rowStep + r;
+        sx = stampX; sy = stampY;
+      } else {
+        ox = x * cellPx;
+        oy = y * cellPx;
+        sx = stampX; sy = stampY;
+      }
+      for (let p = 0; p < sx.length; p++) {
+        const px = ox + sx[p];
+        const py = oy + sy[p];
+        if (px >= 0 && px < cw && py >= 0 && py < ch) pixels[py * cw + px] = color;
+      }
+    }
+
+    function reseed() {
+      for (let i = 0; i < cells.length; i++) {
+        cells[i] = Math.floor(Math.random() * states);
+      }
+      generation = 0;
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) drawCell(x, y, colors[cells[y * cols + x]]);
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function init() {
+      const dpr = window.devicePixelRatio || 1;
+      const autoStates = { 3: 12, 4: 16, 6: 18, 8: 20 };
+      states = Math.max(2, config.states || autoStates[config.neighbors] || 16);
+      hex = config.neighbors === 6;
+      tri = config.neighbors === 3;
+      borderPx = Math.round(config.border * dpr);
+
+      // Cyclic rainbow: state s -> hue s/states, so the wrap from the last
+      // state back to 0 is seamless.
+      colors = [];
+      for (let i = 0; i < states; i++) {
+        colors.push(hslToUint(i * 360 / states, 1, 0.5));
+      }
+
+      if (hex) {
+        // Pointy-top hexagons; integer spacing so the lattice tiles exactly.
+        r = Math.round(config.cellSize * dpr / 2);
+        colStep = Math.round(Math.sqrt(3) * r);
+        rowStep = Math.round(1.5 * r);
+        halfCol = Math.round(colStep / 2);
+        cols = Math.ceil(cw / colStep) + 1;
+        rows = Math.ceil(ch / rowStep) + 1;
+      } else if (tri) {
+        // Equilateral triangles alternating left/right: vertical edge 2*rowStep
+        // tall, colStep wide. Even cols/rows so the toroidal wrap keeps the
+        // left/right orientation consistent across the seam.
+        rowStep = Math.round(config.cellSize * dpr / 2);
+        colStep = Math.round(rowStep * Math.sqrt(3));
+        cols = Math.ceil(cw / colStep) + 2;
+        rows = Math.ceil(ch / rowStep) + 2;
+        if (cols & 1) cols++;
+        if (rows & 1) rows++;
+      } else {
+        cellPx = config.cellSize * dpr;
+        cols = Math.floor(cw / cellPx);
+        rows = Math.floor(ch / cellPx);
+      }
+
+      cells = new Uint8Array(cols * rows);
+      newCells = new Uint8Array(cols * rows);
+      buildNeighbors();
+      buildStamp();
+      reseed();
+    }
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = cw = Math.round(window.innerWidth * dpr);
+      canvas.height = ch = Math.round(window.innerHeight * dpr);
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      imageData = ctx.createImageData(cw, ch);
+      pixels = new Uint32Array(imageData.data.buffer);
+      pixels.fill(BLACK);
+      init();
+    }
+
+    function step() {
+      // Advance one generation. Neighbours are read from cells (the old
+      // generation); the grid wraps toroidally. Only cells that change get
+      // restamped -- unchanged cells keep their pixels in the buffer.
+      for (let y = 0; y < rows; y++) {
+        const rowBase = y * cols;
+        const rowOdd = y & 1;
+
+        for (let x = 0; x < cols; x++) {
+          // Triangles flip orientation per cell ((x+y) parity); hex/square key
+          // their offsets off row parity only.
+          const useOdd = tri ? ((x + y) & 1) : rowOdd;
+          const dx = useOdd ? oddDx : evenDx;
+          const dy = useOdd ? oddDy : evenDy;
+
+          const idx = rowBase + x;
+          const s = cells[idx];
+          const target = s + 1 === states ? 0 : s + 1;
+
+          let next = s;
+          for (let n = 0; n < dx.length; n++) {
+            const nx = (x + dx[n] + cols) % cols;
+            const ny = (y + dy[n] + rows) % rows;
+            if (cells[ny * cols + nx] === target) {
+              next = target;
+              break;
+            }
+          }
+
+          newCells[idx] = next;
+          if (next !== s) drawCell(x, y, colors[next]);
+        }
+      }
+
+      cells.set(newCells);
+      ctx.putImageData(imageData, 0, 0);
+
+      if (++generation > config.cycles) reseed();
+    }
+
+    // Drive off requestAnimationFrame but keep the original pace: run one
+    // step() per config.delay ms, banking leftover time so the speed is the
+    // same at any refresh rate. Cap catch-up so a backgrounded tab (where rAF
+    // is paused) doesn't fire a burst of steps when it regains focus.
+    const MAX_CATCHUP_STEPS = 8;
+    let lastTime = 0;
+    let lag = 0;
+
+    function frame(now) {
+      if (lastTime === 0) lastTime = now;
+      lag += now - lastTime;
+      lastTime = now;
+
+      lag = Math.min(lag, config.delay * MAX_CATCHUP_STEPS);
+      while (lag >= config.delay) {
+        step();
+        lag -= config.delay;
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
