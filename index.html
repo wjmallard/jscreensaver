@@ -1,65 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jscreensaver</title>
-  <style>
-    body {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      background: #fafafa;
-      color: #444;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-      padding: 20px;
-      padding-bottom: 10vh;
-      box-sizing: border-box;
-    }
-    main {
-      line-height: 2;
-    }
-    .name {
-      color: #222;
-      margin-bottom: 1.5em;
-    }
-    .bio {
-      font-size: 0.9em;
-      margin-bottom: 1.5em;
-      line-height: 1.6;
-    }
-    a {
-      color: #666;
-      text-decoration: none;
-    }
-    a:hover {
-      color: #222;
-    }
-    ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-  </style>
+  <link rel="stylesheet" href="./host.css">
 </head>
 <body>
-  <main>
-    <div class="name">jscreensaver</div>
-    <p class="bio">
-      screenhacks in your browser
-    </p>
-    <ul>
-      <li><a href="squiral.html">squiral</a></li>
-      <li><a href="coral.html">coral</a></li>
-      <li><a href="cloudlife.html">cloudlife</a></li>
-      <li><a href="demon.html">demon</a></li>
-    </ul>
-    <p class="bio" style="margin-top: 1.5em">
-      based on <a href="https://www.jwz.org/xscreensaver/">xscreensaver</a><br>
-      by Jamie Zawinski &amp; contributors.
-    </p>
-  </main>
+  <canvas id="c"></canvas>
+
+  <div id="selector">
+    <div class="sel-box">
+      <div class="sel-head">
+        <span class="sel-title" id="sel-title">jscreensaver</span>
+      </div>
+      <ul class="sel-list" id="sel-list"></ul>
+      <div class="sel-foot">
+        <span id="sel-about"><u>a</u>bout</span> &nbsp;·&nbsp; <span id="sel-help"><u>h</u>elp</span> &nbsp;·&nbsp; <span id="sel-exit">e<u>x</u>it</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="about">
+    <div class="about-box">
+      <div class="about-title">jscreensaver</div>
+      <div class="about-body">
+        <p>Classic xscreensaver screenhacks, reimplemented in JavaScript from the original C.</p>
+        <p>Based on <a href="https://www.jwz.org/xscreensaver/" target="_blank" rel="noopener">xscreensaver</a> by Jamie Zawinski &amp; contributors.</p>
+        <p>Contact: <a href="mailto:hello@jscreensaver.net">hello@jscreensaver.net</a></p>
+      </div>
+      <div class="about-hint">esc or click outside to close</div>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="help-box">
+      <div class="help-title">commands</div>
+      <dl class="help-list">
+        <dt>s</dt><dd>select a hack</dd>
+        <dt>c</dt><dd>configure this hack</dd>
+        <dt>r</dt><dd>restart — fresh pattern</dd>
+        <dt>x</dt><dd>exit — back to start</dd>
+        <dt>a</dt><dd>about</dd>
+        <dt>f</dt><dd>frame render time</dd>
+        <dt>h</dt><dd>this help</dd>
+        <dt>← →</dt><dd>previous / next hack</dd>
+        <dt>↑ ↓ ↵</dt><dd>move / choose, in the list</dd>
+        <dt>click</dt><dd>open the hack list</dd>
+        <dt>esc</dt><dd>close / exit a hack</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div id="config">
+    <div class="config-box">
+      <div class="config-title" id="config-title">configure</div>
+      <div class="config-body" id="config-body"></div>
+      <div class="about-hint">esc or click outside to close</div>
+    </div>
+  </div>
+
+  <div id="cfg-link" hidden><u>c</u>onfig</div>
+  <div id="fps" hidden>– ms/f</div>
+
+  <script type="module" src="./host.js"></script>
+
+  <!-- GoatCounter (privacy-friendly analytics, no cookies). Record the #hash
+       route as the path so each hack is its own page; host.js fires a count on
+       every hack switch, and count.js auto-logs the initial page load. -->
+  <script>
+    window.goatcounter = { path: () => location.pathname + location.search + location.hash };
+  </script>
+  <script data-goatcounter="https://stats.jscreensaver.net/count"
+          async src="//stats.jscreensaver.net/count.js"></script>
 </body>
 </html>
