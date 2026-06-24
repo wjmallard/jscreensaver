@@ -13,9 +13,10 @@ import * as petri from './hacks/petri.js';
 import * as ant from './hacks/ant.js';
 import * as sierpinski from './hacks/sierpinski.js';
 import * as binaryring from './hacks/binaryring.js';
+import * as braid from './hacks/braid.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
@@ -191,8 +192,6 @@ canvas.addEventListener('click', openSelector);
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.defaultPrevented) return;
-  // 'x' always exits to the calm landing, from anywhere (even an open box).
-  if (e.key === 'x') { e.preventDefault(); goHome(); return; }
   if (e.target.closest && e.target.closest('input, select, textarea')) return;
 
   if (configBox.classList.contains('open')) {
@@ -218,7 +217,7 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // View mode: arrows cycle; r/x/c/a/f/h are commands; anything else
+  // View mode: arrows cycle; r/c/a/f/h are commands; anything else
   // (incl. 's') summons the picker.
   if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); cycle(1); }
   else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); cycle(-1); }
