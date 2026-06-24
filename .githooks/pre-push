@@ -1,0 +1,16 @@
+#!/bin/sh
+# jscreensaver pre-push guard.
+#
+# Refuses to push when the generated catalog (catalog.json) is stale, or when a
+# hack module it references isn't committed -- an imported-but-untracked module
+# 404s on the deployed site, and its failed lazy import would surface the broken-
+# hack tile (an uncommitted module once blanked the whole page, before lazy load).
+#
+# Regenerate the catalog after adding/editing a hack or its info:
+#   node tools/build-catalog.mjs
+#
+# Enable this hook once per clone (it is NOT active until you do):
+#   git config core.hooksPath .githooks
+#
+# Requires node on PATH. Exits non-zero (blocking the push) on any problem.
+exec node tools/build-catalog.mjs --check

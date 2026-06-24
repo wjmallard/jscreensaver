@@ -1,0 +1,47 @@
+# penrose — port notes
+
+Port of `penrose.c` (Timo Korvola, 1996; xscreensaver port by Jamie Zawinski, 1997) — Penrose's quasiperiodic rhombus tiling, grown outward from a seed edge by **forced tiling** and drawn as filled "fat" (72/108) and "thin" (36/144) rhombi.
+
+Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/penrose.c` (~1342 lines). See [[squiral]] for the shared module skeleton, and [[braid]] for the Path2D-bucket-by-colour render idiom this reuses.
+
+## Algorithm
+The tiling is a single connected patch that grows one rhombus at a time. Only the **fringe** — the boundary vertices that still have open space around them — is stored: a doubly-linked ring ordered counter-clockwise (`next` = the left neighbour, `prev` = the right neighbour, as seen looking *out* from a vertex into the untiled gap). Each vertex carries the cyclic list of tile corners already attached to it, plus exact **5-D integer coordinates** (`fived[5]`, units of edge length) so geometry never accumulates rounding error; screen position is `fived` projected onto the five 72°-spaced unit vectors.
+
+A complete vertex must match one of **eight legal configurations** (`vertex_rules`) — the only ways fat/thin corners can meet 360°. Growth works by `match_rules` (a Rabin-Karp window slide that finds which rules a vertex's current corners are still a strict subsequence of) and `find_completions` (the distinct tiles that could legally come next on a given side). If a side admits exactly **one** completion, that vertex is **forced** — there is no choice — and it joins the forced pool. Each step:
+
+1. If there are forced vertices in view, pick one at random and add its forced tile (`add_forced_tile`).
+2. Otherwise pick a random visible fringe vertex and add a random *legal* tile (`add_random_tile`), after checking the tile conforms to the rules at every vertex it would touch.
+
+Adding a tile (`add_tile`) computes, via `fringe_changes`, which of the new rhombus's other three corners attach to existing fringe vertices vs need allocating, and which vertices get **swallowed** (fully enclosed → removed from the fringe). Two guards keep it consistent: a candidate that would seal off an untiled pocket (`FC_BAG`) is refused, and if a freshly-allocated vertex lands on coordinates that already exist, the move is abandoned ("better luck next time") and a different random choice is tried later. The fringe ring is then re-spliced, the tile drawn, and every touched vertex re-checked for its new forced status.
+
+## Module shape
+`start(canvas) -> { stop, pause, resume, reinit, config, params }` — see `squiral.md`.
+
+## Rendering — filled quads, bucketed by type
+Genuinely shape-shaped (filled rhombi + thin outline), so it uses **canvas vector ops**, not the per-pixel blit path. Like the C, tiles are drawn **once where they land** onto the persistent (double-buffered) canvas — there is no full repaint; the patch accumulates until it restarts. Each step's new tiles (usually 1, occasionally a few) are bucketed into two `Path2D` by type — **fat** and **thin** — filled in two passes (one palette colour each — see **Palette** — with good contrast between them), then a single dark outline pass strokes all of them (the braid.js bucket-then-stroke idiom, here trivially small per step). Colours are re-rolled on each random tile, exactly as the C re-rolls `thick_color`/`thin_color`, so the palette drifts as the tiling grows.
+
+## Palette — xlockmore default scheme (faithful)
+penrose is an xlockmore hack and defines **no** `*_COLORS` macro, so `xlockmore.c` builds its colormap from the **default** scheme: `make_random_colormap` with `bright_p = False` — i.e. `ncolors` colours of **fully random RGB channels** (not a hue ramp). The port builds it with the shared **`makeRandomColormapRGB(ncolors, false)`** (`colormap.js`, a faithful port of `utils/colors.c`); `ncolors ≤ 2` falls back to white (the C's `MI_WHITE_PIXEL` mono path). Each random tile re-rolls `thick_color`/`thin_color` exactly as the C does, and because almost every other tile is *forced* (keeping the current pair) the screen reads as large single-colour regions that change hue at each re-roll — verified against the live binary. *(The earlier port used a fixed vivid `hsl(h,100%,50%)` rainbow — that was the systemic palette bug; the real palette is a muted/dark/bright random-RGB scatter, not an ordered spectrum.)*
+
+## Timing — stock delay + measured OVERHEAD
+The live `-fps` overlay reads **57.2 fps at Load 42.8 %** (delay-bound, well under 100 %): a real frame of `1e6 / 57.2 = 17482 µs = 10000 µs` sleep-floor `+ 7482 µs` per-step compute. So `config.delay` is the **stock 10000 µs** (the xml / `DEFAULTS` value, slider 1:1) and the loop paces each step at `(config.delay + OVERHEAD) / 1000` ms with **`OVERHEAD = 7482`**, giving the live ~57 steps/s. *(The earlier port used a by-eye `delay = 20000` with no overhead — ~50 steps/s, slightly slow, not the author's pace.)*
+
+## Deviations from the C
+- **Forced pool is a plain array, not an intrusive linked list.** The C threads each forced vertex into a singly-linked list with a back-pointer for O(1) splice; we keep an array and `indexOf`/`splice`. The pool is tiny (tens of vertices — measured max ~30), and the *behaviour* is identical: a uniform random pick among forced (or visible-forced) vertices. `forcedVisible` is tracked exactly as the C's `n_visible`.
+- **Pause lengths shortened.** The C "celebrates" a completed screen with `busyLoop = 3141` frames and a dislocation with `31415` — at any sane delay those are many seconds of frozen screen. Reduced to `COMPLETION = 120` / `CELEBRATE = 200` steps (~2 s of deliberate hold), then it restarts. Documented here because it changes the visible cadence, not the tiling.
+- **Ammann lines** (`--ammann`, off by default) are ported faithfully — the same per-rhombus segment geometry as `draw_tile` — but drawn in a single contrast-hue pass rather than the C's per-tile `XSetForeground`/dash juggling (which was explicitly a b&w-display debugging path). Cosmetic only.
+- **`devicePixelRatio`**: `edge_length`, `line_width`, the origin, and the off-screen "one window beyond the edge" guard are all in device px, with the C's 200 px tiny-window floor scaled by `S`, so tile size and the restart-when-off-screen behaviour look the same on retina.
+- **No XOR / feedback tricks** are involved, so nothing to emulate there.
+- **Units / tuning**: `delay` is the stock 10000 µs + a measured `OVERHEAD` (see **Timing**), not a by-eye value. The `size` slider keeps the xml's 1–100 range but the loop clamps to ≥ `MINSIZE` (5) like the C; the C's extra negative-`size` "random edge length" branch is dropped (the UI only exposes positives). Keypress / `fps` handling dropped — the host owns keys and the meter.
+
+## Config
+Ranges mirror `hacks/config/penrose.xml`: `delay` (Frame rate, live, inverted), `size` (Tile size, reinit), `ncolors` (Colors, reinit), `ammann` (Draw ammann lines, reinit). Non-live changes and "Reset to defaults" re-run `init()` via `reinit()` (a fresh seed + cleared canvas). `r` (restart) also re-seeds.
+
+## Correctness self-review
+This is the one genuine algorithm port in the wave, so the forcing/fringe bookkeeping was the risk. Verified three ways:
+
+1. **No overlap / no gaps — by construction, preserved from the C.** Tiles are never placed by pixel coordinates; placement is decided in exact 5-D integer space. A move is *refused* if it would enclose an untiled pocket (`FC_BAG`) or if a new corner coincides with an existing vertex (`fived_equal` scan of the whole fringe). Both guards are ported verbatim, including the "abandon and retry later" semantics. The `fills_vertex` angle test (`(dirLeft − dirRight − tileAngle) mod 10 == 0`) uses the C's exact modular arithmetic (with a `+10` to keep JS's signed `%` non-negative — the squiral floored-modulo gotcha), so a vertex closes only when its remaining gap angle is *exactly* a tile angle. No float-equality closure test exists anywhere.
+2. **Growth terminates and restarts cleanly — measured.** A headless harness (stubbed canvas/window) drove **120,000 steps**: zero throws; **61 tilings** completed; each grew large (avg **1,886** tiles, max **2,905**) before restarting; **19** ended via the `COMPLETION` path (fringe fully filled the viewport → bounded pause → restart) and the rest by growing one window beyond the edge. The fringe size stayed bounded (max ~94 vertices) — no runaway. Restart is the C's own recovery: `done`/`failures>=100` at the top of `step()` calls `reinit()`, which clears the canvas and re-seeds, so it can never wedge.
+3. **Forcing actually drives it (not just random fallback).** In that run, **116,963** additions were *forced* vs only **458** random — i.e. the forced-vertex machinery is doing essentially all the work, exactly as the C intends (random tiles only seed and break the rare tie). Only **2** `CELEBRATE` (dislocation) pauses occurred over 60 restarts, matching the C's own note that dislocations are a rare-probability event it recovers from by reinitialising — not a freeze.
+
+**Spot-check in the browser:** confirm the two rhombus shapes look like a real Penrose pattern (fat 72°/108° and thin 36°/144° rhombi, five-fold symmetry, never a square grid), that the patch grows visibly and then restarts with a fresh seed rather than stalling, and that toggling **Ammann lines** overlays a matching-line web.

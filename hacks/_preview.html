@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>html,body{margin:0;background:#000;width:100%;height:100%;overflow:hidden}#c{display:block;width:100vw;height:100vh}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+  // Mount whichever hack is named in ?hack=<name> (default quasicrystal).
+  const name = new URLSearchParams(location.search).get('hack') || 'quasicrystal';
+  const c = document.getElementById('c');
+  c.width = window.innerWidth;
+  c.height = window.innerHeight;
+  try {
+    const mod = await import(`./${name}.js`);
+    window.__hack = mod.start(c);
+    window.__ready = true;
+  } catch (e) {
+    window.__error = String(e && e.stack || e);
+    document.title = 'ERROR';
+    console.error('mount failed:', e);
+  }
+</script>
+</body>
+</html>

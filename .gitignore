@@ -1,3 +1,5 @@
 push.sh
+docs/
+node_modules/
 xscreensaver-*
 .DS_Store

@@ -1,65 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>jscreensaver</title>
-  <style>
-    body {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      background: #fafafa;
-      color: #444;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-      padding: 20px;
-      padding-bottom: 10vh;
-      box-sizing: border-box;
+  <title>JScreenSaver | Unix screensavers in your browser</title>
+  <meta name="description" content="Classic Unix XScreenSaver hacks, ported from C/OpenGL to JavaScript/WebGL.">
+  <link rel="canonical" href="https://jscreensaver.net/">
+
+  <!-- Open Graph / Twitter card for link unfurls. og.png is generated from og.svg. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="JScreenSaver">
+  <meta property="og:title" content="JScreenSaver | Unix screensavers in your browser">
+  <meta property="og:description" content="Classic Unix XScreenSaver hacks, ported from C/OpenGL to JavaScript/WebGL.">
+  <meta property="og:url" content="https://jscreensaver.net/">
+  <meta property="og:image" content="https://jscreensaver.net/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="JScreenSaver | Unix screensavers in your browser">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Preload the hack catalog so host.js's fetch is already in flight by the time
+       the module runs (the picker can't build until the catalog arrives). -->
+  <link rel="preload" href="./catalog.json" as="fetch" crossorigin>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./host.css">
+  <!-- three.js (no-build) for the three.js geometry hacks (dangerball, cubicgrid,
+       ...). VENDORED locally under vendor/ so there is no runtime CDN dependency and
+       the exact bytes are pinned (importmaps can't carry an SRI hash). The shadertoy
+       hacks use raw WebGL and don't need it. Must precede the host.js module import so
+       bare 'three' specifiers resolve. Addons (examples/jsm) are vendored under
+       vendor/three@0.160.0/jsm/ as well -- no CDN; add a file there per-use when a
+       hack first needs one (so far only geometries/ParametricGeometry.js). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three@0.160.0/three.module.min.js",
+      "three/addons/": "./vendor/three@0.160.0/jsm/"
     }
-    main {
-      line-height: 2;
-    }
-    .name {
-      color: #222;
-      margin-bottom: 1.5em;
-    }
-    .bio {
-      font-size: 0.9em;
-      margin-bottom: 1.5em;
-      line-height: 1.6;
-    }
-    a {
-      color: #666;
-      text-decoration: none;
-    }
-    a:hover {
-      color: #222;
-    }
-    ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-  </style>
+  }
+  </script>
 </head>
 <body>
-  <main>
-    <div class="name">jscreensaver</div>
-    <p class="bio">
-      screenhacks in your browser
-    </p>
-    <ul>
-      <li><a href="squiral.html">squiral</a></li>
-      <li><a href="coral.html">coral</a></li>
-      <li><a href="cloudlife.html">cloudlife</a></li>
-      <li><a href="demon.html">demon</a></li>
-    </ul>
-    <p class="bio" style="margin-top: 1.5em">
-      based on <a href="https://www.jwz.org/xscreensaver/">xscreensaver</a><br>
-      by Jamie Zawinski &amp; contributors.
-    </p>
-  </main>
+  <canvas id="c"></canvas>
+
+  <div id="selector">
+    <div class="sel-box">
+      <div class="sel-head">
+        <span class="sel-head-link" id="sel-about"><u>a</u>bout</span>
+        <span class="sel-title" id="sel-title">JScreenSaver</span>
+        <span class="sel-head-link" id="sel-help"><u>h</u>elp</span>
+      </div>
+      <div class="sel-main" id="sel-main">
+        <div class="sel-left">
+          <div class="sel-dims" id="sel-dims">
+            <label><input type="checkbox" id="dim-2d" checked>2D</label>
+            <label><input type="checkbox" id="dim-3d">3D</label>
+          </div>
+          <ul class="sel-cats" id="sel-cats"></ul>
+        </div>
+        <div class="sel-detail">
+          <div class="sel-cat-head" id="sel-cat-head">All</div>
+          <ul class="sel-list" id="sel-list"></ul>
+        </div>
+      </div>
+      <div class="sel-foot">
+        <span id="sel-info"><u>i</u>nfo</span>
+        <span id="sel-config"><u>c</u>onfig</span>
+        <span id="sel-restart"><u>r</u>estart</span>
+        <span id="sel-random">random</span>
+        <span id="sel-clear">clear</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="about">
+    <div class="about-box">
+      <div class="about-title">JScreenSaver</div>
+      <div class="about-body">
+        <p>Unix screensavers in your browser!</p>
+        <p>Based on the original <a href="https://www.jwz.org/xscreensaver/" target="_blank" rel="noopener">XScreenSaver</a> by Jamie Zawinski &amp; contributors.</p>
+        <p>Vibe-ported from C to JavaScript.</p>
+        <p class="info-credit">Contact: <a href="mailto:hello@jscreensaver.net">hello@jscreensaver.net</a></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="help-box">
+      <div class="help-title">commands</div>
+      <dl class="help-list">
+        <dt class="help-cat">navigation</dt>
+        <dt>s</dt><dd>select hack</dd>
+        <dt>/</dt><dd>find by name</dd>
+        <dt>q</dt><dd>quit to menu</dd>
+        <dt>&larr; &rarr;</dt><dd>previous / next</dd>
+        <dt class="help-cat">control</dt>
+        <dt>i</dt><dd>info</dd>
+        <dt>c</dt><dd>configure</dd>
+        <dt>p</dt><dd>pause</dd>
+        <dt>r</dt><dd>restart</dd>
+        <dt>f</dt><dd>framerate</dd>
+        <dt class="help-cat">general</dt>
+        <dt>a</dt><dd>about</dd>
+        <dt>h</dt><dd>help</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div id="config">
+    <div class="config-box">
+      <div class="config-title" id="config-title">configure</div>
+      <div class="config-body" id="config-body"></div>
+      <div class="about-hint">esc or click outside to close</div>
+    </div>
+  </div>
+
+  <div id="info">
+    <div class="about-box">
+      <div class="about-title" id="info-title">info</div>
+      <div class="about-body" id="info-body"></div>
+    </div>
+  </div>
+
+  <div id="search">
+    <div class="search-box">
+      <input id="search-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="find a hack...">
+      <ul class="search-list" id="search-list"></ul>
+    </div>
+  </div>
+
+  <div id="hackname" hidden></div>
+  <div id="fps" hidden>&ndash; ms/f</div>
+
+  <!-- Touch control bar: a canvas tap (coarse pointer) reveals it; it auto-hides
+       after a few seconds. Narrow prev/next chevrons sit at the two ends; restart
+       stays the middle of the five action buttons, so it's dead-centre on screen.
+       Hidden on mouse devices via a CSS pointer:fine media query. Icons are inline
+       SVG (themeable via currentColor, ASCII-safe, no emoji-presentation surprises). -->
+  <div id="bar" hidden>
+    <button class="bar-btn bar-nav" id="bar-prev" aria-label="previous">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"/></svg>
+    </button>
+    <button class="bar-btn" id="bar-info" aria-label="info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.6"/></svg>
+      <span>info</span>
+    </button>
+    <button class="bar-btn" id="bar-config" aria-label="config">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="15" cy="8" r="2.6" fill="currentColor" stroke="none"/><circle cx="9" cy="16" r="2.6" fill="currentColor" stroke="none"/></svg>
+      <span>config</span>
+    </button>
+    <button class="bar-btn" id="bar-restart" aria-label="restart">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 4 21 9.5 15.5 9.5"/></svg>
+      <span>restart</span>
+    </button>
+    <button class="bar-btn" id="bar-pause" aria-label="pause">
+      <svg class="ic-pause" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>
+      <span class="bar-lb-pause">pause</span>
+      <span class="bar-lb-play">play</span>
+    </button>
+    <button class="bar-btn" id="bar-browse" aria-label="browse">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      <span>browse</span>
+    </button>
+    <button class="bar-btn bar-nav" id="bar-next" aria-label="next">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+    </button>
+  </div>
+
+  <!-- First-visit hint (touch only): a one-time dim nudge that the canvas takes a tap. -->
+  <div id="hint" hidden>&lsaquo; tap for controls &rsaquo;</div>
+
+  <script type="module" src="./host.js"></script>
+
+  <!-- Cloudflare Web Analytics -->
+  <script defer src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "37c1f32a9cb74fa4b08a4886a38a91f4"}'></script>
+
+  <!-- GoatCounter (privacy-friendly analytics, no cookies). Record the
+       #hash route as a path so that each hack is treated as its own page;
+       host.js fires a count on every hack switch, and count.js auto-logs
+       the initial page load. -->
+  <script>
+    window.goatcounter = { path: () => location.pathname + location.search + location.hash };
+  </script>
+  <script data-goatcounter="https://jscreensaver.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
