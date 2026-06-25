@@ -173,7 +173,7 @@ function cancelFade() {
   canvas.style.opacity = '1';
 }
 
-// Swap hacks. When one hack is already on screen, fade its (frozen) last frame
+// Swap hacks. When leaving a 2D hack on screen, fade its (frozen) last frame
 // to black via canvas opacity, then start the new hack on the freshly-cleared
 // canvas at full opacity — no fade-IN, since the new hack builds up from black
 // on its own (xscreensaver's symmetric gamma fade-in is wasted on that). The
@@ -182,6 +182,7 @@ function cancelFade() {
 function mount(name) {
   if (!byName[name] || name === currentName) return;
   const wasRunning = !!handle;
+  const wasGL = !!(handle && handle.getStats);   // 3D renders to its own overlay (removed on stop), not #c
   cancelFade();
   if (handle) { handle.stop(); handle = null; }
   currentName = name;
@@ -200,12 +201,20 @@ function mount(name) {
     cfgLink.hidden = !(handle && handle.params);
   };
 
-  if (wasRunning) {
+  // The fade animates the SHARED 2D host canvas (#c), where 2D hacks draw. A 3D
+  // hack renders to its OWN overlay canvas that stop() just removed, so #c still
+  // shows the LAST 2D frame underneath — fading when leaving a 3D hack only
+  // flashes that stale frame (seen when cycling 3D->3D). So fade just when leaving
+  // a 2D hack; otherwise (leaving a 3D hack, or first mount) clear #c and cut in.
+  if (wasRunning && !wasGL) {
     canvas.style.transition = `opacity ${FADE_MS}ms linear`;
     void canvas.offsetWidth;             // force reflow so the fade starts from 1
     canvas.style.opacity = '0';
     fadeTimer = setTimeout(startHack, FADE_MS);
   } else {
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     startHack();
   }
 }
@@ -582,7 +591,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); cycle(-1); }
   else if (e.key === 'c') { e.preventDefault(); openConfig(); }
   else if (e.key === 'r') { e.preventDefault(); restart(); }
-  else if (e.key === 'p') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'p' || e.key === ' ') { e.preventDefault(); togglePause(); }
   else if (e.key === 'i') { e.preventDefault(); openInfo(); }
   else if (e.key === 'Escape') { e.preventDefault(); goHome(); }
   else if (e.key === 'a') { e.preventDefault(); openAbout(); }
