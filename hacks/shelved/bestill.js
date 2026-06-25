@@ -20,11 +20,12 @@
 // textures, no multi-pass buffers — the per-pixel raymarch is the whole cost,
 // with no CPU-side simulation at all.
 
-import { startShadertoy } from './shadertoy.js';
+import { startShadertoy } from '../shadertoy.js';
 
 export const title = 'bestill';
 
 export const info = {
+  heavy: true,
   author: 'Matt Vianueva (diatribes)',
   description: 'A collection of six calm, still landscape and cloud scenes, from a moonlit "Night Cloud Dance" to a sunlit "Desert Duo".',
 };
