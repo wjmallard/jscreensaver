@@ -1,0 +1,35 @@
+# halo — port notes
+
+Port of `halo.c` by Jamie Zawinski (1993) — circular interference patterns. A few **halos** (concentric ring families) sit on the screen, their centres slowly drifting, and every step all of them breathe outward by one ring-spacing. Where two families overlap the rings **cancel**, and that cancellation is what carves the moire fringes out of the overlap.
+
+Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/halo.c` (458 lines).
+
+## Algorithm
+Each circle has a centre `(x,y)`, a `radius`, a ring spacing `increment`, and a drift `(dx,dy)`. Increments are rolled with a triangular bias toward small values (so spacings are mostly tight). Each step: every circle's current ring is stroked, then its radius grows by `increment`. The families therefore expand together, laying down a fresh concentric ring each step.
+
+A breath ends (`done`) — but only ever on an **odd** step (`iterations & 1`) — when a family either collapses to points (`radius < 0`, after a reversal) or grows large enough to fully enclose the screen rectangle (an analytic corner-containment test). On `done` the state machine picks one of:
+- **Re-pick** (when we've just breathed all the way in, `increment < 0`): the screen is blank, so re-seed the centres and shift the palette cursor.
+- **Inside-restart** (sometimes, `clearTick == 0 && rand(3)==0`): wrap every radius back near zero (`radius %= increment`) and arm `clearTick` to an odd 4..11 — the figure regrows from the inside, and a full wipe lands a few breaths later.
+- **Reverse** (otherwise): negate each `increment` and back the radius up, so the families breathe back inward.
+
+`clearTick`, once armed, counts down on subsequent `done`s and wipes the buffer to black when it reaches zero. With `animate`, instead of reversing, the centres random-walk (bouncing off the edges) and radii wrap, so the moire slides around.
+
+## Shared skeleton
+Same as every port — see [[squiral]] for the full description: a no-build ES module exporting `title` + `start(canvas) → { stop, pause, resume, reinit, config, params }`, an rAF **lag-accumulator** loop in place of the C's `usleep(delay)` (identical pace at any refresh rate, with a catch-up cap), `devicePixelRatio` folded into sizes/line-widths, and the config box driven by the inline `params` schema via `config-box.js`. Closest technique twins: [[spiral]] (sparse moire rings) and [[braid]] (stroked concentric arcs).
+
+## Deviations from the C
+- **XOR → `globalCompositeOperation = 'difference'` (the headline deviation).** The C composites every ring into a persistent buffer with `GXxor` (`merge_gc`), so overlapping rings *cancel* — that interference IS the halo. Canvas has no XOR raster op. This port keeps the **persistent buffer** (the canvas is never fully cleared per frame, only on a wipe) and strokes each ring with `'difference'`. For the iconic **seuss** path the rings are pure white on a black/white buffer, and `difference(255,0)=255`, `difference(255,255)=0` — i.e. for these two values `'difference'` is **bit-identical to XOR**, so the cancel-on-overlap and the moire are reproduced exactly. The only gap is antialiasing: canvas arc strokes are always anti-aliased (no `XSetAntiAliasing(False)` equivalent for paths), so ring *edges* carry intermediate greys that don't cancel perfectly. With 1-device-px strokes this is minor; rings stay crisp and overlaps still go dark.
+- **Filled disks → stroked arcs.** The C draws `XFillArc` (a filled disk) into a 1-bit pixmap that is *cleared every frame* and XORed into the buffer — which, summed over the growing radii, is mathematically equivalent to a field of concentric **rings** spaced by `increment`. This port draws those rings directly as stroked circles (one `ctx.arc().stroke()` per centre per step), per the porter brief. Same end picture, far cheaper, and a closer fit to canvas vector ops.
+- **Colour modes collapsed to one palette.** The C's `make_uniform_colormap` / `make_smooth_colormap` become a single vivid HSL rainbow (calmer ports elsewhere do the same). `random` mode still resolves to **ramp** 1/4 of the time else **seuss**, mono (`ncolors ≤ 2`) still forces seuss + white, and `ramp` still disables `animate` and draws only on the way in. **seuss** strokes white (the true-XOR path); **ramp** strokes a cycling colour with `'difference'` — colours don't cleanly cancel, but the C's ramp path uses `GXcopy` (over-paint) there too, so this is a fair stand-in.
+- **No double-buffer blit / expose handling.** The C's `pixmap`/`buffer`/`XCopyPlane` plumbing and `DEBUG` quadrant copies are dropped; the canvas *is* the persistent buffer, and it needs no manual expose repair.
+- **`delay` default 60000 µs** (stock 100000) — a touch calmer, per the brief. Range/labels otherwise map 1:1 to `hacks/config/halo.xml` (`count` 0–20, `colors`/ncolors 1–255, `mode`, `animate`).
+- **Encoding:** the µs unit in the Frame-rate slider is written as the escape `µs` (ASCII-safe rule); the only non-ASCII bytes in `halo.js` are em dashes in comments.
+
+## Correctness self-review
+The brief warns that parse-clean + right-contract isn't enough — subtle reset/closure bugs have shipped. Traced by hand:
+- **Termination/closure.** `done` is gated on an **odd** `iterations`, exactly as the C, so a breath can't end on the wrong parity. The enclose-the-screen test ports the C's four-corner `(x/r)² + (y/r)² < 1` check verbatim; `radius === 0` is skipped (eschew the divide), `radius < 0` ends the inward breath. Every `done` branch re-seeds what the next step reads: **re-pick** rebuilds `circles` and the palette cursor, **inside-restart** wraps every radius and arms an *odd* `clearTick`, **reverse** negates `increment` and backs the radius up. There is no float-equality closure test, so nothing can silently fail to fire.
+- **No freeze / no runaway.** The radius always moves (`+= increment`, increment ≠ 0 by construction since `(inc+3)*scale ≥ 3`), so a family always reaches a `done` and the cycle turns over; the loop can't wedge. `wrapMod` guards a zero divisor so a degenerate increment can't `NaN` a radius. The lag-accumulator caps catch-up at `MAX_CATCHUP_STEPS = 8`, so a backgrounded tab can't burst.
+- **First frame looks right.** `init()` seeds radii from `nrand(increment)` (small, non-degenerate) and clears to black, so the very first breath already draws on-screen rings — no off-screen or zero-radius start.
+- **pause / resume / reinit.** `pause()` cancels rAF and parks `rafId = 0`; `resume()` resets `lastTime = 0` before re-arming, so no catch-up jump. `reinit()` re-runs `init()` (re-seeds + clears to black) for a clean fresh screen after a non-live config change.
+
+**Spot-check in the browser:** confirm the `'difference'` blend reads as cancelling moire fringes (dark interference nodes where families overlap) and not solid filled rings; that centres stay on-screen; and that after a long breathe-out the screen wipes/regrows rather than freezing. seuss (default-ish) is the path to judge — ramp is colour-cycled rings and intentionally less XOR-like.
