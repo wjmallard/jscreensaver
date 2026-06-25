@@ -1,0 +1,43 @@
+# vermiculate — port notes
+
+Port of `vermiculate.c` by Tyler Pierce (2001) — "to move in a worm-like manner." A handful of worms crawl across the screen with smoothly turning headings, each laying down a thick coloured trail. Each worm is a fixed-length snake (it stamps a pixel at its head and erases the pixel at its tail every step), so the worms slither and ricochet without saturating the field; the screen clears and re-seeds periodically.
+
+Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/vermiculate.c` (~1228 lines, most of it an interactive scripting layer — see *Deviations*).
+
+See [[squiral]] for the shared module skeleton and [[spiral]] for the circular-trail-buffer idiom this reuses per worm.
+
+## Algorithm
+Each worm (`thread`) has a float position `(x,y)`, an integer heading `deg` (0..359), a per-worm grid colour `col`, a turn mode `tmode` (1..7), and the turn-state the mode needs. Every step:
+
+1. **Turn** — the worm's `tmode` mutates `deg`. The seven modes are the meander engine (faithfully transcribed from `move()`): (1) bounded random nudge (±`turnsize`); (2) axis-snapping with occasional sharp turns; (3) constant curvature (steady arc); (4) spiral (the turn-rate itself drifts and reverses); (5) curvy meander — arc one way for ~`curviness` steps, then flip (the classic vermiculate squiggle); (6) alternating straights and arcs; (7) a scripted repeating turn-sequence. Worms are seeded with a random mode so a screenful shows the variety the C's sample strings produce.
+2. **Step** — `x += cos[deg]; y += sin[deg]` (exactly one precomputed unit vector, like the C), then wrap toroidally at the edges.
+3. **Collide / bounce** — read the 1-px collision grid (`point[]`) at the new cell. If it is inked in a *different* colour (another worm, or the border), reverse (`deg += 180`) and stay put; if it is the worm's *own* colour, pass straight through. (Default worms have `selfbounce`/`realbounce` off; those reflection paths and the grid/killwalls logic are dropped.)
+4. **Draw** — stamp a `thickness`-sized rect at the head pixel in the worm's hue; once the trail ring is full, erase the oldest recorded pixel in black. A per-worm circular buffer (`xrec/yrec`, length = `trail`) keeps the snake a fixed length, exactly as the C does with `erasing` on.
+
+The **border** (`bordcol`, default on) is colour 1 along the **top and left edges only** — an L-shape, matching the C's `bordcorn==0` (it does *not* draw a full rectangle). Worms that run off the right/bottom wrap toroidally and are caught by this L on the far side, so they always stay on screen. Worm grid-colours start at 2 (the C's `col = thr + 1`), so a worm never shares the border's colour 1 and therefore always bounces off it.
+
+Reset: with `erasing` on, worms never die, so (as in the C) the only reset trigger is the tick budget — every `MAX_TICKS` steps the field clears, the worms re-seed at new positions/hues, and the border redraws.
+
+## Shared skeleton
+Standard jscreensaver module: `start(canvas) → { stop, pause, resume, reinit, config, params }`, a fixed-timestep rAF **lag accumulator** paced by `config.delay` (µs) with a catch-up cap, `devicePixelRatio` folded into the stamp size and the backing store, a `Uint8Array` collision grid, and `wrapAround`/`random1` helpers transcribed from the C's macros.
+
+## Deviations from the C
+- **Interactive scripting dropped.** Most of `vermiculate.c` is a tiny keystroke language (`consume_instring`, banks, `pickbank`, grids, borders by corner, prey/follow, killwalls, per-thread bool toggles, the `sampleStrings[]` programs). A screensaver has no keyboard input, so only the **autonomous worm behaviour** the default + sample configurations produce is ported. What's kept: the 7 turn modes, the snake trail with tail-erase, the border-and-wrap containment, the periodic reset. What's dropped: prey-following (and its `tanof[]`/`atan2` heading code), `realbounce`/`killwalls` wall reflection, the user grid, `little` worms, autopalette, and all keystroke handling.
+- **Rendering: filled rects, not Path2D polylines.** The brief suggested accumulating polylines, but the C draws with `XFillRectangle` (`sp()`), so the port stamps a small filled rect per head pixel; consecutive one-pixel-apart stamps overlap into a continuous thick trail. This is *more* faithful to the C than a stroked polyline **and** sidesteps two hazards a stroke-and-erase polyline would have: the long "bridge" segment a worm would draw when it wraps a screen edge, and anti-aliased slivers left behind when erasing a thick stroke. Tail-erase is a black rect at the recorded tail pixel, guarded by re-reading the grid (`gp(ex,ey) === col`) so it never punches a hole in ink a newer head has since laid over that cell.
+- **Colour decoupled from the grid code.** The C conflates `col` (grid marker *and* colormap index) and uses a random colormap. Here `col` is purely the collision code (≥ 2), and each worm gets a vivid `hsl()` `hue` spread around the wheel from an `ncolors`-entry rainbow palette — distinct per worm, brighter than the original's random colours. `ncolors` still quantizes the available hues (low → repeats, as the C's small colormaps did).
+- **Border colour** is a neutral grey (`#888`) rather than a palette colour, so the structure reads as a frame distinct from the worms.
+- **Pacing.** The C interleaves up to 1000 `move()` rounds per draw call with a `speed`-budget idle (`waitabit`). The port runs `ROUNDS_PER_STEP` (3) move-rounds per fixed step and lets the lag accumulator pace the frame rate via `delay`, so a 1-px/round worm slithers at a pleasant speed. `MAX_TICKS` (8000 steps, ~2 min at the default rate) is scaled from the C's 20000 draw-calls to our per-round cadence. The xml exposes only "Duration" (the C's `speed`, 1..1000) + fps; the port maps that intent onto the standard inverted **Frame rate** slider and adds Worms / Worm length / Thickness / Curviness / Colors / Border. The default `delay` (16000 µs) is a touch livelier than the stock slowest speed, per the gallery's "calm but lively" tuning.
+
+## Correctness self-review
+- **Snake never leaves a ghost trail.** The tail-erase reads `xrec[recpos]/yrec[recpos]` (still the *oldest* pixel — `recpos` is the slot about to be overwritten) before recording the new head, exactly mirroring the C's order. Verified by a headless run: over thousands of steps the count of coloured stamps stays bounded (worms keep a fixed length) and the grid-guard prevents erasing live ink.
+- **Worms stay on screen.** Headless bounds check on a 400×300 canvas: with the border **off** (pure toroidal wrap) every stamp falls in `x∈[0,401], y∈[0,301]` (the +1 is the rect width) — no escape, no `NaN` coordinates. With the border **on**, worms draw continuously (alive and bouncing) for thousands of frames.
+- **First frame draws.** `init()` sets `resetPending = true`; the first `step()` seeds the worms + border and immediately begins moving/stamping, so frame 1 is already drawing (verified: coloured stamps accumulate from the very first frames).
+- **Periodic reset fires.** Confirmed a full-canvas black clear occurs at the `MAX_TICKS` boundary (the initial seed + one periodic clear over a 9000-step run). Because `erasing` is always on, worms never set `dead` and `allTrapped` never triggers — the tick budget is the intended reset path (matches the C's default).
+- **No reset state left stale.** `doReset()` and `newOnScreen()` re-seed every field the next step reads (`deg`, `recpos`, `turnco`, `turnsize`, `filled`, the trail ring, `col`, `hue`), and clear the trail ring so a re-seeded worm can't erase a stale far-away pixel.
+- **Pause/resume + reinit.** `resume()` resets `lastTime` so a long pause doesn't fire a catch-up burst (verified: 0 draws on the first frame after a simulated 100 s gap). `reinit()` re-runs `init()` (clears to black, rebuilds palette/worms) for a clean fresh screen; non-live params (Worms, Worm length, Thickness, Colors, Border) route through it, live params (Frame rate, Curviness) are read each step.
+- **Edge configs.** Stressed with 30 worms / curviness 50 / thickness 8, and with ncolors 1 (mono) / min trail / single worm — no exceptions in any case.
+
+## Config box (shared)
+Tunable in-browser via `config-box.js`. `params` declares one entry per key with `live` set: **live** (`delay`, `curviness`) are read every step; **non-live** (`threads`, `trail`, `thickness`, `ncolors`, `border`) re-run `init()` via `reinit()`. `delay` uses `invert: true` (the xml's "Frame rate" intent) and shows the raw µs value.
+
+**Local dev:** ES-module `import`s need a real server (CORS blocks `file://`). `python3 -m http.server` in the repo, then <http://localhost:8000/#vermiculate>.
