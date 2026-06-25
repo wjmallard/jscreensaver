@@ -16,7 +16,7 @@ The **chaos game**: place N random vertices (3 = triangle, 4 = square), start at
 ## Deviations from the C
 - **Colours**: vivid spread hues (one per vertex), not the X colormap; inline `hslToUint`.
 - **Units**: `delay` in ms; default 100 (orig 400) — halved from 50 for calmer cycling (~`cycles × delay` ≈ 15 s per triangle).
-- **Shape**: Triangle (3 spread vertices, the classic) or Square. The C's "4 corners" is just a 4-point midpoint game (fills a quad — not a square fractal), so **Square is reimplemented as a real Sierpinski carpet** (8-map ratio-1/3 IFS, randomly sized / placed / **3D-tilted** — rotated out of the screen plane and perspective-projected — each round). Triangle vertices are inset with a minimum pairwise spread so they aren't degenerate slivers.
+- **Shape**: the default **Random** rolls a fresh 3-or-4 each round, matching the stock hack — whose `--size` is unset, so it falls back to `(LRAND() & 1) + 3`. **Triangle** (3) is the classic fractal; **Square** (4) is the original's "4 corners", the same midpoint game with a fourth vertex (it fills a quad rather than a fractal). Vertices are inset from the edge with a minimum pairwise spread so the set isn't a degenerate sliver.
 - The 3D variant and the original's exact colour-spacing aren't reproduced.
 
 ## Config
