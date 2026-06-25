@@ -6,12 +6,13 @@
 //
 // The "chaos game": from a random point, repeatedly jump halfway toward one of
 // N randomly-placed vertices and plot where you land, colouring each dot by the
-// vertex it jumped to — the Sierpinski triangle. (The original's "4 corners" is
-// just a 4-point game; Square mode here is a real Sierpinski CARPET — an 8-map
-// ratio-1/3 IFS, randomly sized/placed/rotated.) Points accumulate into a
-// Uint32 pixel buffer (one blit per frame — point plotting, so a blit, not
-// fillRect); after `cycles` frames the dish clears and restarts with fresh
-// vertices and colours. (The first dots land "wrong" then focus — as intended.)
+// vertex it jumped to. 3 vertices (Triangle, the default) draw the Sierpinski
+// triangle; 4 (Square) are the original's "4 corners" — the same midpoint game,
+// but a fourth attractor just fills a fuzzy square with no fractal structure
+// (faithful to the C, and admittedly confusing). Points accumulate into a Uint32
+// pixel buffer (one blit per frame — point plotting, so a blit, not fillRect);
+// after `cycles` frames the dish clears and restarts with fresh vertices and
+// colours. (The first dots land "wrong" then focus — as intended.)
 
 export const title = 'sierpinski';
 
@@ -25,7 +26,7 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   const config = {
-    corners: 3,    // 3 = triangle (default); 4 = Sierpinski carpet
+    corners: 3,    // 3 = triangle (default); 4 = the original 4-corner square
     count: 2000,   // points plotted per frame
     cycles: 150,   // frames before the dish clears and restarts
     delay: 100,    // ms per frame (orig 400; halved from 50 for calmer cycling)
@@ -39,15 +40,11 @@ export function start(canvas) {
   ];
 
   const BLACK = 0xFF000000;
-  // Sierpinski carpet IFS: the 8 cells of a 3×3 grid minus the centre.
-  const CARPET = [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]];
 
   let W, H, dot;
   let imageData, pixels;
   let vx, vy, colorsU;
   let px, py, time;
-  let isCarpet, sq, cx, cy, ux, uy, focal;
-  let ex0, ex1, ex2, ey0, ey1, ey2;   // Square mode = a 3D-tilted carpet's basis
 
   // HSL (h deg, s/l in [0,1]) packed little-endian 0xAABBGGRR for the buffer.
   function hslToUint(h, s, l) {
@@ -84,85 +81,50 @@ export function start(canvas) {
   // the buffer. (The clear only shows on the next blit, so the finished fractal
   // is visible for one frame first, matching the original's same-frame clear.)
   function startover() {
-    isCarpet = config.corners === 4;
-    const ncol = isCarpet ? 8 : 3;
+    const n = config.corners;                  // 3 = triangle, 4 = the square game
     const base = Math.random() * 360;
     colorsU = [];
-    for (let i = 0; i < ncol; i++) {
-      const h = (base + i * 360 / ncol + (Math.random() * 30 - 15) + 360) % 360;
+    for (let i = 0; i < n; i++) {
+      const h = (base + i * 360 / n + (Math.random() * 30 - 15) + 360) % 360;
       colorsU[i] = hslToUint(h, 1, 0.55);
     }
 
-    if (isCarpet) {
-      // A real Sierpinski carpet (8-map ratio-1/3 IFS), randomly sized, placed
-      // and rotated each round (like the triangle's random vertices). The C's
-      // "4 corners" is only a 4-point midpoint game — no carpet at all.
-      const minDim = Math.min(W, H);
-      sq = minDim * (0.4 + Math.random() * 0.25);   // 0.40–0.65 of the short side
-      cx = W * (0.3 + Math.random() * 0.4);          // central-ish (tilt may clip a little)
-      cy = H * (0.3 + Math.random() * 0.4);
-      // Random orientation: in-plane spin (z) + tilt out of the screen plane
-      // (x, y). The square lies in z=0, so we only need R = Rz·Ry·Rx's first two
-      // columns (the rotated images of the unit x- and y-axes).
-      const az = Math.random() * Math.PI * 2;
-      const ax = (Math.random() - 0.5) * 2.0;        // ±~57° tilt
-      const ay = (Math.random() - 0.5) * 2.0;
-      const cz = Math.cos(az), sz = Math.sin(az);
-      const cxr = Math.cos(ax), sxr = Math.sin(ax);
-      const cyr = Math.cos(ay), syr = Math.sin(ay);
-      ex0 = cyr * cz;                  ex1 = cyr * sz;                  ex2 = -syr;
-      ey0 = cz * syr * sxr - sz * cxr; ey1 = sz * syr * sxr + cz * cxr; ey2 = cyr * sxr;
-      focal = sq * 2.2;                              // perspective focal length (> max|Z|)
-      ux = Math.random();
-      uy = Math.random();
-    } else {
-      // Triangle: 3 vertices inset with a minimum pairwise spread, so it isn't a
-      // degenerate sliver (deviation from the C's fully-random vertices).
-      const margin = Math.min(W, H) * 0.06;
-      const minDist2 = (Math.min(W, H) * 0.28) ** 2;
-      for (let tries = 0; ; tries++) {
-        vx = [];
-        vy = [];
-        for (let i = 0; i < 3; i++) {
-          vx[i] = margin + Math.random() * (W - 2 * margin) | 0;
-          vy[i] = margin + Math.random() * (H - 2 * margin) | 0;
-        }
-        let ok = true;
-        for (let i = 0; i < 3 && ok; i++) {
-          for (let j = i + 1; j < 3; j++) {
-            const dx = vx[i] - vx[j], dy = vy[i] - vy[j];
-            if (dx * dx + dy * dy < minDist2) { ok = false; break; }
-          }
-        }
-        if (ok || tries >= 40) break;
+    // N vertices inset from the edge, with a minimum pairwise spread so the set
+    // isn't a degenerate sliver (a small deviation from the C's fully-random
+    // vertices). 3 vertices draw the Sierpinski triangle; a 4th attractor turns
+    // the same midpoint game into the original's confusing square fill.
+    const margin = Math.min(W, H) * 0.06;
+    const minDist2 = (Math.min(W, H) * 0.28) ** 2;
+    for (let tries = 0; ; tries++) {
+      vx = [];
+      vy = [];
+      for (let i = 0; i < n; i++) {
+        vx[i] = margin + Math.random() * (W - 2 * margin) | 0;
+        vy[i] = margin + Math.random() * (H - 2 * margin) | 0;
       }
-      px = Math.random() * W | 0;
-      py = Math.random() * H | 0;
+      let ok = true;
+      for (let i = 0; i < n && ok; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const dx = vx[i] - vx[j], dy = vy[i] - vy[j];
+          if (dx * dx + dy * dy < minDist2) { ok = false; break; }
+        }
+      }
+      if (ok || tries >= 40) break;
     }
+    px = Math.random() * W | 0;
+    py = Math.random() * H | 0;
     time = 0;
     pixels.fill(BLACK);
   }
 
   function step() {
-    const n = Math.max(1, Math.round(config.count));
-    if (isCarpet) {
-      for (let i = 0; i < n; i++) {
-        const k = Math.random() * 8 | 0;
-        ux = (ux + CARPET[k][0]) / 3;
-        uy = (uy + CARPET[k][1]) / 3;
-        const sxp = (ux - 0.5) * sq;
-        const syp = (uy - 0.5) * sq;
-        const Z = sxp * ex2 + syp * ey2;
-        const s = focal / (focal - Z);   // perspective divide
-        plotDot((cx + (sxp * ex0 + syp * ey0) * s) | 0, (cy + (sxp * ex1 + syp * ey1) * s) | 0, colorsU[k]);
-      }
-    } else {
-      for (let i = 0; i < n; i++) {
-        const v = Math.random() * 3 | 0;
-        px = (px + vx[v]) >> 1;
-        py = (py + vy[v]) >> 1;
-        plotDot(px, py, colorsU[v]);
-      }
+    const count = Math.max(1, Math.round(config.count));
+    const n = config.corners;
+    for (let i = 0; i < count; i++) {
+      const v = Math.random() * n | 0;
+      px = (px + vx[v]) >> 1;
+      py = (py + vy[v]) >> 1;
+      plotDot(px, py, colorsU[v]);
     }
     ctx.putImageData(imageData, 0, 0);
     if (++time >= Math.max(1, Math.round(config.cycles))) startover();
