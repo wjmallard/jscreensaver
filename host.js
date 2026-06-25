@@ -593,7 +593,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'r') { e.preventDefault(); restart(); }
   else if (e.key === 'p' || e.key === ' ') { e.preventDefault(); togglePause(); }
   else if (e.key === 'i') { e.preventDefault(); openInfo(); }
-  else if (e.key === 'Escape') { e.preventDefault(); goHome(); }
+  else if (e.key === 'Escape' || e.key === 'q') { e.preventDefault(); goHome(); }
   else if (e.key === 'a') { e.preventDefault(); openAbout(); }
   else if (e.key === 'f') { e.preventDefault(); toggleFps(); }
   else if (e.key === 'h') { e.preventDefault(); openHelp(); }
