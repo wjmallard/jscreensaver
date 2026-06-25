@@ -321,18 +321,13 @@ function setFocus(pane) {
 
 function openSelector() {
   selector.classList.add('open');
-  // Reopen focused on the running hack's genre, cursor on the hack itself.
-  if (currentName) {
-    const cat = classify(currentName).category;
-    catIndex = Math.max(0, RAIL.indexOf(cat));
-  }
+  // Keep the rail on the last-browsed genre — catIndex persists across opens, so
+  // e.g. "random" from All keeps landing in All instead of being dragged into
+  // whatever genre the last pick happened to belong to. Just drop the cursor on
+  // the running hack when it falls in that genre's list, else the top.
   buildList();
-  if (currentName) {
-    const idx = visible.findIndex((h) => h.title === currentName);
-    if (idx >= 0) cursorIndex = idx;
-  } else {
-    cursorIndex = 0;
-  }
+  const idx = currentName ? visible.findIndex((h) => h.title === currentName) : -1;
+  cursorIndex = idx >= 0 ? idx : 0;
   render();
   setFocus('list');
 }
