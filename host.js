@@ -94,12 +94,16 @@ const hackName = document.getElementById('hackname');
 
 // Picker taxonomy: a left rail of genres (plus "All") filters the hack list on
 // the right; an optional 2D/3D dimension filter narrows it further. The rail
-// shows short labels (first word of each genre); the detail header shows the
-// full name. Badges + the dimension filter only appear once the registered set
-// actually mixes 2D and 3D hacks (today it is all 2D) so the menu stays clean
-// until the GL track is wired in.
-const RAIL = ['All', ...CATEGORIES];
-const shortLabel = (c) => (c === 'All' ? 'All' : c.split(' & ')[0]);
+// shows each genre's brief label; the detail header shows its full name. Badges
+// + the dimension filter only appear once the registered set actually mixes 2D
+// and 3D hacks (today it is all 2D) so the menu stays clean until the GL track
+// is wired in.
+const RAIL = ['All', ...CATEGORIES.map((c) => c.key)];
+const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map((c) => [c.key, c]));
+// Rail shows each key's brief label, the detail header its full name ("All" is
+// literal in both).
+const railBrief = (k) => (k === 'All' ? 'All' : CAT_BY_KEY[k].brief);
+const railFull = (k) => (k === 'All' ? 'All' : CAT_BY_KEY[k].full);
 
 let currentName = null;   // null = nothing running (black landing)
 let handle = null;        // running hack's teardown handle
@@ -172,10 +176,10 @@ function mount(name) {
 }
 
 // View-mode left/right cycle within the genre the current hack was chosen from
-// (cycleCat; "All" cycles everything), falling back to the hack's own genre.
+// (cycleCat; "All" cycles everything), falling back to All (which always has it).
 function cyclePool() {
   let pool = categoryPool(cycleCat);
-  if (!pool.some((h) => h.title === currentName)) pool = categoryPool(classify(currentName).category);
+  if (!pool.some((h) => h.title === currentName)) pool = categoryPool('All');
   return pool;
 }
 function cycle(dir) {
@@ -224,7 +228,7 @@ function goHome() {
 function categoryPool(cat) {
   return HACKS.filter((h) => {
     const t = classify(h.title);
-    if (cat !== 'All' && t.category !== cat) return false;
+    if (cat !== 'All' && !t.categories.includes(cat)) return false;
     if (t.dimension === '2d' && !show2d) return false;
     if (t.dimension === '3d' && !show3d) return false;
     return true;
@@ -249,7 +253,7 @@ function buildRail() {
     li.dataset.cat = name;
     const label = document.createElement('span');
     label.className = 'cat-name';
-    label.textContent = shortLabel(name);
+    label.textContent = railBrief(name);
     const count = document.createElement('span');
     count.className = 'cat-count';
     li.append(label, count);
@@ -262,7 +266,7 @@ function buildRail() {
 // Rebuild the right-hand hack list for the focused genre + filter.
 function buildList() {
   computeVisible();
-  catHead.textContent = RAIL[catIndex];
+  catHead.textContent = railFull(RAIL[catIndex]);
   const mixed = new Set(visible.map((h) => classify(h.title).dimension)).size > 1;
   list.textContent = '';
   if (!visible.length) {
@@ -537,7 +541,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('hashchange', () => {
   const name = location.hash.slice(1);
   if (byName[name]) {
-    if (name !== currentName) cycleCat = classify(name).category;   // external nav: scope to its genre
+    if (name !== currentName) cycleCat = 'All';   // external nav lands in All
     mount(name);
     closeSelector();
     window.goatcounter?.count?.();   // log this hack view (count.js logged the initial load)
@@ -547,5 +551,5 @@ window.addEventListener('hashchange', () => {
 // Deep-link (#demon) runs that hack straight away; otherwise land calm on
 // the picker (non-dismissable until a hack is chosen).
 const initName = location.hash.slice(1);
-if (byName[initName]) { cycleCat = classify(initName).category; mount(initName); }
+if (byName[initName]) { cycleCat = 'All'; mount(initName); }
 else openSelector();

@@ -1,32 +1,43 @@
 // taxonomy.js — host-owned genre classification for the picker.
 //
 // Every hack carries two cross-cutting facets:
-//   dimension : '2d' (canvas/'2d' context) | '3d' (WebGL fragment shader via shadertoy.js)
-//   category  : one genre from CATEGORIES below (the visual family)
+//   dimension  : '2d' (canvas/'2d' context) | '3d' (WebGL fragment shader)
+//   categories : ONE OR TWO genre keys from CATEGORIES below (the visual family)
 //
-// The picker groups by `category` (in CATEGORIES order) and shows a small
-// dimension badge per item, with an optional 2D/3D filter. Hacks are keyed by
-// slug, which for every module equals its `title` export — so this file never
-// touches a hack module (2D or 3D); it is pure host-side metadata.
+// Membership is many-to-many: a hack can legitimately be two things at once
+// (ccurve is a fractal AND a curve; grav is particles AND cosmic), so it lists
+// up to two category keys and shows up under each. There is NO "primary" genre —
+// "All" is every hack's home, and the picker always opens/arrives there; the
+// genre rails are just cross-cutting filters over that one list. Because of the
+// overlap the per-genre counts sum to MORE than the hack total, while "All"
+// stays the exact de-duplicated set (each hack listed once).
 //
-// Category labels are kept ASCII (e.g. "Optical & Moire", no accent) so they
-// are safe as object keys with no \u escapes; a presentational label map can
-// prettify them in the UI later if we want the typography.
+// Hacks are keyed by slug, which for every module equals its `title` export — so
+// this file never touches a hack module (2D or 3D); it is pure host metadata.
 //
-// The 3D / WebGL entries are a TENTATIVE first pass: that track is owned by a
-// separate effort and is not yet wired into host.js. They are included so the
-// scheme is complete — confirm before registering any GL hack in host.js.
+// Category KEYS are short ASCII tokens (safe object keys, no \u escapes). Each
+// carries a `brief` (rail label) and a `full` (detail header); only `full` is a
+// display string, so the one accented label (Moire) is escaped there.
+//
+// The 3D / WebGL entries are TENTATIVE: that track is owned by a separate effort
+// and is not yet wired into host.js, so none of them currently show in the
+// picker. They are kept here so the scheme stays complete — confirm before
+// registering any GL hack in host.js.
 
-// Picker sections, in display order.
+// Picker sections, in display order: { key, brief (rail), full (header) }.
 export const CATEGORIES = [
-  'Life & Growth',
-  'Fractals & Attractors',
-  'Geometry & Tilings',
-  'Optical & Moire',
-  'Swarms & Bodies',
-  'Fluids & Flow',
-  'Plasma & Color Fields',
-  'Cosmic & Worlds',
+  { key: 'automata',   brief: 'Automata',   full: 'Cellular Automata' },
+  { key: 'biota',      brief: 'Biota',      full: 'Biota' },
+  { key: 'fractals',   brief: 'Fractals',   full: 'Fractals' },
+  { key: 'attractors', brief: 'Attractors', full: 'Strange Attractors' },
+  { key: 'curves',     brief: 'Curves',     full: 'Curves' },
+  { key: 'geometry',   brief: 'Geometry',   full: 'Geometry & Tilings' },
+  { key: 'surfaces',   brief: 'Surfaces',   full: 'Surfaces' },
+  { key: 'optical',    brief: 'Optical',    full: 'Optical & Moir\u00e9' },
+  { key: 'particles',  brief: 'Particles',  full: 'Particle Systems' },
+  { key: 'fluids',     brief: 'Fluids',     full: 'Fluid Flow' },
+  { key: 'plasma',     brief: 'Plasma',     full: 'Plasma & Color Fields' },
+  { key: 'cosmic',     brief: 'Cosmic',     full: 'Cosmic & Space' },
 ];
 
 // Dimension badge: glyph + short label. Glyphs are \u-escaped (DOM-bound).
@@ -35,119 +46,97 @@ export const DIMENSIONS = {
   '3d': { label: '3D', glyph: '\u25C6' },  // black diamond
 };
 
-// Fallback for any hack not yet classified (keeps the picker from breaking if a
-// new module lands before it is tagged here).
-export const UNCATEGORIZED = 'Unsorted';
-
-// slug -> { dimension, category }.  slug === each module's `title` export.
-// Grouped by category for review; alphabetical within each dimension.
+// slug -> { dimension, categories: [key, key?] }.  slug === each module's
+// `title` export.  Categories chosen by reading each hack's own xscreensaver
+// description (see hacks/<slug>.xml); alphabetical by slug.
 export const HACK_TAXONOMY = {
-  // --- Life & Growth ---
-  ant: { dimension: '2d', category: 'Life & Growth' },
-  cloudlife: { dimension: '2d', category: 'Life & Growth' },
-  coral: { dimension: '2d', category: 'Life & Growth' },
-  demon: { dimension: '2d', category: 'Life & Growth' },
-  loop: { dimension: '2d', category: 'Life & Growth' },
-  petri: { dimension: '2d', category: 'Life & Growth' },
-  squiral: { dimension: '2d', category: 'Life & Growth' },
-  vermiculate: { dimension: '2d', category: 'Life & Growth' },
-  bubblecolors: { dimension: '3d', category: 'Life & Growth' },
+  // --- 2D (registered in host.js) ---
+  ant: { dimension: '2d', categories: ['automata'] },
+  apollonian: { dimension: '2d', categories: ['fractals', 'geometry'] },
+  attraction: { dimension: '2d', categories: ['particles'] },
+  binaryhorizon: { dimension: '2d', categories: ['particles', 'curves'] },
+  binaryring: { dimension: '2d', categories: ['curves', 'particles'] },
+  bouboule: { dimension: '2d', categories: ['particles'] },
+  boxfit: { dimension: '2d', categories: ['geometry'] },
+  braid: { dimension: '2d', categories: ['curves', 'geometry'] },
+  ccurve: { dimension: '2d', categories: ['fractals', 'curves'] },
+  cloudlife: { dimension: '2d', categories: ['automata'] },
+  coral: { dimension: '2d', categories: ['biota'] },
+  cwaves: { dimension: '2d', categories: ['plasma'] },
+  cynosure: { dimension: '2d', categories: ['geometry'] },
+  deco: { dimension: '2d', categories: ['geometry'] },
+  demon: { dimension: '2d', categories: ['automata'] },
+  drift: { dimension: '2d', categories: ['fractals', 'attractors'] },
+  eruption: { dimension: '2d', categories: ['particles'] },
+  euler2d: { dimension: '2d', categories: ['fluids'] },
+  fadeplot: { dimension: '2d', categories: ['curves'] },
+  fiberlamp: { dimension: '2d', categories: ['curves'] },
+  flame: { dimension: '2d', categories: ['fractals', 'attractors'] },
+  fluidballs: { dimension: '2d', categories: ['particles', 'fluids'] },
+  galaxy: { dimension: '2d', categories: ['cosmic', 'particles'] },
+  grav: { dimension: '2d', categories: ['particles', 'cosmic'] },
+  greynetic: { dimension: '2d', categories: ['geometry', 'plasma'] },
+  halftone: { dimension: '2d', categories: ['optical'] },
+  halo: { dimension: '2d', categories: ['optical'] },
+  helix: { dimension: '2d', categories: ['curves', 'geometry'] },
+  hexadrop: { dimension: '2d', categories: ['geometry'] },
+  hopalong: { dimension: '2d', categories: ['attractors', 'fractals'] },
+  ifs: { dimension: '2d', categories: ['fractals'] },
+  imsmap: { dimension: '2d', categories: ['plasma', 'fractals'] },
+  interaggregate: { dimension: '2d', categories: ['curves', 'optical'] },
+  interference: { dimension: '2d', categories: ['optical', 'plasma'] },
+  intermomentary: { dimension: '2d', categories: ['optical'] },
+  kumppa: { dimension: '2d', categories: ['plasma'] },
+  loop: { dimension: '2d', categories: ['automata'] },
+  metaballs: { dimension: '2d', categories: ['particles', 'plasma'] },
+  moire: { dimension: '2d', categories: ['optical'] },
+  moire2: { dimension: '2d', categories: ['optical'] },
+  mountain: { dimension: '2d', categories: ['surfaces'] },
+  munch: { dimension: '2d', categories: ['geometry', 'optical'] },
+  nerverot: { dimension: '2d', categories: ['curves'] },
+  pedal: { dimension: '2d', categories: ['geometry'] },
+  penrose: { dimension: '2d', categories: ['geometry'] },
+  petri: { dimension: '2d', categories: ['biota'] },
+  piecewise: { dimension: '2d', categories: ['optical', 'geometry'] },
+  popsquares: { dimension: '2d', categories: ['geometry', 'plasma'] },
+  pyro: { dimension: '2d', categories: ['particles'] },
+  qix: { dimension: '2d', categories: ['geometry'] },
+  rocks: { dimension: '2d', categories: ['cosmic'] },
+  rorschach: { dimension: '2d', categories: ['optical'] },
+  scooter: { dimension: '2d', categories: ['cosmic'] },
+  sierpinski: { dimension: '2d', categories: ['fractals'] },
+  spiral: { dimension: '2d', categories: ['curves'] },
+  squiral: { dimension: '2d', categories: ['automata'] },
+  strange: { dimension: '2d', categories: ['attractors'] },
+  thornbird: { dimension: '2d', categories: ['attractors'] },
+  truchet: { dimension: '2d', categories: ['geometry'] },
+  vermiculate: { dimension: '2d', categories: ['curves', 'biota'] },
+  wander: { dimension: '2d', categories: ['plasma', 'curves'] },
+  whirlwindwarp: { dimension: '2d', categories: ['particles', 'fluids'] },
+  wormhole: { dimension: '2d', categories: ['cosmic'] },
+  xspirograph: { dimension: '2d', categories: ['curves'] },
 
-  // --- Fractals & Attractors ---
-  apollonian: { dimension: '2d', category: 'Fractals & Attractors' },
-  ccurve: { dimension: '2d', category: 'Fractals & Attractors' },
-  drift: { dimension: '2d', category: 'Fractals & Attractors' },
-  flame: { dimension: '2d', category: 'Fractals & Attractors' },
-  hopalong: { dimension: '2d', category: 'Fractals & Attractors' },
-  ifs: { dimension: '2d', category: 'Fractals & Attractors' },
-  sierpinski: { dimension: '2d', category: 'Fractals & Attractors' },
-  strange: { dimension: '2d', category: 'Fractals & Attractors' },
-  thornbird: { dimension: '2d', category: 'Fractals & Attractors' },
-  goldenapollian: { dimension: '3d', category: 'Fractals & Attractors' },
-
-  // --- Geometry & Tilings ---
-  binaryhorizon: { dimension: '2d', category: 'Geometry & Tilings' },
-  binaryring: { dimension: '2d', category: 'Geometry & Tilings' },
-  braid: { dimension: '2d', category: 'Geometry & Tilings' },
-  cynosure: { dimension: '2d', category: 'Geometry & Tilings' },
-  deco: { dimension: '2d', category: 'Geometry & Tilings' },
-  helix: { dimension: '2d', category: 'Geometry & Tilings' },
-  hexadrop: { dimension: '2d', category: 'Geometry & Tilings' },
-  pedal: { dimension: '2d', category: 'Geometry & Tilings' },
-  penrose: { dimension: '2d', category: 'Geometry & Tilings' },
-  piecewise: { dimension: '2d', category: 'Geometry & Tilings' },
-  popsquares: { dimension: '2d', category: 'Geometry & Tilings' },
-  scooter: { dimension: '2d', category: 'Geometry & Tilings' },
-  spiral: { dimension: '2d', category: 'Geometry & Tilings' },
-  truchet: { dimension: '2d', category: 'Geometry & Tilings' },
-  xspirograph: { dimension: '2d', category: 'Geometry & Tilings' },
-  elementalring: { dimension: '3d', category: 'Geometry & Tilings' },
-  logarithmiccircles: { dimension: '3d', category: 'Geometry & Tilings' },
-  neontriangulator: { dimension: '3d', category: 'Geometry & Tilings' },
-  stripeytorus: { dimension: '3d', category: 'Geometry & Tilings' },
-  topologica: { dimension: '3d', category: 'Geometry & Tilings' },
-  trizm: { dimension: '3d', category: 'Geometry & Tilings' },
-
-  // --- Optical & Moire ---
-  halftone: { dimension: '2d', category: 'Optical & Moire' },
-  halo: { dimension: '2d', category: 'Optical & Moire' },
-  interference: { dimension: '2d', category: 'Optical & Moire' },
-  moire: { dimension: '2d', category: 'Optical & Moire' },
-  moire2: { dimension: '2d', category: 'Optical & Moire' },
-  munch: { dimension: '2d', category: 'Optical & Moire' },
-
-  // --- Swarms & Bodies ---
-  attraction: { dimension: '2d', category: 'Swarms & Bodies' },
-  bouboule: { dimension: '2d', category: 'Swarms & Bodies' },
-  boxfit: { dimension: '2d', category: 'Swarms & Bodies' },
-  eruption: { dimension: '2d', category: 'Swarms & Bodies' },
-  fadeplot: { dimension: '2d', category: 'Swarms & Bodies' },
-  fiberlamp: { dimension: '2d', category: 'Swarms & Bodies' },
-  fluidballs: { dimension: '2d', category: 'Swarms & Bodies' },
-  grav: { dimension: '2d', category: 'Swarms & Bodies' },
-  interaggregate: { dimension: '2d', category: 'Swarms & Bodies' },
-  intermomentary: { dimension: '2d', category: 'Swarms & Bodies' },
-  nerverot: { dimension: '2d', category: 'Swarms & Bodies' },
-  pyro: { dimension: '2d', category: 'Swarms & Bodies' },
-  qix: { dimension: '2d', category: 'Swarms & Bodies' },
-
-  // --- Fluids & Flow ---
-  euler2d: { dimension: '2d', category: 'Fluids & Flow' },
-  wander: { dimension: '2d', category: 'Fluids & Flow' },
-  whirlwindwarp: { dimension: '2d', category: 'Fluids & Flow' },
-  driftclouds: { dimension: '3d', category: 'Fluids & Flow' },
-  prococean: { dimension: '3d', category: 'Fluids & Flow' },
-
-  // --- Plasma & Color Fields ---
-  cwaves: { dimension: '2d', category: 'Plasma & Color Fields' },
-  greynetic: { dimension: '2d', category: 'Plasma & Color Fields' },
-  imsmap: { dimension: '2d', category: 'Plasma & Color Fields' },
-  kaleidescope: { dimension: '2d', category: 'Plasma & Color Fields' },
-  kumppa: { dimension: '2d', category: 'Plasma & Color Fields' },
-  marbling: { dimension: '2d', category: 'Plasma & Color Fields' },
-  metaballs: { dimension: '2d', category: 'Plasma & Color Fields' },
-  rorschach: { dimension: '2d', category: 'Plasma & Color Fields' },
-  vfeedback: { dimension: '2d', category: 'Plasma & Color Fields' },
-  hexplasma: { dimension: '3d', category: 'Plasma & Color Fields' },
-  rigrekt: { dimension: '3d', category: 'Plasma & Color Fields' },
-
-  // --- Cosmic & Worlds ---
-  galaxy: { dimension: '2d', category: 'Cosmic & Worlds' },
-  mountain: { dimension: '2d', category: 'Cosmic & Worlds' },
-  rocks: { dimension: '2d', category: 'Cosmic & Worlds' },
-  wormhole: { dimension: '2d', category: 'Cosmic & Worlds' },
-  stardome: { dimension: '3d', category: 'Cosmic & Worlds' },
-  starnest: { dimension: '3d', category: 'Cosmic & Worlds' },
-  synthwavecity: { dimension: '3d', category: 'Cosmic & Worlds' },
-  trainmandala: { dimension: '3d', category: 'Cosmic & Worlds' },
+  // --- 3D / WebGL (tentative; not yet registered in host.js) ---
+  bubblecolors: { dimension: '3d', categories: ['plasma'] },
+  driftclouds: { dimension: '3d', categories: ['fluids'] },
+  elementalring: { dimension: '3d', categories: ['geometry'] },
+  goldenapollian: { dimension: '3d', categories: ['fractals'] },
+  hexplasma: { dimension: '3d', categories: ['plasma'] },
+  logarithmiccircles: { dimension: '3d', categories: ['geometry'] },
+  neontriangulator: { dimension: '3d', categories: ['geometry'] },
+  prococean: { dimension: '3d', categories: ['fluids'] },
+  rigrekt: { dimension: '3d', categories: ['plasma'] },
+  stardome: { dimension: '3d', categories: ['cosmic'] },
+  starnest: { dimension: '3d', categories: ['cosmic'] },
+  stripeytorus: { dimension: '3d', categories: ['surfaces'] },
+  synthwavecity: { dimension: '3d', categories: ['cosmic'] },
+  topologica: { dimension: '3d', categories: ['surfaces'] },
+  trainmandala: { dimension: '3d', categories: ['cosmic'] },
+  trizm: { dimension: '3d', categories: ['geometry'] },
 };
 
-// Parked in hacks/shelved/ as of 2026-06-24 (GPU-heavy; the 3D set is actively
-// changing): batteredplanet, bestill, bubblecolors, rigrekt, topologica,
-// universeball. bubblecolors/rigrekt/topologica keep their genre tags above when
-// revived; batteredplanet/bestill/universeball are untagged pending review.
-
-// Look up a hack's facets by slug, with a safe fallback.
+// Look up a hack's facets by slug. An unknown slug falls back to no genre (it
+// then shows only under "All"), so a new module never breaks the picker.
 export function classify(slug) {
-  return HACK_TAXONOMY[slug] || { dimension: '2d', category: UNCATEGORIZED };
+  return HACK_TAXONOMY[slug] || { dimension: '2d', categories: [] };
 }
