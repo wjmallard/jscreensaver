@@ -23,9 +23,27 @@ import * as spiral from './hacks/spiral.js';
 import * as xspirograph from './hacks/xspirograph.js';
 import * as hopalong from './hacks/hopalong.js';
 import * as greynetic from './hacks/greynetic.js';
+import * as kumppa from './hacks/kumppa.js';
+import * as halftone from './hacks/halftone.js';
+import * as imsmap from './hacks/imsmap.js';
+import * as interaggregate from './hacks/interaggregate.js';
+import * as interference from './hacks/interference.js';
+import * as metaballs from './hacks/metaballs.js';
+import * as piecewise from './hacks/piecewise.js';
+import * as halo from './hacks/halo.js';
+import * as moire from './hacks/moire.js';
+import * as qix from './hacks/qix.js';
+import * as truchet from './hacks/truchet.js';
+import * as helix from './hacks/helix.js';
+import * as moire2 from './hacks/moire2.js';
+import * as penrose from './hacks/penrose.js';
+import * as scooter from './hacks/scooter.js';
+import * as strange from './hacks/strange.js';
+import * as loop from './hacks/loop.js';
+import * as vermiculate from './hacks/vermiculate.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
@@ -38,6 +56,7 @@ const list = document.getElementById('sel-list');
 const title = document.getElementById('sel-title');
 const cfgLink = document.getElementById('cfg-link');
 const fps = document.getElementById('fps');
+const hackName = document.getElementById('hackname');
 
 let currentName = null;   // null = nothing running (black landing)
 let handle = null;        // running hack's teardown handle
@@ -76,6 +95,8 @@ function mount(name) {
   currentName = name;
   paused = false;
   cfgLink.hidden = true;
+  hackName.textContent = name;
+  hackName.hidden = false;
   if (location.hash.slice(1) !== name) location.hash = name;
   render();
 
@@ -128,6 +149,7 @@ function goHome() {
   if (handle) { handle.stop(); handle = null; }
   currentName = null;
   cfgLink.hidden = true;
+  hackName.hidden = true;
   history.replaceState(null, '', location.pathname + location.search);
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
