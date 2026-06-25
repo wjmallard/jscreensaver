@@ -129,15 +129,23 @@ export function start(canvas) {
   }
 
   // Stroked-circle outline for the star (the C uses XDrawArc). lineWidth scaled.
-  function ring(x, y, d, stroke) {
+  // `pad` widens the stroke for the erase pass (see erasePad) so the mask
+  // swallows the anti-aliased fringe the coloured ring leaves behind.
+  function ring(x, y, d, stroke, pad = 0) {
     if (d < 1) d = 1;
     const r = d / 2;
     ctx.strokeStyle = stroke;
-    ctx.lineWidth = Math.max(1, Math.round(S));
+    ctx.lineWidth = Math.max(1, Math.round(S)) + 2 * pad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
   }
+
+  // Anti-aliased black-over-colour only partly cancels a soft rim, so each mask is
+  // drawn ~1px larger than its shape to swallow that fringe and stop it piling up
+  // along the trails. (The C's hard-edged XFillArc needs none of this — if this
+  // ends up eating too much trail, switch disc/ring to integer-span rasterising.)
+  function erasePad() { return Math.max(1, Math.round(S)); }
 
   // One physics step for a single planet (the body of draw_planet):
   // gravity -> velocity -> position -> reproject, drawing erase/trail/redraw.
@@ -165,9 +173,10 @@ export function start(canvas) {
     p.px = axyz[0]; p.py = axyz[1]; p.pz = axyz[2];
     p.vx = v[0];   p.vy = v[1];   p.vz = v[2];
 
-    // Erase the old disc (the C masks with the background colour).
+    // Erase the old disc (the C masks with the background colour). Pad the mask
+    // by ~1px so the disc's anti-aliased rim doesn't survive and accumulate.
     const oldX = p.xi, oldY = p.yi, oldR = p.ri;
-    disc(oldX, oldY, oldR, '#000');
+    disc(oldX, oldY, oldR + 2 * erasePad(), '#000');
 
     // Optional trail dot at the old position (never erased -> trails accumulate).
     // The C uses r=1, tripled past 2560 px; we scale by devicePixelRatio instead.
@@ -185,7 +194,7 @@ export function start(canvas) {
   // STARRADIUS = height/(2*DIST); the C nudges sr by +/-1 on 2 of every 4 frames.
   function stepStar() {
     const cx = W / 2, cy = H / 2;
-    ring(cx, cy, star.sr, '#000');         // mask
+    ring(cx, cy, star.sr, '#000', erasePad());   // mask (padded to eat the AA rim)
     const roll = (Math.random() * 4) | 0;
     if (roll === 0) {
       if (star.sr < star.max) star.sr += S;
