@@ -5,6 +5,7 @@
 // module by index.html (chrome markup there, chrome styles in host.css).
 
 import { renderConfig } from './config-box.js';
+import { CATEGORIES, DIMENSIONS, classify } from './taxonomy.js';
 import * as squiral from './hacks/squiral.js';
 import * as coral from './hacks/coral.js';
 import * as cloudlife from './hacks/cloudlife.js';
@@ -81,23 +82,47 @@ const about = document.getElementById('about');
 const help = document.getElementById('help');
 const infoBox = document.getElementById('info');
 const list = document.getElementById('sel-list');
+const cats = document.getElementById('sel-cats');
+const selMain = document.getElementById('sel-main');
+const catHead = document.getElementById('sel-cat-head');
+const dim2d = document.getElementById('dim-2d');
+const dim3d = document.getElementById('dim-3d');
 const title = document.getElementById('sel-title');
 const cfgLink = document.getElementById('cfg-link');
 const fps = document.getElementById('fps');
 const hackName = document.getElementById('hackname');
 
+// Picker taxonomy: a left rail of genres (plus "All") filters the hack list on
+// the right; an optional 2D/3D dimension filter narrows it further. The rail
+// shows short labels (first word of each genre); the detail header shows the
+// full name. Badges + the dimension filter only appear once the registered set
+// actually mixes 2D and 3D hacks (today it is all 2D) so the menu stays clean
+// until the GL track is wired in.
+const RAIL = ['All', ...CATEGORIES];
+const shortLabel = (c) => (c === 'All' ? 'All' : c.split(' & ')[0]);
+
 let currentName = null;   // null = nothing running (black landing)
 let handle = null;        // running hack's teardown handle
 let paused = false;       // 'p' toggles the running hack's loop on/off
 let fadeTimer = 0;        // setTimeout id for the between-hack fade-out
-let savedScroll = 0;      // picker scroll position, preserved across opens
-let cursorIndex = 0;      // keyboard-highlighted row in the picker
+let catIndex = 0;         // focused rail entry (0 = All)
+let show2d = true;        // 2D filter checkbox (default on)
+let show3d = false;       // 3D filter checkbox (default off)
+let visible = [];         // hacks currently shown in the list (filtered)
+let cursorIndex = 0;      // keyboard-highlighted row in the list
+let focusPane = 'list';   // which pane the keyboard drives: 'rail' | 'list'
+let cycleCat = 'All';     // genre that view-mode left/right cycling stays within
 
 function render() {
+  const open = selector.classList.contains('open');
   for (let i = 0; i < list.children.length; i++) {
     const li = list.children[i];
+    if (!li.dataset.hack) continue;            // skip the "none" placeholder
     li.classList.toggle('active', li.dataset.hack === currentName);
-    li.classList.toggle('cursor', i === cursorIndex && selector.classList.contains('open'));
+    li.classList.toggle('cursor', i === cursorIndex && open);
+  }
+  for (let i = 0; i < cats.children.length; i++) {
+    cats.children[i].classList.toggle('cursor', i === catIndex);
   }
 }
 
@@ -146,10 +171,19 @@ function mount(name) {
   }
 }
 
+// View-mode left/right cycle within the genre the current hack was chosen from
+// (cycleCat; "All" cycles everything), falling back to the hack's own genre.
+function cyclePool() {
+  let pool = categoryPool(cycleCat);
+  if (!pool.some((h) => h.title === currentName)) pool = categoryPool(classify(currentName).category);
+  return pool;
+}
 function cycle(dir) {
   if (!currentName) return;
-  const i = HACKS.findIndex((h) => h.title === currentName);
-  mount(HACKS[(i + dir + HACKS.length) % HACKS.length].title);
+  const pool = cyclePool();
+  const i = pool.findIndex((h) => h.title === currentName);
+  if (i < 0 || !pool.length) return;
+  mount(pool[(i + dir + pool.length) % pool.length].title);
 }
 
 // Re-seed the current hack for a fresh pattern. Hacks that expose reinit
@@ -185,30 +219,158 @@ function goHome() {
   openSelector();
 }
 
-function openSelector() {
-  const wasOpen = selector.classList.contains('open');
-  selector.classList.add('open');
-  if (!wasOpen) list.scrollTop = savedScroll;   // resume where they left off
-  cursorIndex = currentName ? HACKS.findIndex((h) => h.title === currentName) : 0;
+// Hacks in a genre ("All" = every genre), honoring the dimension filter. HACKS
+// is pre-sorted alphabetically, so each slice stays alphabetical.
+function categoryPool(cat) {
+  return HACKS.filter((h) => {
+    const t = classify(h.title);
+    if (cat !== 'All' && t.category !== cat) return false;
+    if (t.dimension === '2d' && !show2d) return false;
+    if (t.dimension === '3d' && !show3d) return false;
+    return true;
+  });
+}
+
+function computeVisible() {
+  visible = categoryPool(RAIL[catIndex]);
+}
+
+function renderRailCounts() {
+  for (const li of cats.children) {
+    li.querySelector('.cat-count').textContent = categoryPool(li.dataset.cat).length;
+  }
+}
+
+// One rail row per genre (short label + live count). Built once.
+function buildRail() {
+  cats.textContent = '';
+  RAIL.forEach((name, i) => {
+    const li = document.createElement('li');
+    li.dataset.cat = name;
+    const label = document.createElement('span');
+    label.className = 'cat-name';
+    label.textContent = shortLabel(name);
+    const count = document.createElement('span');
+    count.className = 'cat-count';
+    li.append(label, count);
+    li.addEventListener('click', () => { setCategory(i); setFocus('rail'); });
+    cats.appendChild(li);
+  });
+  renderRailCounts();
+}
+
+// Rebuild the right-hand hack list for the focused genre + filter.
+function buildList() {
+  computeVisible();
+  catHead.textContent = RAIL[catIndex];
+  const mixed = new Set(visible.map((h) => classify(h.title).dimension)).size > 1;
+  list.textContent = '';
+  if (!visible.length) {
+    const li = document.createElement('li');
+    li.className = 'sel-empty';
+    li.textContent = '\u2014 none \u2014';
+    list.appendChild(li);
+  } else {
+    for (const h of visible) {
+      const li = document.createElement('li');
+      li.dataset.hack = h.title;
+      if (mixed) {
+        const badge = document.createElement('span');
+        badge.className = 'sel-badge';
+        badge.textContent = DIMENSIONS[classify(h.title).dimension].glyph;
+        li.appendChild(badge);
+      }
+      const label = document.createElement('span');
+      label.textContent = h.title;
+      li.appendChild(label);
+      li.addEventListener('click', () => { cycleCat = RAIL[catIndex]; mount(h.title); closeSelector(); });
+      list.appendChild(li);
+    }
+  }
+  cursorIndex = Math.max(0, Math.min(cursorIndex, visible.length - 1));
   render();
+}
+
+function setCategory(i) {
+  catIndex = (i + RAIL.length) % RAIL.length;
+  cursorIndex = 0;
+  buildList();
+  list.scrollTop = 0;
+}
+
+// 2D/3D checkboxes: refilter the rail counts and the list to the checked
+// dimensions, then hand keyboard control back to the picker.
+function applyDimFilter(e) {
+  show2d = dim2d.checked;
+  show3d = dim3d.checked;
+  cursorIndex = 0;
+  renderRailCounts();
+  buildList();
+  list.scrollTop = 0;
+  e?.target?.blur();
+}
+
+// Left/right arrows move keyboard focus between the genre rail and the hack
+// list; the focused pane shows a strong cursor, the other a muted one.
+function setFocus(pane) {
+  focusPane = pane;
+  selMain.classList.toggle('focus-rail', pane === 'rail');
+  selMain.classList.toggle('focus-list', pane === 'list');
+  if (pane === 'list') list.children[cursorIndex]?.scrollIntoView({ block: 'nearest' });
+}
+
+function openSelector() {
+  selector.classList.add('open');
+  // Reopen focused on the running hack's genre, cursor on the hack itself.
+  if (currentName) {
+    const cat = classify(currentName).category;
+    catIndex = Math.max(0, RAIL.indexOf(cat));
+  }
+  buildList();
+  if (currentName) {
+    const idx = visible.findIndex((h) => h.title === currentName);
+    if (idx >= 0) cursorIndex = idx;
+  } else {
+    cursorIndex = 0;
+  }
+  render();
+  setFocus('list');
 }
 
 function closeSelector() {
   if (!currentName) return;                       // nothing running — keep it up
   if (!selector.classList.contains('open')) return;
-  savedScroll = list.scrollTop;                   // remember it for next time
   selector.classList.remove('open');
 }
 
 function moveCursor(delta) {
-  const n = HACKS.length;
+  if (!visible.length) return;
+  const n = visible.length;
   cursorIndex = (cursorIndex + delta + n) % n;
   render();
-  list.children[cursorIndex].scrollIntoView({ block: 'nearest' });
+  list.children[cursorIndex]?.scrollIntoView({ block: 'nearest' });
+}
+
+function moveCategory(delta) {
+  setCategory(catIndex + delta);
 }
 
 function commitCursor() {
-  mount(HACKS[cursorIndex].title);
+  if (!visible.length) return;
+  cycleCat = RAIL[catIndex];                       // remember the browsed genre
+  mount(visible[cursorIndex].title);
+  closeSelector();
+}
+
+// "random" footer action: jump to a random hack in the focused genre ("All" =
+// the whole library), excluding the current one. Mirrors a commit (mounts the
+// pick and closes the picker).
+function pickRandom() {
+  let pool = categoryPool(RAIL[catIndex]).filter((h) => h.title !== currentName);
+  if (!pool.length) pool = categoryPool(RAIL[catIndex]);
+  if (!pool.length) return;
+  cycleCat = RAIL[catIndex];
+  mount(pool[Math.floor(Math.random() * pool.length)].title);
   closeSelector();
 }
 
@@ -292,18 +454,17 @@ function toggleFps() {
   }
 }
 
-for (const h of HACKS) {
-  const li = document.createElement('li');
-  li.textContent = h.title;
-  li.dataset.hack = h.title;
-  li.addEventListener('click', () => { mount(h.title); closeSelector(); });
-  list.appendChild(li);
-}
+// Build the genre rail once and wire the 2D/3D filter checkboxes.
+buildRail();
+dim2d.addEventListener('change', applyDimFilter);
+dim3d.addEventListener('change', applyDimFilter);
+buildList();
 
 title.addEventListener('click', goHome);
 document.getElementById('sel-help').addEventListener('click', openHelp);
 document.getElementById('sel-about').addEventListener('click', openAbout);
-document.getElementById('sel-exit').addEventListener('click', goHome);
+document.getElementById('sel-random').addEventListener('click', pickRandom);
+document.getElementById('sel-clear').addEventListener('click', goHome);
 cfgLink.addEventListener('click', openConfig);
 
 // Click the dimmed area (outside a box) to dismiss.
@@ -339,9 +500,11 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (selector.classList.contains('open')) {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); moveCursor(1); }
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); moveCursor(-1); }
-    else if (e.key === 'Enter') { e.preventDefault(); commitCursor(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); setFocus('rail'); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); setFocus('list'); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (focusPane === 'rail') moveCategory(-1); else moveCursor(-1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); if (focusPane === 'rail') moveCategory(1); else moveCursor(1); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (focusPane === 'rail') setFocus('list'); else commitCursor(); }
     else if (e.key === 'a') { e.preventDefault(); openAbout(); }
     else if (e.key === 'h') { e.preventDefault(); openHelp(); }
     else if (e.key === 's' || e.key === 'Escape') { e.preventDefault(); closeSelector(); }
@@ -366,6 +529,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('hashchange', () => {
   const name = location.hash.slice(1);
   if (byName[name]) {
+    if (name !== currentName) cycleCat = classify(name).category;   // external nav: scope to its genre
     mount(name);
     closeSelector();
     window.goatcounter?.count?.();   // log this hack view (count.js logged the initial load)
@@ -374,5 +538,6 @@ window.addEventListener('hashchange', () => {
 
 // Deep-link (#demon) runs that hack straight away; otherwise land calm on
 // the picker (non-dismissable until a hack is chosen).
-if (byName[location.hash.slice(1)]) mount(location.hash.slice(1));
+const initName = location.hash.slice(1);
+if (byName[initName]) { cycleCat = classify(initName).category; mount(initName); }
 else openSelector();
