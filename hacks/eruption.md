@@ -1,0 +1,41 @@
+# eruption — port notes
+
+Port of `eruption.c` by W.P. van Paassen (2002-2003), with later performance tweaks by Dave Odell (2015) and a spherical-burst distribution lifted from jwz's pyro — a volcanic particle fountain that erupts upward, falls under gravity, bounces off the walls, and cools through a heat palette into soft glowing fire on a black field.
+
+Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/eruption.c` (~607 lines)
+
+## Algorithm
+Every `cycles` frames a fresh eruption fires from a random point: `nparticles` particles are spawned in a small box (± `SPREAD` = 15 px) around the centre, each given a velocity from a pre-built **whacked spherical distribution** (`cache()` — a `sin` of a random angle plus a small `asin` term, scaled by per-axis `xdelta`/`ydelta` that are derived from the window size by triangular-number summation). Each step every live particle:
+1. integrates position (`xpos += xdir`, `ypos += ydir`);
+2. dies if its heat index reached 0;
+3. bounces off any wall it crossed — clamped back in-bounds, velocity reflected (sides get a `±4` kick, the floor is damped `>>2` plus a 1px jitter), and **re-heated to full** (`colorindex = iColorCount`);
+4. has `gravity` added to `ydir`, then cools one heat level (`colorindex--`).
+
+Particles then stamp a 5-pixel plus (centre + up/down/left/right) into a per-pixel **heat buffer** (`Uint8Array`, padded by 1px each side). That buffer is run through an in-place **convolution-blur**: each pixel becomes the 8-neighbour sum (centre excluded) minus a `decay` offset, shifted `>>3`, applied left-to-right then top-to-bottom — the destructive in-order read smears heat down-and-right, which is the fire effect. Finally each row's heat values index a `black→blue→red→yellow→white` palette and are blitted to the screen.
+
+The `heat` knob caps how many palette levels a particle can use (so a low heat keeps the fountain in the embers and never reaches white); `cooloff` sets the convolution `decay` (= `cooloff << 3`); `ncolors` sizes the full palette.
+
+## Shared skeleton
+Standard jscreensaver port — see [[squiral]] for the canonical structure (ES module exporting `title`/`info`/`start(canvas)`, rAF lag-accumulator loop paced by `config.delay` µs, `devicePixelRatio` folded into the backing store, `{ stop, pause, resume, reinit, config, params }`). Technique twins: [[thornbird]] for the Uint32-blit per-pixel field, [[pyro]] for the cached spherical-burst velocity distribution and fixed particle pool.
+
+## Rendering approach
+**BLIT path.** The heat field is dense and re-coloured every frame (every visible pixel is rewritten from the palette each step), so a persistent `ImageData` with a `Uint32Array` view is the right tool: heat (a `Uint8` index) maps through a packed-ABGR `Uint32` palette into the buffer, then one `putImageData` per frame. This mirrors the C's `XImage` 32-bit fast path and avoids hundreds of thousands of per-pixel canvas calls.
+
+## Deviations from the C
+- **No X colormap / X allocation.** `SetPalette()` allocates X colours and may retry with fewer on failure; we just build the same `black→blue→red→yellow→white` gradient straight into a packed `Uint32` palette (16-bit channels `>>8` to 8-bit, clamped). The colour ramp math is verbatim. No XOR or feedback raster ops are involved, so nothing else is emulated.
+- **Click-for-explosion and key-press-for-new-eruption** (the C's `eruption_event`) are host concerns and aren't wired here; eruptions still fire automatically every `cycles` frames via the same `random_eruption()` path. (If the host later forwards clicks, `newEruption(x*S, y*S)` is the hook.)
+- **devicePixelRatio**: the backing store is device-px and `xdelta`/`ydelta` are computed from the device-px window size (exactly as the C computes them from its pixel window), so a burst rises to the same apparent height and covers the same screen fraction on retina as on 1x. The C sets `.lowrez: true` to dodge retina cost; we instead pay full resolution but keep the per-pixel work to one tight blit loop.
+- **`random() % 2` floor-jitter** became `Math.random() < 0.5 ? 0 : 1` (same 0/1 distribution).
+- **Default `delay` 12000 µs** (stock is 10000) — a hair calmer per the gallery convention; noted here, the slider still spans 0..100000.
+- **Palette kept faithful (not rainbow-ified).** The brief invites vivid rainbow palettes, but the heat-fade gradient *is* the signature of eruption (molten sparks cooling through embers); swapping it for an hsl rainbow would destroy the volcanic read, so the original ramp is preserved.
+
+## Correctness self-review
+The brief flags freeze / over-draw / off-by-one runtime bugs; I hand-traced the risky parts:
+- **No endless over-draw / no fade-to-nothing freeze.** The convolution can only *decrease* heat: the max output is `(8·v − decay) >> 3 ≤ v`, so heat never grows past what particles stamp. With no live particles the field cools to all-zero (black) and stays there until the next eruption — and an eruption is guaranteed every `cycles` frames (`drawI` counts up and resets), so the screen never goes permanently dark. `drawI = -1` forces an eruption on frame 1, so the first frame already shows the burst.
+- **Palette indexing is in-bounds.** A wall bounce sets `colorindex = iColorCount`, which *looks* one past the palette — but the same move-loop iteration then runs `colorindex--`, so the value the stamp loop reads is `iColorCount − 1 ≤ ncolors − 1`, a valid index. The convolution only shrinks values, so `fire` never exceeds that. (This matches the C, where the decrement also lands before the draw loop; I verified the ordering rather than trusting it.)
+- **Heat buffer never overflows.** Buffer is `(H+2)·(W+2)` (1px pad each side). The convolution's bottom row reads `line2` = buffer row `H+1` (the last valid row) at the last screen row; the stamp's up/down writes are guarded (`ypos ≥ 1` for up, `ypos < H−1` for down) and the move loop's bounce clamps every live particle's `xpos` to `[1, W−2]`, so the `center±1` writes stay in `[1, W]`. All indices checked against the `(H+2)×(W+2)` extent — no over-read or over-write.
+- **State re-seeding.** Each eruption re-inits *every* particle (position, velocity, full heat, `dead = 0`) before it's read, so there's no stale-particle artefact. `pause`→`resume` resets `lastTime = 0` (no catch-up burst); `reinit`/`resize` rebuild the palette, pool, caches and heat buffer and clear the blit buffer to black, giving a clean fresh screen.
+- **Fixed-point / shift parity.** The C works in integer `short` positions/velocities with arithmetic `>>` (sign-preserving); JS `>>` is also a 32-bit arithmetic shift and the magnitudes here (velocities bounded by the caches, a few thousand) never approach 32-bit overflow, so the `>>2`/`>>3` and `-ydir >> 2` all match. The convolution arithmetic is kept verbatim (`t0/t1/t2` running column sums, in-order destructive write).
+
+## Config
+Units/defaults/labels mirror `hacks/config/eruption.xml` 1:1: `delay` (µs/step, 12000 — stock 10000), `ncolors` (256), `nparticles` (300), `cooloff` (2), `heat` (256), `gravity` (1), `cycles` (80, "Duration"). `delay`/`cooloff`/`gravity`/`cycles` are **live** (the loop re-reads them each step, re-clamped to the xml ranges); `ncolors`/`nparticles`/`heat` are **not live** (they size the palette / particle pool / heat cap, so a change re-runs `init()` via `reinit()`). `delay` uses `invert: true` (the xml's `convert="invert"` "Frame rate" slider), showing the raw µs value. The xml's `showfps` boolean is host chrome and isn't ported.
