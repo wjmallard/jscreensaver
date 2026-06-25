@@ -31,6 +31,7 @@ const fps = document.getElementById('fps');
 
 let currentName = null;   // null = nothing running (black landing)
 let handle = null;        // running hack's teardown handle
+let paused = false;       // 'p' toggles the running hack's loop on/off
 let savedScroll = 0;      // picker scroll position, preserved across opens
 let cursorIndex = 0;      // keyboard-highlighted row in the picker
 
@@ -50,6 +51,7 @@ function mount(name) {
   if (handle) handle.stop();
   currentName = name;
   handle = byName[name].start(canvas);
+  paused = false;
   if (location.hash.slice(1) !== name) location.hash = name;
   cfgLink.hidden = !(handle && handle.params);
   render();
@@ -67,6 +69,14 @@ function restart() {
   if (!currentName || !handle) return;
   if (handle.reinit) handle.reinit();
   else { handle.stop(); handle = byName[currentName].start(canvas); }
+}
+
+// Freeze / resume the running hack's animation loop. Resets its pacing on
+// resume so there's no catch-up burst. No-op for a hack without pause/resume.
+function togglePause() {
+  if (!handle) return;
+  paused = !paused;
+  if (paused) handle.pause?.(); else handle.resume?.();
 }
 
 // Clear / home: stop the hack, drop the hash, clear to black, and hold the
@@ -217,12 +227,13 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // View mode: arrows cycle; r/c/a/f/h are commands; anything else
+  // View mode: arrows cycle; r/p/c/a/f/h are commands; anything else
   // (incl. 's') summons the picker.
   if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); cycle(1); }
   else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); cycle(-1); }
   else if (e.key === 'c') { e.preventDefault(); openConfig(); }
   else if (e.key === 'r') { e.preventDefault(); restart(); }
+  else if (e.key === 'p') { e.preventDefault(); togglePause(); }
   else if (e.key === 'Escape') { e.preventDefault(); goHome(); }
   else if (e.key === 'a') { e.preventDefault(); openAbout(); }
   else if (e.key === 'f') { e.preventDefault(); toggleFps(); }

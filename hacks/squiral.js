@@ -242,6 +242,8 @@ export function start(canvas) {
         cancelAnimationFrame(rafId);
         window.removeEventListener('resize', resize);
       },
+      pause() { cancelAnimationFrame(rafId); rafId = 0; },
+      resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
       reinit,   // re-seed the pattern, keeping the current config
       config,   // host renders the config box from these
       params,

@@ -207,6 +207,8 @@ export function start(canvas) {
         cancelAnimationFrame(rafId);
         window.removeEventListener('resize', resize);
       },
+      pause() { cancelAnimationFrame(rafId); rafId = 0; },
+      resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
       reinit: restart,   // clear + regrow with the current config
       config,
       params,
