@@ -18,9 +18,14 @@ import * as boxfit from './hacks/boxfit.js';
 import * as galaxy from './hacks/galaxy.js';
 import * as grav from './hacks/grav.js';
 import * as pyro from './hacks/pyro.js';
+import * as thornbird from './hacks/thornbird.js';
+import * as spiral from './hacks/spiral.js';
+import * as xspirograph from './hacks/xspirograph.js';
+import * as hopalong from './hacks/hopalong.js';
+import * as greynetic from './hacks/greynetic.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
@@ -37,6 +42,7 @@ const fps = document.getElementById('fps');
 let currentName = null;   // null = nothing running (black landing)
 let handle = null;        // running hack's teardown handle
 let paused = false;       // 'p' toggles the running hack's loop on/off
+let fadeTimer = 0;        // setTimeout id for the between-hack fade-out
 let savedScroll = 0;      // picker scroll position, preserved across opens
 let cursorIndex = 0;      // keyboard-highlighted row in the picker
 
@@ -48,18 +54,47 @@ function render() {
   }
 }
 
-// Swap hacks: stop the old one (cancels its loop + resize listener) before
-// starting the new one on the shared canvas. Reveal the config affordance
-// only when the new hack exposes a config.
+// Abort any in-progress between-hack fade and restore the canvas to full opacity.
+const FADE_MS = 400;
+function cancelFade() {
+  if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = 0; }
+  canvas.style.transition = 'none';
+  canvas.style.opacity = '1';
+}
+
+// Swap hacks. When one hack is already on screen, fade its (frozen) last frame
+// to black via canvas opacity, then start the new hack on the freshly-cleared
+// canvas at full opacity — no fade-IN, since the new hack builds up from black
+// on its own (xscreensaver's symmetric gamma fade-in is wasted on that). The
+// first mount from the black landing has nothing to fade, so it starts at once.
+// Reveal the config affordance only when the new hack exposes a config.
 function mount(name) {
   if (!byName[name] || name === currentName) return;
-  if (handle) handle.stop();
+  const wasRunning = !!handle;
+  cancelFade();
+  if (handle) { handle.stop(); handle = null; }
   currentName = name;
-  handle = byName[name].start(canvas);
   paused = false;
+  cfgLink.hidden = true;
   if (location.hash.slice(1) !== name) location.hash = name;
-  cfgLink.hidden = !(handle && handle.params);
   render();
+
+  const startHack = () => {
+    fadeTimer = 0;
+    canvas.style.transition = 'none';   // snap back to full opacity, no fade-in
+    canvas.style.opacity = '1';
+    handle = byName[name].start(canvas);
+    cfgLink.hidden = !(handle && handle.params);
+  };
+
+  if (wasRunning) {
+    canvas.style.transition = `opacity ${FADE_MS}ms linear`;
+    void canvas.offsetWidth;             // force reflow so the fade starts from 1
+    canvas.style.opacity = '0';
+    fadeTimer = setTimeout(startHack, FADE_MS);
+  } else {
+    startHack();
+  }
 }
 
 function cycle(dir) {
@@ -89,6 +124,7 @@ function togglePause() {
 // picker open (non-dismissable, since there's nothing to return to).
 function goHome() {
   closeConfig(); closeAbout(); closeHelp(); closeInfo();
+  cancelFade();
   if (handle) { handle.stop(); handle = null; }
   currentName = null;
   cfgLink.hidden = true;
