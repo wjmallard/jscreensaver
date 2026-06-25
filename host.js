@@ -14,9 +14,13 @@ import * as ant from './hacks/ant.js';
 import * as sierpinski from './hacks/sierpinski.js';
 import * as binaryring from './hacks/binaryring.js';
 import * as braid from './hacks/braid.js';
+import * as boxfit from './hacks/boxfit.js';
+import * as galaxy from './hacks/galaxy.js';
+import * as grav from './hacks/grav.js';
+import * as pyro from './hacks/pyro.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
@@ -24,6 +28,7 @@ const selector = document.getElementById('selector');
 const configBox = document.getElementById('config');
 const about = document.getElementById('about');
 const help = document.getElementById('help');
+const infoBox = document.getElementById('info');
 const list = document.getElementById('sel-list');
 const title = document.getElementById('sel-title');
 const cfgLink = document.getElementById('cfg-link');
@@ -69,6 +74,7 @@ function restart() {
   if (!currentName || !handle) return;
   if (handle.reinit) handle.reinit();
   else { handle.stop(); handle = byName[currentName].start(canvas); }
+  if (paused) { paused = false; handle.resume?.(); }   // 'r' always un-pauses
 }
 
 // Freeze / resume the running hack's animation loop. Resets its pacing on
@@ -82,7 +88,7 @@ function togglePause() {
 // Clear / home: stop the hack, drop the hash, clear to black, and hold the
 // picker open (non-dismissable, since there's nothing to return to).
 function goHome() {
-  closeConfig(); closeAbout(); closeHelp();
+  closeConfig(); closeAbout(); closeHelp(); closeInfo();
   if (handle) { handle.stop(); handle = null; }
   currentName = null;
   cfgLink.hidden = true;
@@ -120,10 +126,10 @@ function commitCursor() {
   closeSelector();
 }
 
-// Config / About / Help are mutually exclusive pop-overs; the config box is
-// populated polymorphically from whatever hack is running.
+// Config / About / Help / Info are mutually exclusive pop-overs; the config and
+// info boxes are populated polymorphically from whatever hack is running.
 function openConfig() {
-  closeAbout(); closeHelp();
+  closeAbout(); closeHelp(); closeInfo();
   const ttl = document.getElementById('config-title');
   const body = document.getElementById('config-body');
   if (handle && handle.params) {
@@ -136,10 +142,34 @@ function openConfig() {
   configBox.classList.add('open');
 }
 function closeConfig() { configBox.classList.remove('open'); }
-function openAbout() { closeConfig(); closeHelp(); about.classList.add('open'); }
+function openAbout() { closeConfig(); closeHelp(); closeInfo(); about.classList.add('open'); }
 function closeAbout() { about.classList.remove('open'); }
-function openHelp() { closeConfig(); closeAbout(); help.classList.add('open'); }
+function openHelp() { closeConfig(); closeAbout(); closeInfo(); help.classList.add('open'); }
 function closeHelp() { help.classList.remove('open'); }
+
+// Info box: the running hack's author / year / description (its module's `info`
+// export), shown read-only.
+function openInfo() {
+  closeConfig(); closeAbout(); closeHelp();
+  const ttl = document.getElementById('info-title');
+  const body = document.getElementById('info-body');
+  const meta = currentName ? byName[currentName].info : null;
+  ttl.textContent = currentName || 'info';
+  body.textContent = '';
+  if (meta) {
+    const desc = document.createElement('p');
+    desc.textContent = meta.description;
+    const credit = document.createElement('div');
+    credit.className = 'info-credit';
+    credit.textContent = `\u2014 ${meta.author}, ${meta.year}`;
+    body.appendChild(desc);
+    body.appendChild(credit);
+  } else {
+    body.textContent = 'No info for this hack.';
+  }
+  infoBox.classList.add('open');
+}
+function closeInfo() { infoBox.classList.remove('open'); }
 
 // Frame render time (toggled by 'f'): how long the running hack spends on
 // the main thread per animation frame (step + draw) — NOT the display rate.
@@ -159,7 +189,7 @@ function fpsLoop(now) {
       const sorted = fpsSamples.slice().sort((a, b) => a - b);
       const mid = sorted.length >> 1;
       const med = sorted.length & 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-      fps.textContent = med < 1 ? Math.round(med * 1000) + ' µs/f' : med.toFixed(2) + ' ms/f';
+      fps.textContent = med < 1 ? Math.round(med * 1000) + ' \u00B5s/f' : med.toFixed(2) + ' ms/f';
     }
     fpsSamples.length = 0; fpsLast = now;
   }
@@ -195,6 +225,7 @@ selector.addEventListener('click', (e) => { if (e.target === selector) closeSele
 configBox.addEventListener('click', (e) => { if (e.target === configBox) closeConfig(); });
 about.addEventListener('click', (e) => { if (e.target === about) closeAbout(); });
 help.addEventListener('click', (e) => { if (e.target === help) closeHelp(); });
+infoBox.addEventListener('click', (e) => { if (e.target === infoBox) closeInfo(); });
 
 // In view mode, clicking the running hack brings the picker back.
 canvas.addEventListener('click', openSelector);
@@ -216,6 +247,10 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' || e.key === 'a') { e.preventDefault(); closeAbout(); }
     return;
   }
+  if (infoBox.classList.contains('open')) {
+    if (e.key === 'Escape' || e.key === 'i') { e.preventDefault(); closeInfo(); }
+    return;
+  }
 
   if (selector.classList.contains('open')) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); moveCursor(1); }
@@ -227,13 +262,14 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // View mode: arrows cycle; r/p/c/a/f/h are commands; anything else
+  // View mode: arrows cycle; r/p/i/c/a/f/h are commands; anything else
   // (incl. 's') summons the picker.
   if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); cycle(1); }
   else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); cycle(-1); }
   else if (e.key === 'c') { e.preventDefault(); openConfig(); }
   else if (e.key === 'r') { e.preventDefault(); restart(); }
   else if (e.key === 'p') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'i') { e.preventDefault(); openInfo(); }
   else if (e.key === 'Escape') { e.preventDefault(); goHome(); }
   else if (e.key === 'a') { e.preventDefault(); openAbout(); }
   else if (e.key === 'f') { e.preventDefault(); toggleFps(); }
