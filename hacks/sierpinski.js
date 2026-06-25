@@ -6,10 +6,12 @@
 //
 // The "chaos game": from a random point, repeatedly jump halfway toward one of
 // N randomly-placed vertices and plot where you land, colouring each dot by the
-// vertex it jumped to. 3 vertices (Triangle, the default) draw the Sierpinski
+// vertex it jumped to. 3 vertices (Triangle) draw the Sierpinski
 // triangle; 4 (Square) are the original's "4 corners" — the same midpoint game,
-// but a fourth attractor just fills a fuzzy square with no fractal structure
-// (faithful to the C, and admittedly confusing). Points accumulate into a Uint32
+// but a fourth attractor just fills a fuzzy square with no fractal structure.
+// The default, Random, rolls a
+// fresh 3-or-4 each round, as stock does with --size unset. Points accumulate
+// into a Uint32
 // pixel buffer (one blit per frame — point plotting, so a blit, not fillRect);
 // after `cycles` frames the dish clears and restarts with fresh vertices and
 // colours. (The first dots land "wrong" then focus — as intended.)
@@ -26,7 +28,7 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   const config = {
-    corners: 3,    // 3 = triangle (default); 4 = the original 4-corner square
+    corners: 0,    // 0 = random each round (default); 3 = triangle; 4 = square
     count: 2000,   // points plotted per frame
     cycles: 150,   // frames before the dish clears and restarts
     delay: 100,    // ms per frame (orig 400; halved from 50 for calmer cycling)
@@ -34,7 +36,7 @@ export function start(canvas) {
 
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 400, step: 1, default: 100, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'corners', label: 'Shape', type: 'select', options: [{ label: 'Triangle', value: 3 }, { label: 'Square', value: 4 }], default: 3, live: false },
+    { key: 'corners', label: 'Shape', type: 'select', options: [{ label: 'Random', value: 0 }, { label: 'Triangle', value: 3 }, { label: 'Square', value: 4 }], default: 0, live: false },
     { key: 'count', label: 'Points / frame', type: 'range', min: 200, max: 8000, step: 100, default: 2000, live: true },
     { key: 'cycles', label: 'Density', type: 'range', min: 20, max: 500, step: 10, default: 150, live: true },
   ];
@@ -44,7 +46,7 @@ export function start(canvas) {
   let W, H, dot;
   let imageData, pixels;
   let vx, vy, colorsU;
-  let px, py, time;
+  let px, py, time, activeCorners;
 
   // HSL (h deg, s/l in [0,1]) packed little-endian 0xAABBGGRR for the buffer.
   function hslToUint(h, s, l) {
@@ -81,7 +83,10 @@ export function start(canvas) {
   // the buffer. (The clear only shows on the next blit, so the finished fractal
   // is visible for one frame first, matching the original's same-frame clear.)
   function startover() {
-    const n = config.corners;                  // 3 = triangle, 4 = the square game
+    // 3 = triangle, 4 = square; the "Random" default (any other value) rolls a
+    // fresh 3-or-4 each round. step() reads the resolved count via activeCorners.
+    activeCorners = (config.corners === 3 || config.corners === 4) ? config.corners : (Math.random() < 0.5 ? 3 : 4);
+    const n = activeCorners;
     const base = Math.random() * 360;
     colorsU = [];
     for (let i = 0; i < n; i++) {
@@ -119,7 +124,7 @@ export function start(canvas) {
 
   function step() {
     const count = Math.max(1, Math.round(config.count));
-    const n = config.corners;
+    const n = activeCorners;
     for (let i = 0; i < count; i++) {
       const v = Math.random() * n | 0;
       px = (px + vx[v]) >> 1;
