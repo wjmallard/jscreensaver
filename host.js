@@ -41,9 +41,37 @@ import * as scooter from './hacks/scooter.js';
 import * as strange from './hacks/strange.js';
 import * as loop from './hacks/loop.js';
 import * as vermiculate from './hacks/vermiculate.js';
+import * as binaryhorizon from './hacks/binaryhorizon.js';
+import * as cynosure from './hacks/cynosure.js';
+import * as deco from './hacks/deco.js';
+import * as fadeplot from './hacks/fadeplot.js';
+import * as popsquares from './hacks/popsquares.js';
+import * as rorschach from './hacks/rorschach.js';
+import * as bouboule from './hacks/bouboule.js';
+import * as cwaves from './hacks/cwaves.js';
+import * as fiberlamp from './hacks/fiberlamp.js';
+import * as mountain from './hacks/mountain.js';
+import * as munch from './hacks/munch.js';
+import * as pedal from './hacks/pedal.js';
+import * as wander from './hacks/wander.js';
+import * as whirlwindwarp from './hacks/whirlwindwarp.js';
+import * as fluidballs from './hacks/fluidballs.js';
+import * as ifs from './hacks/ifs.js';
+import * as attraction from './hacks/attraction.js';
+import * as euler2d from './hacks/euler2d.js';
+import * as eruption from './hacks/eruption.js';
+import * as flame from './hacks/flame.js';
+import * as hexadrop from './hacks/hexadrop.js';
+import * as intermomentary from './hacks/intermomentary.js';
+import * as apollonian from './hacks/apollonian.js';
+import * as ccurve from './hacks/ccurve.js';
+import * as drift from './hacks/drift.js';
+import * as wormhole from './hacks/wormhole.js';
+import * as nerverot from './hacks/nerverot.js';
+import * as rocks from './hacks/rocks.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
