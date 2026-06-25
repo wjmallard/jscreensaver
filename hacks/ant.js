@@ -16,18 +16,24 @@
 
 export const title = 'ant';
 
+export const info = {
+  author: 'David Bagley',
+  description: 'A cellular automaton that is really a two-dimensional Turing machine: as the heads ("ants") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced.',
+  year: 1997,
+};
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   const config = {
     size: 6,         // cell size in px
     count: 4,        // number of ants sharing the tape
-    delay: 5,        // ms per generation
+    delay: 10,       // ms per generation
     cycles: 40000,   // generations before the dish resets
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 60, step: 1, default: 10, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'size', label: 'Cell size', type: 'range', min: 2, max: 24, step: 1, default: 6, unit: ' px', lowLabel: 'small', highLabel: 'big', live: false },
     { key: 'count', label: 'Ants', type: 'range', min: 1, max: 12, step: 1, default: 4, live: false },
     { key: 'cycles', label: 'Lifespan', type: 'range', min: 1000, max: 100000, step: 1000, default: 40000, live: true },

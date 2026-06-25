@@ -4,6 +4,12 @@
 
 export const title = 'squiral';
 
+export const info = {
+  author: 'Jeff Epler',
+  description: 'Square-spiral-producing automata. The spirals grow outward until they hit something, then they go around it.',
+  year: 1999,
+};
+
 export function start(canvas) {
     // squiral - port of xscreensaver hack by Jeff Epler (1999)
     // https://www.jwz.org/xscreensaver/
@@ -28,7 +34,7 @@ export function start(canvas) {
     // live: false -> the value sizes the grid/colors/worms, so changing it
     //                re-runs init() via reinit().
     const params = [
-      { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+      { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
       { key: 'disorder', label: 'Randomness', type: 'range', min: 0, max: 0.5, step: 0.005, default: 0.005, lowLabel: 'low', highLabel: 'high', live: true },
       { key: 'count', label: 'Seeds (0 = auto)', type: 'range', min: 0, max: 200, step: 1, default: 0, live: false },
       { key: 'scale', label: 'Scale', type: 'range', min: 1, max: 10, step: 1, default: 1, lowLabel: 'small', highLabel: 'large', live: false },

@@ -15,6 +15,12 @@
 
 export const title = 'petri';
 
+export const info = {
+  author: 'Dan Bornstein',
+  description: 'Colonies of mold grow in a petri dish. Growing colored circles overlap and leave spiral interference in their wake.',
+  year: 1999,
+};
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 

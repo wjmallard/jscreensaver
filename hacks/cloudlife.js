@@ -5,6 +5,12 @@
 
 export const title = 'cloudlife';
 
+export const info = {
+  author: 'Don Marti',
+  description: "Cloud-like formations based on a variant of Conway's Life. The difference is that cells have a maximum age, after which they count as 3 for populating the next generation. This makes long-lived formations explode instead of just sitting there.",
+  year: 2003,
+};
+
 export function start(canvas) {
     // cloudlife - port of xscreensaver hack by Don Marti (2003)
     // https://www.jwz.org/xscreensaver/

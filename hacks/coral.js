@@ -5,6 +5,12 @@
 
 export const title = 'coral';
 
+export const info = {
+  author: 'Frederick Roeber',
+  description: 'Simulates colorful coral growth.',
+  year: 1997,
+};
+
 export function start(canvas) {
     // coral - port of xscreensaver hack by Frederick G.M. Roeber (1997)
     // https://www.jwz.org/xscreensaver/

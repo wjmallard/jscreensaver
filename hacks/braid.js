@@ -20,13 +20,19 @@
 
 export const title = 'braid';
 
+export const info = {
+  author: 'John Neil',
+  description: 'Inter-braided concentric circles.',
+  year: 1997,
+};
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/braid.xml (1:1 with the original),
   // except `delay` and `cycles` are tuned calmer than the stock 1 ms / 100.
   const config = {
-    delay: 20,      // ms per redraw (xml µs default 1000 ≈ unbounded; calmer here)
+    delay: 40,      // ms per redraw (xml µs default 1000 ≈ unbounded; calmer here)
     cycles: 200,    // frames a braid lives before regenerating (--cycles, xml 100)
     ncolors: 64,    // hue-cycle size (--ncolors)
     count: 15,      // max number of rings; the actual count is random ≤ this (--count)
@@ -34,7 +40,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 100, step: 1, default: 20, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 100, step: 1, default: 40, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Duration', type: 'range', min: 10, max: 500, step: 10, default: 200, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'count', label: 'Rings (max)', type: 'range', min: 3, max: 15, step: 1, default: 15, live: false },

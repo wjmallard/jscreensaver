@@ -19,6 +19,12 @@
 
 export const title = 'binaryring';
 
+export const info = {
+  author: 'J. Tarbell and Emilio Del Tessandoro',
+  description: 'A system of path tracing particles evolves continuously from an initial creation, alternating dark and light colors.',
+  year: 2014,
+};
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 

@@ -15,6 +15,12 @@
 
 export const title = 'sierpinski';
 
+export const info = {
+  author: 'Desmond Daignault',
+  description: 'The 2D Sierpinski triangle fractal.',
+  year: 1997,
+};
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 

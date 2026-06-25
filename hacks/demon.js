@@ -5,6 +5,12 @@
 
 export const title = 'demon';
 
+export const info = {
+  author: 'David Bagley',
+  description: 'A cellular automaton that starts with a random field, and organizes it into stripes and spirals.',
+  year: 1999,
+};
+
 export function start(canvas) {
     // demon - port of xscreensaver/xlockmore hack by David Bagley (1995),
     // after David Griffeath's cyclic cellular automata.
