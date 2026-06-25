@@ -150,7 +150,7 @@ export function startShadertoy(hostCanvas, { source, config, params, name = 'sha
   // slider are all picked up by the same code path.
   function syncSize() {
     const dpr = window.devicePixelRatio || 1;
-    const scale = config.resolution == null ? 1 : config.resolution;
+    const scale = (config.resolution == null ? 1 : config.resolution) * adaptiveScale;
     const w = Math.max(1, Math.round(window.innerWidth * dpr * scale));
     const h = Math.max(1, Math.round(window.innerHeight * dpr * scale));
     if (w !== canvas.width || h !== canvas.height) {
@@ -167,6 +167,17 @@ export function startShadertoy(hostCanvas, { source, config, params, name = 'sha
   let frame = 0;
   let lastNow = 0;
   let rafId = 0;
+
+  // Adaptive resolution: trim render scale when the GPU can't sustain the frame
+  // rate, restore it when there's headroom. dt is the real inter-frame time, so
+  // it climbs under GPU load; config.resolution stays the ceiling (we only ever
+  // scale DOWN from it). Keeps heavy ray-marchers smooth without per-shader
+  // tuning, while cheap shaders stay at full resolution. Floor at 1/3 so it
+  // never degrades to mush. Set config.adaptive = false to pin a fixed scale.
+  let adaptiveScale = 1;
+  let frameMs = 16;       // smoothed frame time (EMA), ms
+  let sinceAdjust = 0;
+  const stats = { ms: 16, scale: 1 };
 
   function setDateUniform() {
     const d = new Date();
@@ -190,6 +201,18 @@ export function startShadertoy(hostCanvas, { source, config, params, name = 'sha
 
     const speed = config.speed == null ? 1 : config.speed;
     clockMs += dt * speed;
+
+    // Drive adaptive resolution from the smoothed frame time (skip the first
+    // frame and any backgrounded-tab gap, both of which read as dt >= 100).
+    // Hysteresis band [13, 21] ms avoids oscillation around a steady 60fps.
+    if (dt > 0 && dt < 100) frameMs += (dt - frameMs) * 0.1;
+    if (config.adaptive !== false && ++sinceAdjust >= 20) {
+      sinceAdjust = 0;
+      if (frameMs > 21 && adaptiveScale > 0.34) adaptiveScale = Math.max(0.34, adaptiveScale * 0.85);
+      else if (frameMs < 13 && adaptiveScale < 1) adaptiveScale = Math.min(1, adaptiveScale * 1.07);
+    }
+    stats.ms = frameMs;
+    stats.scale = (config.resolution == null ? 1 : config.resolution) * adaptiveScale;
 
     gl.uniform3f(uniforms.iResolution, canvas.width, canvas.height, 1.0);
     gl.uniform1f(uniforms.iTime, clockMs / 1000);
@@ -240,6 +263,9 @@ export function startShadertoy(hostCanvas, { source, config, params, name = 'sha
     },
     reinit() {
       clockMs = Math.random() * 600000;   // jump to a fresh region of the field
+    },
+    getStats() {
+      return { ms: stats.ms, scale: stats.scale, w: canvas.width, h: canvas.height };
     },
     config,
     params,
