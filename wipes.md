@@ -1,6 +1,6 @@
 # wipes — port notes
 
-Port of `utils/erase.c` (Jamie Zawinski, 1997–2025; portions by Johannes Keukelaar, Torbjörn Andersson, Frederick Roeber) — the "goofy wipe" transitions xscreensaver uses to clear the screen between patterns.
+Port of `utils/erase.c` (Jamie Zawinski, 1997–2025; portions by Johannes Keukelaar, Torbjörn Andersson, Frederick Roeber) — the wipe transitions xscreensaver uses to clear the screen between patterns.
 
 Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/utils/erase.c` (~798 lines)
 
