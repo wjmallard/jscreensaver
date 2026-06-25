@@ -35,7 +35,7 @@ export function start(canvas) {
   // `ncolors` sizes the hue palette (the stock hack uses it for the X colormap;
   // we map it onto an hsl() rainbow).
   const config = {
-    delay: 13000,    // \u00B5s between steps (--delay)
+    delay: 18000,    // \u00B5s between steps (--delay)
     count: 12,       // number of orbiting planets (--count)
     ncolors: 64,     // size of the rainbow palette (--ncolors)
     decay: true,     // damp velocities so orbits spiral inward (--no-decay)
@@ -43,7 +43,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 13000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 18000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Objects', type: 'range', min: 1, max: 40, step: 1, default: 12, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'decay', label: 'Orbital decay', type: 'checkbox', default: true, live: true },
