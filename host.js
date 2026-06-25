@@ -319,6 +319,15 @@ function setFocus(pane) {
   if (pane === 'list') list.children[cursorIndex]?.scrollIntoView({ block: 'nearest' });
 }
 
+// config + clear are no-ops with nothing running; dim them (and drop their hover)
+// so a dead click isn't invited. The footer only shows via openSelector, and
+// "clear" re-routes through it, so syncing here covers every visible transition.
+function syncFooter() {
+  const running = !!currentName;
+  document.getElementById('sel-config').classList.toggle('disabled', !running);
+  document.getElementById('sel-clear').classList.toggle('disabled', !running);
+}
+
 function openSelector() {
   selector.classList.add('open');
   // Keep the rail on the last-browsed genre — catIndex persists across opens, so
@@ -330,6 +339,7 @@ function openSelector() {
   cursorIndex = idx >= 0 ? idx : 0;
   render();
   setFocus('list');
+  syncFooter();
 }
 
 function closeSelector() {

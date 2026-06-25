@@ -14,6 +14,7 @@
   --phosphor-border:  #1f7a42;  /* box borders */
   --phosphor-divider: #103a20;  /* inner dividers */
   --phosphor-bg:      #020503;  /* box background */
+  --phosphor-amber:   #ffb000;  /* running-hack marker, amber companion to the green */
 }
 
 * { margin: 0; padding: 0; }
@@ -74,12 +75,16 @@ canvas { display: block; }
 .sel-list li { display: flex; gap: 7px; align-items: baseline; padding: 4px 16px; cursor: pointer; white-space: nowrap; }
 .sel-list li:hover { background: #0c2a18; }
 .sel-badge { flex: none; width: 1em; color: var(--phosphor-dim); }
-.sel-list li.active .sel-badge { color: #021; }
+.sel-list li.active .sel-badge { color: var(--phosphor-amber); }
 .sel-list li.sel-empty { color: var(--phosphor-dim); cursor: default; }
 .sel-list li.sel-empty:hover { background: none; }
 .sel-list li.cursor { background: #0b2616; box-shadow: inset 3px 0 0 var(--phosphor-dim); }
 .sel-main.focus-list .sel-list li.cursor { background: #0e3320; box-shadow: inset 3px 0 0 var(--phosphor); }
-.sel-list li.active { color: #021; background: var(--phosphor); text-shadow: none; }
+/* The running hack's row is marked by amber text — a warm companion to the green
+   phosphor (the two classic monochrome-CRT colours) — rather than a fill, so it
+   reads as "live" and stays legible on the cursor background instead of fighting
+   it for the background. */
+.sel-list li.active { color: var(--phosphor-amber); text-shadow: 0 0 6px rgba(255, 176, 0, 0.4); }
 .sel-list::-webkit-scrollbar { width: 8px; }
 .sel-list::-webkit-scrollbar-thumb { background: var(--phosphor-border); border-radius: 4px; }
 .sel-list::-webkit-scrollbar-track { background: transparent; }
@@ -93,6 +98,11 @@ canvas { display: block; }
 .sel-foot span { cursor: pointer; }
 .sel-foot span:hover { color: #7fd49a; }
 .sel-foot u { color: var(--phosphor-mid); text-underline-offset: 2px; }
+/* config + clear go dim and non-interactive while nothing is running (host.js
+   toggles .disabled), so they don't invite a click that would do nothing. */
+.sel-foot span.disabled,
+.sel-foot span.disabled:hover { color: var(--phosphor-border); cursor: default; }
+.sel-foot span.disabled u { color: var(--phosphor-border); }
 
 .config-box { display: flex; flex-direction: column; width: 280px; max-height: 80vh; font-size: 12.5px; }
 .config-title { padding: 11px 16px; letter-spacing: 0.12em; color: var(--phosphor-bright); border-bottom: 1px solid var(--phosphor-divider); }
