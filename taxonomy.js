@@ -19,10 +19,10 @@
 // carries a `brief` (rail label) and a `full` (detail header); only `full` is a
 // display string, so the one accented label (Moire) is escaped there.
 //
-// The 3D / WebGL entries are TENTATIVE: that track is owned by a separate effort
-// and is not yet wired into host.js, so none of them currently show in the
-// picker. They are kept here so the scheme stays complete — confirm before
-// registering any GL hack in host.js.
+// The 3D / WebGL shader hacks are now wired into host.js alongside the 2D set;
+// their categories below come from each shader's own info.description. The
+// GPU-demanding ones are NOT marked here — "heavy" is a per-module flag
+// (info.heavy) the picker reads directly, so it stays with the hack, not here.
 
 // Picker sections, in display order: { key, brief (rail), full (header) }.
 export const CATEGORIES = [
@@ -38,6 +38,7 @@ export const CATEGORIES = [
   { key: 'fluids',     brief: 'Fluids',     full: 'Fluid Flow' },
   { key: 'plasma',     brief: 'Plasma',     full: 'Plasma & Color Fields' },
   { key: 'cosmic',     brief: 'Cosmic',     full: 'Cosmic & Space' },
+  { key: 'worlds',     brief: 'Worlds',     full: 'Worlds & Scenes' },
 ];
 
 // Dimension badge: glyph + short label. Glyphs are \u-escaped (DOM-bound).
@@ -91,7 +92,7 @@ export const HACK_TAXONOMY = {
   metaballs: { dimension: '2d', categories: ['particles', 'plasma'] },
   moire: { dimension: '2d', categories: ['optical'] },
   moire2: { dimension: '2d', categories: ['optical'] },
-  mountain: { dimension: '2d', categories: ['surfaces'] },
+  mountain: { dimension: '2d', categories: ['surfaces', 'worlds'] },
   munch: { dimension: '2d', categories: ['geometry', 'optical'] },
   nerverot: { dimension: '2d', categories: ['curves'] },
   pedal: { dimension: '2d', categories: ['geometry'] },
@@ -116,23 +117,38 @@ export const HACK_TAXONOMY = {
   wormhole: { dimension: '2d', categories: ['cosmic'] },
   xspirograph: { dimension: '2d', categories: ['curves'] },
 
-  // --- 3D / WebGL (tentative; not yet registered in host.js) ---
+  // --- 3D / WebGL shader hacks (registered in host.js; the heavy tier lives in
+  //     hacks/shelved/). Categories read from each shader's info.description. ---
+  alienbeacon: { dimension: '3d', categories: ['worlds', 'surfaces'] },
+  batteredplanet: { dimension: '3d', categories: ['worlds', 'surfaces'] },
+  bestill: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   bubblecolors: { dimension: '3d', categories: ['plasma'] },
+  darktransit: { dimension: '3d', categories: ['cosmic'] },
+  downfall: { dimension: '3d', categories: ['plasma'] },
   driftclouds: { dimension: '3d', categories: ['fluids'] },
   elementalring: { dimension: '3d', categories: ['geometry'] },
-  goldenapollian: { dimension: '3d', categories: ['fractals'] },
+  fluxcore: { dimension: '3d', categories: ['geometry', 'plasma'] },
+  gimbalharmonics: { dimension: '3d', categories: ['geometry'] },
+  goldenapollian: { dimension: '3d', categories: ['fractals', 'geometry'] },
   hexplasma: { dimension: '3d', categories: ['plasma'] },
-  logarithmiccircles: { dimension: '3d', categories: ['geometry'] },
+  logarithmiccircles: { dimension: '3d', categories: ['optical', 'geometry'] },
+  neongravity: { dimension: '3d', categories: ['plasma'] },
   neontriangulator: { dimension: '3d', categories: ['geometry'] },
-  prococean: { dimension: '3d', categories: ['fluids'] },
-  rigrekt: { dimension: '3d', categories: ['plasma'] },
+  noxfire: { dimension: '3d', categories: ['plasma'] },
+  prococean: { dimension: '3d', categories: ['worlds', 'fluids'] },
+  protophore: { dimension: '3d', categories: ['fractals'] },
+  rigrekt: { dimension: '3d', categories: ['worlds', 'geometry'] },
+  selfreflect: { dimension: '3d', categories: ['geometry', 'optical'] },
+  skyline: { dimension: '3d', categories: ['worlds'] },
   stardome: { dimension: '3d', categories: ['cosmic'] },
   starnest: { dimension: '3d', categories: ['cosmic'] },
   stripeytorus: { dimension: '3d', categories: ['surfaces'] },
-  synthwavecity: { dimension: '3d', categories: ['cosmic'] },
-  topologica: { dimension: '3d', categories: ['surfaces'] },
-  trainmandala: { dimension: '3d', categories: ['cosmic'] },
+  synthwavecity: { dimension: '3d', categories: ['worlds'] },
+  topologica: { dimension: '3d', categories: ['plasma'] },
+  trainmandala: { dimension: '3d', categories: ['optical', 'geometry'] },
   trizm: { dimension: '3d', categories: ['geometry'] },
+  truchetzoom: { dimension: '3d', categories: ['geometry'] },
+  universeball: { dimension: '3d', categories: ['cosmic'] },
 };
 
 // Look up a hack's facets by slug. An unknown slug falls back to no genre (it

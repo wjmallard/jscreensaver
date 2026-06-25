@@ -71,8 +71,43 @@ import * as wormhole from './hacks/wormhole.js';
 import * as nerverot from './hacks/nerverot.js';
 import * as rocks from './hacks/rocks.js';
 
+// --- 3D / WebGL shader hacks (run via the shared ./hacks/shadertoy.js harness;
+//     each overlays its own webgl2 canvas over the host canvas, removed on stop) ---
+import * as batteredplanet from './hacks/batteredplanet.js';
+import * as darktransit from './hacks/darktransit.js';
+import * as downfall from './hacks/downfall.js';
+import * as driftclouds from './hacks/driftclouds.js';
+import * as elementalring from './hacks/elementalring.js';
+import * as gimbalharmonics from './hacks/gimbalharmonics.js';
+import * as goldenapollian from './hacks/goldenapollian.js';
+import * as hexplasma from './hacks/hexplasma.js';
+import * as logarithmiccircles from './hacks/logarithmiccircles.js';
+import * as neongravity from './hacks/neongravity.js';
+import * as neontriangulator from './hacks/neontriangulator.js';
+import * as noxfire from './hacks/noxfire.js';
+import * as prococean from './hacks/prococean.js';
+import * as protophore from './hacks/protophore.js';
+import * as selfreflect from './hacks/selfreflect.js';
+import * as skyline from './hacks/skyline.js';
+import * as stardome from './hacks/stardome.js';
+import * as starnest from './hacks/starnest.js';
+import * as stripeytorus from './hacks/stripeytorus.js';
+import * as synthwavecity from './hacks/synthwavecity.js';
+import * as topologica from './hacks/topologica.js';
+import * as trainmandala from './hacks/trainmandala.js';
+import * as trizm from './hacks/trizm.js';
+import * as truchetzoom from './hacks/truchetzoom.js';
+// GPU-heavy tier (info.heavy → red dot in the picker); kept in hacks/shelved/,
+// imported in place so each module's own '../shadertoy.js' import still resolves.
+import * as alienbeacon from './hacks/shelved/alienbeacon.js';
+import * as bestill from './hacks/shelved/bestill.js';
+import * as bubblecolors from './hacks/shelved/bubblecolors.js';
+import * as fluxcore from './hacks/shelved/fluxcore.js';
+import * as rigrekt from './hacks/shelved/rigrekt.js';
+import * as universeball from './hacks/shelved/universeball.js';
+
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
@@ -94,10 +129,10 @@ const hackName = document.getElementById('hackname');
 
 // Picker taxonomy: a left rail of genres (plus "All") filters the hack list on
 // the right; an optional 2D/3D dimension filter narrows it further. The rail
-// shows each genre's brief label; the detail header shows its full name. Badges
-// + the dimension filter only appear once the registered set actually mixes 2D
-// and 3D hacks (today it is all 2D) so the menu stays clean until the GL track
-// is wired in.
+// shows each genre's brief label; the detail header shows its full name. The
+// per-row dimension badge appears only when the visible list actually mixes 2D
+// and 3D hacks (so an all-2D genre stays uncluttered); GPU-heavy GL hacks also
+// carry a red "GPU-intensive" dot driven by their module's info.heavy flag.
 const RAIL = ['All', ...CATEGORIES.map((c) => c.key)];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map((c) => [c.key, c]));
 // Rail shows each key's brief label, the detail header its full name ("All" is
@@ -287,6 +322,13 @@ function buildList() {
       const label = document.createElement('span');
       label.textContent = h.title;
       li.appendChild(label);
+      if (byName[h.title].info?.heavy) {           // GPU-intensive: trailing red dot
+        const heavy = document.createElement('span');
+        heavy.className = 'sel-heavy';
+        heavy.textContent = '\u25CF';            // black circle
+        heavy.title = 'GPU-intensive';
+        li.appendChild(heavy);
+      }
       li.addEventListener('click', () => { cycleCat = RAIL[catIndex]; mount(h.title); closeSelector(); });
       list.appendChild(li);
     }
@@ -428,25 +470,36 @@ function openInfo() {
 }
 function closeInfo() { infoBox.classList.remove('open'); }
 
-// Frame render time (toggled by 'f'): how long the running hack spends on
+// Frame readout (toggled by 'f'), bottom-right. For a 3D / WebGL hack it shows
+// the shadertoy harness's own telemetry — "res Sx  M ms  WxH" (adaptive render
+// scale, EMA-smoothed frame time, device-pixel buffer size), refreshed every
+// frame from getStats() so you watch the adaptive scaler settle; a shader's GPU
+// work is async, so the 2D work-time meter below would read ~0 for it. For a 2D
+// hack: how long the running hack spends on
 // the main thread per animation frame (step + draw) — NOT the display rate.
 // Our rAF fires right after the hack's (registered earlier), so the time
 // elapsed since the frame's timestamp ≈ the work the hack just did. We report
-// the MEDIAN over a 1s window: it shrugs off spikes (GC pauses) and the
+// the MEDIAN over a 0.5s window: it shrugs off spikes (GC pauses) and the
 // occasional slightly-negative sample (timer coarsening quantises the rAF
 // timestamp and performance.now() differently, so a near-zero delta can read
 // < 0) that a mean can't. Each sample is also clamped to ≥0. Rises with heavier
 // settings or a faster frame rate (more steps/frame); reads ~0 when idle.
 let fpsRaf = 0, fpsSamples = [], fpsLast = 0;
 function fpsLoop(now) {
+  if (handle && handle.getStats) {            // 3D: shadertoy harness telemetry
+    const s = handle.getStats();
+    fps.textContent = `res ${s.scale.toFixed(2)}\u00D7   ${s.ms.toFixed(1)} ms   ${s.w}\u00D7${s.h}`;
+    fpsRaf = requestAnimationFrame(fpsLoop);
+    return;
+  }
   fpsSamples.push(Math.max(0, performance.now() - now));   // ms of work; never < 0
   if (!fpsLast) fpsLast = now;
-  if (now - fpsLast >= 1000) {                             // 1s window
+  if (now - fpsLast >= 500) {                              // 0.5s window
     if (fpsSamples.length) {
       const sorted = fpsSamples.slice().sort((a, b) => a - b);
       const mid = sorted.length >> 1;
       const med = sorted.length & 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-      fps.textContent = med < 1 ? Math.round(med * 1000) + ' \u00B5s/f' : med.toFixed(2) + ' ms/f';
+      fps.textContent = med < 1 ? Math.round(med * 1000) + ' \u00B5s' : med.toFixed(2) + ' ms';
     }
     fpsSamples.length = 0; fpsLast = now;
   }
