@@ -458,9 +458,11 @@ buildList();
 title.addEventListener('click', goHome);
 document.getElementById('sel-help').addEventListener('click', openHelp);
 document.getElementById('sel-about').addEventListener('click', openAbout);
+document.getElementById('sel-config').addEventListener('click', () => { if (currentName) openConfig(); });
 document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
 cfgLink.addEventListener('click', openConfig);
+hackName.addEventListener('click', openInfo);   // the corner name opens its info box
 
 // Click the dimmed area (outside a box) to dismiss.
 selector.addEventListener('click', (e) => { if (e.target === selector) closeSelector(); });
@@ -501,6 +503,7 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === 'ArrowDown') { e.preventDefault(); if (focusPane === 'rail') moveCategory(1); else moveCursor(1); }
     else if (e.key === 'Enter') { e.preventDefault(); if (focusPane === 'rail') setFocus('list'); else commitCursor(); }
     else if (e.key === 'a') { e.preventDefault(); openAbout(); }
+    else if (e.key === 'c') { e.preventDefault(); if (currentName) openConfig(); }
     else if (e.key === 'h') { e.preventDefault(); openHelp(); }
     else if (e.key === 's' || e.key === 'Escape') { e.preventDefault(); closeSelector(); }
     return;
