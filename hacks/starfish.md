@@ -1,0 +1,44 @@
+# starfish — port notes
+
+Port of `starfish.c` by Jamie Zawinski (1997) — "Undulating, throbbing, star-like patterns pulsate, rotate, and turn inside out." One big radial-spline blob (a starfish) whose arm radii oscillate while the whole shape slowly spins, with smooth colour cycling. See [[squiral]] for the shared skeleton; closest technique twin is [[piecewise]] (filled vector blobs driven by one slowly-cycling hue).
+
+Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/starfish.c` (563 lines) + `xscreensaver-6.15/utils/spline.c` (the closed-spline maths).
+
+## Algorithm
+A starfish is `npoints` control points spaced evenly around a centre. Every `skip`-th point is a **valley** (radius 0) and the rest are **peaks** (radius `size`); the number of arms is `npoints / skip`. Each frame:
+- **throb** — each control point is placed at `(x + r·cos(i·frac + theta), y + r·sin(...))` using its current radius, then its radius steps toward the opposite extreme by `elasticity` (px/frame), with an easing factor that slows it near `min_r`/`max_r` (fastest in the middle) and reverses sign at the limits. So every radius oscillates between `min_r` (5px) and `max_r` (`size`), each with its own phase — the shape continuously morphs between a sharp star and a round blob, and "turns inside out" when peaks shrink while valleys grow.
+- **spin** — `theta` advances by `rotv`, `rotv` accelerates by `rota`, `rota` bounces at `±rot_max` and is occasionally perturbed/reversed, so the rotation drifts, slows, stops and reverses organically.
+- **draw** — the control points are joined into one **closed** smooth spline and filled with the EvenOddRule; a single colour cycles one colourmap step per frame.
+
+The control points become a smooth curve via `compute_closed_spline()`, which is the standard **uniform cubic B-spline → Bezier** conversion wrapped around the control array. For section `i` (from control `i` to `i+1`) the Bezier points are `p0=(c[i-1]+4c[i]+c[i+1])/6`, `p1=(2c[i]+c[i+1])/3`, `p2=(c[i]+2c[i+1])/3`, `p3=(c[i]+4c[i+1]+c[i+2])/6`, and `p3` of section `i` equals `p0` of section `i+1`, so the curve is C2-continuous and closes seamlessly.
+
+Two `mode`s (the xml select, fixed once at init): **Pulsating blob** (`blob`) and **Color gradients** (`zoom`); `random` is 1/3 blob. Independently, each freshly-rolled shape picks a *deformation* mode (pulse vs zoom) where "zoom" pins the valleys at the centre (sharp permanent arms) and "pulse" throbs everything. Every `duration` seconds the shape is freed and re-rolled (new arm count / skip / spin / size); 1-in-10 of those also re-rolls the colours.
+
+## What this port keeps faithfully
+- **Geometry & dynamics**: `makeStarfish`, `throb`, `spin` are a direct transcription — same `skips`/`sizes` tables, same `npoints = skip · multiplier` (with the four largest multipliers dropped when `skip > 3`), same valley/peak radius seeding, same elasticity easing and limit-reversal, same bell-curve random elasticity (`0..15`, avg 7.5) / rotation (`0..12°`, avg 6°) / occasional shrink, same spin acceleration/stop/reverse bookkeeping (including the sign-of-theta handling).
+- **The closed spline is exact**: the B-spline→Bezier formula above is `calc_section()` reduced; canvas draws the Beziers natively, so it stays smooth at any DPI with no integer-pixel polygon and no adaptive subdivision. The wrap uses `(i±k+n)%n` on every index — a headless harness confirmed the seam discontinuity is exactly `0` over 200 shapes × 4000 frames.
+- **Colour cycling**: one colourmap step per frame, emulated by advancing the hue `360/ncolors` degrees per frame — smooth, never strobing (except deliberately at `ncolors = 2`).
+- **EvenOddRule**: kept (`ctx.fill(path, 'evenodd')`), so self-crossings when the star turns inside out read as holes, exactly like the C's `gcv.fill_rule = EvenOddRule`.
+- **First frame is a full starfish**: peaks seed at `size`, valleys at 0, and `throb` runs before the first draw, so frame 1 already shows the complete shape (no degenerate/off-screen start).
+- **Re-roll**: every `duration` seconds a clean fresh shape is built (and 1/10 jumps to new colours), matching `starfish_draw`'s duration branch.
+- **Defaults/labels** from `starfish.xml`: `mode` (Random / Color gradients / Pulsating blob), `duration` 30s (1–60), `thickness` 0=auto (0–150), `ncolors` 200 (2–255).
+
+## Deviations from the C
+- **XOR/accumulation colour bands → full repaint.** The C never fully clears in `zoom` mode: each frame it XOR-fills the even-odd band between the current and *previous* outline in the next colourmap colour, so concentric coloured rings accumulate on screen (hence "Color gradients"). Per the project guidance we don't reproduce that accumulation/`GXxor`-style trick. Instead **every frame clears to black and fills the whole shape**, and the "Color gradients" mode fills with a **radial rainbow gradient** (6 hue stops) that rotates each frame — the readable full-repaint stand-in for the accumulated bands. "Pulsating blob" fills one solid cycling hue (the C clears each frame in blob mode too, so that mode matches closely). The previous-outline polygon and `s->prev` machinery are therefore dropped.
+- **No `×3` speed boost for blob.** The C does `elasticity *= 3; rotv *= 3` for blob **and** `delay *= 3`; those cancel, so the net real-time throb/spin speed is identical to zoom mode. We keep a **single delay slider** and drop the `×3` on both sides, which preserves that same net real-time pace while staying smooth (no chunky big-step frames). The blob `size /= 2` vs zoom `size *= 1.3` difference is kept.
+- **`delay` default 16000 µs** (≈ one display frame) vs the stock 10000, for calm smooth motion per the brief. All other defaults are stock.
+- **`thickness` relabelled "Throb speed".** In the C `thickness` sets `elasticity` (the radial velocity); the xml's "Lines / Thin..Thick" label is misleading for a filled blob, so it's surfaced as "Throb speed" (`0` = random, matching the C). It sizes the shape's motion, so it re-seeds (`live: false`).
+- **devicePixelRatio**: `size`/centre come from the device-px backing store and `elasticity`/`min_r` are scaled by `S`, so the shape and its throb look identical on retina; the backing store is sized in device px per the shared convention.
+- **Colour palette**: the C builds a random smooth-or-uniform colourmap; we use a vivid full HSL rainbow (welcomed by the brief over the muted original).
+- **`duration`** is measured in accumulated sim time (`delay` per step) rather than wall-clock `time()`, so it's frame-rate independent and pauses with the loop. `delay2` (vestigial in the C — set but unused) is dropped.
+
+## Correctness self-review
+- **No freeze / no runaway radii.** Each radius oscillates strictly within `[min_r, max_r]`: the easing factor is bounded `0.1..1.0`, and the limit test flips the sign at each end, so values can't run to infinity or stick. The headless harness (200 random shapes, both modes, 4000 frames each) confirmed **all radii/control points stay finite** and the radius span is non-trivial (oscillating, not dead) — `ra` ranged 0 → ~1875 (valleys pinned at 0, peaks bouncing off `max_r ≈ min(W,H)·1.3`). A small overshoot past `max_r` (≤ elasticity·0.1) before the reverse fires is expected and harmless (the gradient just extends its last stop). `max_r ≤ min_r` is guarded.
+- **Closed spline never kinks.** Every section index uses modular wrap, and `p3(i) == p0(i+1)` for all `i` including the `n-1 → 0` seam — verified to machine zero in the harness, so there is no off-by-one gap or kink at the wrap.
+- **Re-seed is clean.** `makeStarfish` rebuilds *every* field the next `throb`/`spin`/`draw` reads (radii, control arrays, theta, rotv/rota, min/max, skip, npoints), so the re-roll branch and `reinit` both produce a correct full starfish on their very next frame. `init` decides `blob_p` once (like the C) and `reinit` re-runs it after a non-live config change.
+- **Colour cadence can't divide by zero or strobe.** Hue step is `360 / max(2, ncolors)`; at `ncolors = 200` that's 1.8°/frame (a full rainbow ≈ 3s), smooth.
+- **rAF loop**: standard shared lag-accumulator, `MAX_CATCHUP_STEPS = 8` with an 8-step lag cap so a backgrounded tab can't burst on refocus; `delayMs = 0` (max frame rate) is bounded by the step counter. `pause()` nulls `rafId`; `resume()` resets `lastTime = 0` to avoid a catch-up jump; `reinit()` clears to black and re-seeds.
+- **Live vs reinit**: `delay`, `duration`, `ncolors` are live (read each step); `mode`, `thickness` size the shape / render mode, so they re-run `init()` via `reinit()`.
+
+## Encoding
+ASCII-safe per the project rule: the only non-ASCII in a DOM-bound string is the micro sign in the "Frame rate" unit, written `'µs'`. Em dashes appear only in comments. Verified with `grep -nP "[^\x00-\x7F]" hacks/starfish.js` (all four hits are comment lines).
