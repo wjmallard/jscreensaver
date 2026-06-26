@@ -8,11 +8,19 @@
 // of ./three-hack.js. See docs/three-js-harness-plan.md.
 //
 //   startParametricSurface(hostCanvas, {
-//     surface(u01, v01, target),  // REQUIRED: fill target (THREE.Vector3) for u,v in [0,1]
+//     surface(u01, v01, target, t),// REQUIRED: fill target (THREE.Vector3) for u,v in [0,1];
+//                                 //   optional 4th arg t = elapsed seconds, for dynamic hacks
+//     dynamic,                    // true: recompute the surface every frame so a time-varying
+//                                 //   surface (morph / 4D rotation) animates (def false)
 //     slices, stacks,             // ParametricGeometry subdivisions (def 160 x 80)
 //     bands,                      // opaque band count (def 16); 0 = solid surface
 //     bandAxis,                   // 'u' | 'v' — which way the bands repeat (def 'v')
-//     colorFront, colorBack,      // hex (def green / red)
+//     twoSided,                   // true: front/back different colors (def);
+//                                 //   false: one color (single mesh)
+//     cullBack,                   // one-sided only: true = FrontSide (band gaps show
+//                                 //   the background, not the same-colored far surface);
+//                                 //   false = DoubleSide (def, good for solid surfaces)
+//     colorFront, colorBack,      // hex (def green / red); one-sided uses colorFront
 //     roughness, metalness,       // material (def 0.5 / 0.1)
 //     scale, cameraZ, tilt,       // framing (def 2.3 / 7 / 0.5 rad)
 //     spinX, spinY,               // idle rotation, rad/sec (def 0.13 / 0.4)
@@ -56,6 +64,9 @@ export function startParametricSurface(hostCanvas, opts) {
     stacks = 80,
     bands = 16,
     bandAxis = 'v',
+    twoSided = true,
+    cullBack = false,
+    dynamic = false,
     colorFront = 0x2ecc71,
     colorBack = 0xe74c3c,
     roughness = 0.5,
@@ -81,29 +92,60 @@ export function startParametricSurface(hostCanvas, opts) {
       lights.fill.intensity = fill;
       if (ambient > 0) scene.add(new THREE.AmbientLight(0xffffff, ambient));
 
-      const geo = new ParametricGeometry(surface, slices, stacks);
+      // Build at morph-time t=0; the surface fn's optional 4th arg lets dynamic
+      // hacks deform per-frame (static hacks ignore it).
+      const geo = new ParametricGeometry((u, v, tgt) => surface(u, v, tgt, 0), slices, stacks);
       geo.computeVertexNormals();
 
-      // Two materials over one geometry: front (outside) and back (inside) colors.
-      // alphaTest discards the gap fragments (order-independent, writes depth) so
-      // you see through the bands to the far side.
-      const common = { roughness, metalness, alphaTest: bands > 0 ? 0.5 : 0 };
+      // Bands: a stripe alphaMap + alphaTest discards the gap fragments
+      // (order-independent, writes depth) so they are genuinely transparent.
       const alphaMap = bands > 0 ? makeBandAlphaMap(THREE, bands, bandAxis) : null;
-      if (alphaMap) common.alphaMap = alphaMap;
+      const common = { roughness, metalness };
+      if (alphaMap) { common.alphaMap = alphaMap; common.alphaTest = 0.5; }
 
-      const matFront = new THREE.MeshStandardMaterial({ ...common, color: colorFront, side: THREE.FrontSide });
-      const matBack = new THREE.MeshStandardMaterial({ ...common, color: colorBack, side: THREE.BackSide });
-
+      // Color: two-sided draws front/back in different colors (two meshes over one
+      // geometry — reveals where a non-orientable surface passes through itself).
+      // One-sided draws the same color on both faces (a single DoubleSide mesh), so
+      // band gaps reveal only the same-colored far surface / background, not a
+      // contrasting back color.
       const group = new THREE.Group();
-      group.add(new THREE.Mesh(geo, matFront));
-      group.add(new THREE.Mesh(geo, matBack));
+      if (twoSided) {
+        group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ ...common, color: colorFront, side: THREE.FrontSide })));
+        group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ ...common, color: colorBack, side: THREE.BackSide })));
+      } else {
+        // One-sided: cullBack -> FrontSide so band gaps reveal the background
+        // (clearly visible bands) rather than the same-colored far surface.
+        const oneSide = cullBack ? THREE.FrontSide : THREE.DoubleSide;
+        group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ ...common, color: colorFront, side: oneSide })));
+      }
       group.scale.setScalar(scale);
       group.rotation.x = tilt;
       scene.add(group);
 
-      return { group, alphaMap, spinX, spinY };
+      const state = { group, alphaMap, spinX, spinY };
+      if (dynamic) {
+        // Approach A: re-evaluate vertex positions from the stored (u,v) grid at
+        // the current time each frame, then rebuild normals. Fine at these vertex
+        // counts (~25k) on a modern machine.
+        state.dynamic = true;
+        state.geo = geo;
+        state.uv = geo.attributes.uv;
+        state.pos = geo.attributes.position;
+        state.tmp = new THREE.Vector3();
+        state.surface = surface;
+      }
+      return state;
     },
-    frame(state, { dt }) {
+    frame(state, { dt, elapsed }) {
+      if (state.dynamic) {
+        const { uv, pos, tmp, surface: fn } = state;
+        for (let k = 0; k < uv.count; k++) {
+          fn(uv.getX(k), uv.getY(k), tmp, elapsed);
+          pos.setXYZ(k, tmp.x, tmp.y, tmp.z);
+        }
+        pos.needsUpdate = true;
+        state.geo.computeVertexNormals();
+      }
       state.group.rotation.y += dt * state.spinY;
       state.group.rotation.x += dt * state.spinX;
     },
