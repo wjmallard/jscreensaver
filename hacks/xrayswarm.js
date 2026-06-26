@@ -228,6 +228,22 @@ export function start(canvas) {
     }
   }
 
+  // Collapse an entity's whole trail ring onto its current position (device px),
+  // so a freshly spawned or reseeded entity draws no segment back to a stale (or
+  // zero) history slot. Deviation from the C, which seeds only the head slot and
+  // therefore flashes a long straight line from the old/last position for
+  // ~trailLen frames after a spawn or a bug<->target mutation (most visible in
+  // the first rounds, when the init shake converts bugs whose history is still
+  // empty). See xrayswarm.md.
+  function seedHist(b) {
+    const px = b.pos[0] * W;
+    const py = b.pos[1] * W;
+    for (let k = 0; k < MAX_TRAIL_LEN; k++) {
+      b.hist[k * 2] = px;
+      b.hist[k * 2 + 1] = py;
+    }
+  }
+
   // ---- seed the swarm (the C's initBugs) ---------------------------------
   function initBugs() {
     head = 0;
@@ -267,9 +283,8 @@ export function start(canvas) {
       b.pos[1] = frand(maxy);
       b.vel[0] = frand(maxVel / 2);
       b.vel[1] = frand(maxVel / 2);
-      b.hist[0] = b.pos[0] * W;
-      b.hist[1] = b.pos[1] * W;
       b.closest = irand(ntargets);
+      seedHist(b);
     }
 
     for (let i = 0; i < ntargets; i++) {
@@ -278,8 +293,7 @@ export function start(canvas) {
       b.pos[1] = frand(maxy);
       b.vel[0] = frand(targetVel / 2);
       b.vel[1] = frand(targetVel / 2);
-      b.hist[0] = b.pos[0] * W;
-      b.hist[1] = b.pos[1] * W;
+      seedHist(b);
     }
   }
 
@@ -304,6 +318,7 @@ export function start(canvas) {
         copyEntity(bugs[i], bugs[nbugs - 1]);
         targets[ntargets].pos[0] = frand(maxx);
         targets[ntargets].pos[1] = frand(maxy);
+        seedHist(targets[ntargets]);   // reseed trail to the new pos (no jump line)
         nbugs--;
         ntargets++;
         for (let k = 0; k < nbugs; k += ntargets) bugs[k].closest = ntargets - 1;
