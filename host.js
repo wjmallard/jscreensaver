@@ -82,6 +82,41 @@ import * as triangle from './hacks/triangle.js';
 import * as vines from './hacks/vines.js';
 import * as xflame from './hacks/xflame.js';
 
+// 2D wave 3 (un-requested portable tail, batch 2) — curve plotters, attractors,
+// and the first per-pixel set (julia/swirl/shadebobs are retina-downscaled).
+import * as compass from './hacks/compass.js';
+import * as critical from './hacks/critical.js';
+import * as flow from './hacks/flow.js';
+// julia: SHELVED 2026-06-25 pending perf optimization (per-pixel escape-time field too slow); .js kept, re-add import + HACKS entry to restore.
+import * as laser from './hacks/laser.js';
+import * as lisa from './hacks/lisa.js';
+import * as lmorph from './hacks/lmorph.js';
+// shadebobs: SHELVED 2026-06-25 pending perf optimization (accumulation field clunky/jumpy); .js kept, re-add import + HACKS entry to restore.
+import * as swirl from './hacks/swirl.js';
+import * as worm from './hacks/worm.js';
+
+// 2D wave 3 (un-requested portable tail, batches 3+4) — 4D wireframes, particle
+// swarms, spline blobs, grid tilings, and per-pixel fields (rdbomb/xlyap downscaled).
+import * as abstractile from './hacks/abstractile.js';
+import * as anemone from './hacks/anemone.js';
+import * as anemotaxis from './hacks/anemotaxis.js';
+import * as bubbles from './hacks/bubbles.js';
+import * as celtic from './hacks/celtic.js';
+import * as crystal from './hacks/crystal.js';
+import * as deluxe from './hacks/deluxe.js';
+import * as fuzzyflakes from './hacks/fuzzyflakes.js';
+import * as goop from './hacks/goop.js';
+import * as hyperball from './hacks/hyperball.js';
+import * as hypercube from './hacks/hypercube.js';
+import * as lightning from './hacks/lightning.js';
+import * as polyominoes from './hacks/polyominoes.js';
+import * as rdbomb from './hacks/rdbomb.js';
+import * as starfish from './hacks/starfish.js';
+import * as substrate from './hacks/substrate.js';
+import * as whirlygig from './hacks/whirlygig.js';
+import * as xlyap from './hacks/xlyap.js';
+import * as xrayswarm from './hacks/xrayswarm.js';
+
 // --- 3D / WebGL shader hacks (run via the shared ./hacks/shadertoy.js harness;
 //     each overlays its own webgl2 canvas over the host canvas, removed on stop) ---
 import * as batteredplanet from './hacks/batteredplanet.js';
@@ -118,7 +153,7 @@ import * as rigrekt from './hacks/shelved/rigrekt.js';
 import * as universeball from './hacks/shelved/universeball.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, compass, critical, flow, laser, lisa, lmorph, swirl, worm, abstractile, anemone, anemotaxis, bubbles, celtic, crystal, deluxe, fuzzyflakes, goop, hyperball, hypercube, lightning, polyominoes, rdbomb, starfish, substrate, whirlygig, xlyap, xrayswarm, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
