@@ -16,11 +16,12 @@
 //     winding flips and the colors swap — which is exactly how the original lets
 //     you SEE that it is non-orientable. We do it with two meshes over one
 //     geometry: one THREE.FrontSide (green), one THREE.BackSide (red).
-//   * See-through bands (APPEARANCE_BANDS): klein.c draws strips along v and skips
-//     every other run in u — `((i & (NUMB-1)) >= NUMB/2)` with NUMB=8, i.e. 4 of
-//     every 8 u-strips, giving 16 equal opaque bands + 16 gaps around u. We
-//     reproduce it with an alphaMap stripe + alphaTest (per-fragment discard), so
-//     the gaps are truly transparent and you see through to the far side.
+//   * See-through bands (APPEARANCE_BANDS): klein.c skips every other run of
+//     strips — `((i & (NUMB-1)) >= NUMB/2)` with NUMB=8, i.e. 4 of every 8, giving
+//     16 equal opaque bands + 16 gaps. We reproduce it with an alphaMap stripe +
+//     alphaTest (per-fragment discard), so the gaps are truly transparent and you
+//     see through to the far side. (Band axis chosen to match the screenshot; see
+//     makeBandAlphaMap.)
 //
 // Deferred (xscreensaver options, not this screenshot's look): the "rotate in 4D"
 // / "walk on it" motion, the rainbow & depth color modes, the changing-colors
@@ -68,24 +69,28 @@ function figure8(u01, v01, target) {
 const NUM_BANDS = 16;
 
 // A 1-D stripe alphaMap: NUM_BANDS opaque + NUM_BANDS transparent texels,
-// alternating and equal-width, varying along U (so bands run along V, matching
-// klein.c's per-u skipping). NearestFilter -> hard band edges; alphaMap reads the
-// green channel, so green 255/0 = opaque/transparent under alphaTest.
+// alternating and equal-width. Built as a 1 x N texture so the stripe varies
+// along V (uv.y) -> bands repeat along v and each band runs along u, the
+// orientation that matches jwz's screenshot. (klein.c expresses the same skip on
+// its u-loop; the on-screen axis depends on the surface's uv layout, so this is
+// the empirical match. Swap to `new DataTexture(data, n, 1, ...)` to rotate the
+// bands 90 degrees.) NearestFilter -> hard edges; alphaMap samples the green
+// channel, so 255/0 = opaque/transparent under alphaTest.
 function makeBandAlphaMap(THREE) {
-  const w = NUM_BANDS * 2;
-  const data = new Uint8Array(w * 4);
-  for (let i = 0; i < w; i++) {
+  const n = NUM_BANDS * 2;
+  const data = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
     const on = (i % 2) === 0 ? 255 : 0;
     data[i * 4] = on;
     data[i * 4 + 1] = on;   // green channel is the one alphaMap samples
     data[i * 4 + 2] = on;
     data[i * 4 + 3] = on;
   }
-  const tex = new THREE.DataTexture(data, w, 1, THREE.RGBAFormat);
+  const tex = new THREE.DataTexture(data, 1, n, THREE.RGBAFormat);   // 1 x N -> varies along v
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
-  tex.wrapS = THREE.RepeatWrapping;   // closed in u; pattern tiles cleanly (even count)
-  tex.wrapT = THREE.RepeatWrapping;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;   // closed loop, even count -> tiles cleanly
   tex.needsUpdate = true;
   return tex;
 }
