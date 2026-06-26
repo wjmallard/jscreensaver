@@ -627,6 +627,7 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === 'a') { e.preventDefault(); openAbout(); }
     else if (e.key === 'c') { e.preventDefault(); if (currentName) openConfig(); }
     else if (e.key === 'h') { e.preventDefault(); openHelp(); }
+    else if (e.key === 'q') { e.preventDefault(); goHome(); }  // 'q' = the Clear button
     else if (e.key === 's' || e.key === 'Escape') { e.preventDefault(); closeSelector(); }
     return;
   }
