@@ -4,8 +4,9 @@
 // After xscreensaver's etruscanvenus (Carsten Steger, 2014),
 // hacks/glx/etruscanvenus.c. Another immersion of the real projective plane, part
 // of a family the original morphs through (Roman / Boy / Steiner / Etruscan
-// Venus). Same Steger family as klein, so it uses the shared
-// ./parametric-surface.js recipe (two-sided green/red, see-through bands).
+// Venus). Same Steger family as klein, on the shared ./parametric-surface.js
+// recipe. Per the original's demo this one is drawn SOLID (no bands) and
+// one-sided (a single surface seen from every angle) — no transparency.
 //
 // Deferred for v1 (as with romanboy's morph and klein's 4D spin): the deformation
 // is a time-varying phase dd in [0,4) that walks two smootherstep weights (DB, DL)
@@ -74,8 +75,8 @@ export function start(canvas) {
     surface: etruscanVenus,
     slices: 192,        // u carries cos(3u)/sin(3u) detail -> higher subdivision
     stacks: 128,
-    bands: 16,          // etruscanvenus.c NUMBDIR=8 -> 16 opaque + 16 gaps (direction bands)
-    bandAxis: 'v',      // by eye; flip to 'u' if rotated 90 degrees vs the original
+    bands: 0,           // original demo: solid (no see-through bands)
+    twoSided: false,    // single surface, same color from every angle
     scale: 1.4,
     cameraZ: 7,
     config,
