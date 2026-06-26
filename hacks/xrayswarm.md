@@ -88,6 +88,18 @@ This keeps the trail length fixed (memory/draw cost is constant).
   the chained pseudo-random ramp).
 - **Counts exposed.** `count`/`targets`/`trail` are surfaced as sliders where
   `0 = the C's auto-random`; the stock UI only exposed `delay`.
+- **Trail reseed on spawn/relocate (fixes an upstream bug).** A `seedHist(entity)`
+  helper fills an entity's whole history ring with its current position, called in
+  `initBugs()` for every entity and right after the position reset in
+  `mutateBug(0)`. The C's `mutateBug(0)` `memcpy`s a whole bug (including its
+  `hist[][]` trail) into the new target and then overwrites only `pos`, so it
+  draws a long straight line from the old bug location to the new random target
+  position for ~`trailLen` frames — most visible as a burst of corner-running
+  lines in the first seconds (the init parameter-shake fires `mutateBug` while the
+  trails are still the `memset(0)` from `initBugs`). Reseeding the ring removes the
+  artifact; normal trail growth is unchanged (ring slots ahead of `head` are never
+  drawn until overwritten). Full write-up + a suggested C patch in
+  `docs/xrayswarm-upstream-bug.md`.
 
 ## Correctness self-review
 
