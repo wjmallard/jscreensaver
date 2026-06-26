@@ -3,14 +3,15 @@
 //
 // After xscreensaver's romanboy (Carsten Steger, 2014), hacks/glx/romanboy.c. An
 // immersion of the real projective plane that morphs between the Roman surface and
-// Boy's surface. Same Steger family as klein, so it uses the shared
-// ./parametric-surface.js recipe (two-sided green/red, see-through bands).
+// Boy's surface. Same Steger family as klein, on the shared
+// ./parametric-surface.js recipe. Per the original's demo this one is ONE-SIDED
+// (the same color on both faces) with see-through bands — so the band gaps reveal
+// the same-colored far surface / background instead of a contrasting back color.
 //
-// Deferred for v1 (matching how klein deferred its 4D motion): the Roman<->Boy
-// MORPH is a time-varying deformation D in the surface formula, so animating it
-// means recomputing the geometry each frame. Here D is fixed at 1.0 (Boy end) and
-// the shape just spins. Also deferred: the rainbow/depth color modes and the
-// solid (non-banded) appearance.
+// The Roman<->Boy MORPH is now animated via approach-A dynamic recompute: the
+// deformation D oscillates 0<->1 with time and the surface is re-evaluated each
+// frame. Still deferred: the rainbow/depth color modes and the solid (non-banded)
+// appearance.
 
 import { startParametricSurface } from './parametric-surface.js';
 
@@ -32,9 +33,12 @@ const G = 3.0;
 const GM1 = G - 1.0;                 // 2
 const SQRT2OG = Math.SQRT2 / G;      // sqrt(2)/3
 const H1M1OG = 0.5 * (1.0 - 1.0 / G); // 1/3
-const D = 1.0;                        // deformation (morph); 0 = Roman end, 1 = Boy end
+// D (deformation) morphs the Roman surface (D=0) into Boy's surface (D=1); we
+// oscillate it smoothly with elapsed time t.
+const MORPH_RATE = 0.4;   // rad/sec; D goes 0 -> 1 -> 0 every ~2*pi/MORPH_RATE seconds
 
-function boySurface(u01, v01, target) {
+function boySurface(u01, v01, target, t) {
+  const D = 0.5 - 0.5 * Math.cos(MORPH_RATE * t);
   const u = u01 * TAU;
   const v = v01 * TAU;
   const cu = Math.cos(u);
@@ -42,7 +46,6 @@ function boySurface(u01, v01, target) {
   const sgu = Math.sin(G * u);
   const cgm1u = Math.cos(GM1 * u);
   const sgm1u = Math.sin(GM1 * u);
-  const c2v = Math.cos(2.0 * v);   // (unused in position, kept for parity/readability)
   const s2v = Math.sin(2.0 * v);
   const cv = Math.cos(v);
   const cv2 = cv * cv;             // cos^2(v)
@@ -60,10 +63,13 @@ export function start(canvas) {
 
   return startParametricSurface(canvas, {
     surface: boySurface,
+    dynamic: true,      // animate the Roman<->Boy morph (per-frame recompute)
     slices: 192,        // u carries cos(3u)/cos(2u) detail (g=3) -> 3 x base subdivision
     stacks: 128,
-    bands: 16,          // romanboy.c NUMB=8 -> 16 opaque + 16 gaps
+    bands: 24,          // romanboy.c: g*NUMU/NUMB = 3*64/8 = 24 bands (narrower than klein's 16)
     bandAxis: 'v',      // by eye; flip to 'u' if rotated 90 degrees vs the original
+    twoSided: false,    // original demo: same color both faces
+    cullBack: true,     // FrontSide so the band gaps show background (visible "invisible bands")
     scale: 1.3,
     cameraZ: 8,
     config,
