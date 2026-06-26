@@ -84,9 +84,14 @@
 
   <script type="module" src="./host.js"></script>
 
-  <!-- GoatCounter (privacy-friendly analytics, no cookies). Record the #hash
-       route as the path so each hack is its own page; host.js fires a count on
-       every hack switch, and count.js auto-logs the initial page load. -->
+  <!-- Cloudflare Web Analytics -->
+  <script defer src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "37c1f32a9cb74fa4b08a4886a38a91f4"}'></script>
+
+  <!-- GoatCounter (privacy-friendly analytics, no cookies). Record each
+       #hash route as the path so that each hack counts as its own page;
+       host.js fires a count on every hack switch, and count.js auto-logs
+       the initial page load. -->
   <script>
     window.goatcounter = { path: () => location.pathname + location.search + location.hash };
   </script>
