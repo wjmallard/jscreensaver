@@ -50,7 +50,7 @@ are scaled for retina the usual way.
   frame already shows a complete fan; the C builds the fan up over its first `lw`
   substeps. Cosmetic.
 - **Pacing.** One `step()` = one C frame (`lr` substeps + the re-seed timer), paced
-  by `config.delay`. Default `delay` is 30000 us (stock 40000) for a slightly
+  by `config.delay`. Default `delay` is 50000 us (stock 40000) for a slightly
   smoother sweep cadence. `cycles` counts frames exactly as the C does.
 - **Encoding.** The micro sign in the "Frame rate" unit is the `µ` escape, not
   a literal byte (ASCII-safe source rule).

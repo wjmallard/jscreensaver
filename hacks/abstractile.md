@@ -34,7 +34,7 @@ The palette utilities `make_color_ramp` / `make_color_path` / `make_color_loop` 
 - **Pause / resume / reinit.** `pause()` cancels rAF and sets `rafId = 0`; `resume()` resets `lastTime` (no catch-up burst). `reinit()` clears to black and re-seeds. The catch-up cap is `max(250 ms, nextDelay)` so a multi-second linger can elapse while a backgrounded tab still can't burst more than `MAX_CATCHUP_STEPS = 8` batches on refocus.
 
 ## Config
-- **delay** (Frame rate, microseconds, inverted, live) - base time between draw/erase batches; default 15000 (a calm ~3 s per phase at `lpu = li/200`).
+- **delay** (Frame rate, microseconds, inverted, live) - base time between draw/erase batches; default 20000 (a calm few seconds per phase at `lpu = li/200`).
 - **speed** (0-5, live) - the C's `--speed`; multiplies the batch delay (5 = fast, 0 = slow).
 - **sleep** (Linger, 0-60 s, live) - hold a finished screen before erasing it.
 - **tile** (select, not live -> reinit) - random / flat / thin / outline / block / neon / tiled, matching the xml's `--tile` options.

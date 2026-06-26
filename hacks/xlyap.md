@@ -92,7 +92,7 @@ Spread over progressive 14 ms frames that's ~0.3-1.3 s of build with no freeze.
   coarseness, `live:false`), **Quality** (a multiplier on the preset
   settle/dwell, `live:false`), **Colors** (palette size, `live:true` -> recolour),
   and **Contrast** (band density, `live:true` -> recolour). `delay`/`linger` are
-  `live:true`. Default `delay` is 8000 µs (xml 10000, nudged faster so the build
+  `live:true`. Default `delay` is 32000 µs (xml 10000, eased slower so the build
   isn't sluggish).
 
 ## Correctness self-review
@@ -127,13 +127,13 @@ and (c) a frame that blocks for seconds. Verified with a headless node harness
 **Worth a browser spot-check (new hack):** the *aesthetics* — whether the diverging
 rainbow + default `Contrast 1` reads as the recognisable Lyapunov fractal (vivid
 ordered swallowtails over chaotic ground) rather than noisy; and whether the
-build-then-linger cadence feels pleasant at the default `delay 8000` / `linger 5`.
+build-then-linger cadence feels pleasant at the default `delay 32000` / `linger 5`.
 The math is verified correct, bounded, and complete; the colour mapping is a
 deliberate vivid replacement for the C's X colormap and is tuned by feel.
 
 ## Config
 Units/defaults mirror `hacks/config/xlyap.xml` where present: `delay` (µs/frame,
-xml 10000 -> 8000), `linger` (seconds, 0-10, default 5). Added: `detail` (1-6,
+xml 10000 -> 32000), `linger` (seconds, 0-10, default 5). Added: `detail` (1-6,
 grid cell size), `quality` (0.5-2, iteration scale), `ncolors` (2-256, palette
 size), `contrast` (0.3-3, band density). The `delay` slider uses `invert: true`
 (the xml's `convert="invert"` "Frame rate" slider). Map/window/forcing/settle/dwell

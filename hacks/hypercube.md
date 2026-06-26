@@ -38,6 +38,6 @@ Verified with a headless numeric harness (the core rotation+projection, no canva
 
 ## Config
 Ranges mirror `hacks/config/hypercube.xml`:
-- **Frame rate** — `delay`, 0..100000 µs, default 10000, invert (drag right = faster). Live.
+- **Frame rate** — `delay`, 0..100000 µs, default 15000, invert (drag right = faster). Live.
 - **Zoom** — `observer-z`, 1.125..10.0, default 3.0; near = stronger perspective, far = flatter/orthographic. Live.
 - **XY / XZ / YZ / XW / YW / ZW rotation** — the six 4D plane speeds, 0..20 each (`· 0.001` rad/step), defaults `xy=3, xz=5, yw=10` (the rest 0), exactly the C's. Live.

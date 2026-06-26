@@ -78,7 +78,7 @@ This keeps the trail length fixed (memory/draw cost is constant).
   (`acc * halfDtSq`) is a tiny second-order position correction.
 - **Pacing.** The C does two `dt=0.1` sub-steps per drawn frame; the port does
   one `step()` per `config.delay` (lag-accumulator), defaulting `delay` to
-  **16000 us** (a touch calmer/smoother than the stock 20000) and keeping
+  **24000 us** (calmer than the stock 20000) and keeping
   per-step motion small for smooth trails.
 - **Colour scheme is selectable.** The C cycles its scheme via mutation; the port
   defaults to `Auto (cycle)` (faithful) but also lets you lock any of the six

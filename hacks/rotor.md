@@ -26,4 +26,4 @@ The trail is short (`cycles` points, default 20), so each step the canvas is cle
 - **Pause/resume** resets `lastTime = 0` so resume never bursts; **reinit** clears to black and re-seeds a fresh figure.
 
 ## Config
-Units/defaults mirror `hacks/config/rotor.xml`: `delay` (µs/step, 10000, *Frame rate*, inverted), `cycles` (trail length / ring size, 20, *Length*), `count` (arms, 4), `size` (line thickness; <0 = random 1..|size|, −6), `ncolors` (200). `delay` is **live**; `cycles`/`count`/`size`/`ncolors` size buffers or the palette, so changing them re-runs `init()` via `reinit()`. The micro sign in the unit string is the `µ` escape, never a literal byte.
+Units/defaults mirror `hacks/config/rotor.xml`: `delay` (µs/step, 20000, *Frame rate*, inverted), `cycles` (trail length / ring size, 20, *Length*), `count` (arms, 4), `size` (line thickness; <0 = random 1..|size|, −6), `ncolors` (200). `delay` is **live**; `cycles`/`count`/`size`/`ncolors` size buffers or the palette, so changing them re-runs `init()` via `reinit()`. The micro sign in the unit string is the `µ` escape, never a literal byte.

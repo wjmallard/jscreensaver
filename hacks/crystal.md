@@ -77,8 +77,8 @@ for every `(int)` cast).
   `nx/ny -3`, `size -15`.
 - **`maxsize` is not exposed** (its default is off); the random-size/placement
   path is the only one ported. Vivid HSL palette over the original's allocated
-  colormap, per the project's house style. `delay` default lowered to 33 ms
-  (~30 fps) from the stock 60 ms for smoother drift (the per-step motion is the
+  colormap, per the project's house style. `delay` default eased to 50 ms
+  (~20 fps) from the stock 60 ms for smoother drift (the per-step motion is the
   C's, unscaled — the drift is slow, so this reads smooth, not fast).
 
 ## Correctness self-review

@@ -27,7 +27,7 @@ The blur is the **in-place** version of the C's `glow_blur` (the non-SSE branch)
 - **No SSE / colour-depth code** — the C has SSE2 `glow_blur`/`chromo_2x2_light` plus 8/15/16/24-bit `put_image` packers. The web is always 32-bit RGBA, so only the portable 24-bit path is ported; channel order is canvas-native RGBA (the C's `palaka` is BGRA on little-endian X).
 - **No dpr/resolution scaling of spark speeds** — spark velocities/gravity use the **raw C constants** (no `*dpr`, no `/width` factor). This keeps the C's spark *density* (sparks per burst area in pixels), which is what determines the equilibrium brightness; the internal resolution is held near 1024 by the budget so bursts also cover the same frame fraction as the C. On small windows the internal frame is smaller, so bursts cover a larger fraction (busier, slightly brighter) — acceptable and what the C does too.
 - **Flash dimmed to half (`FLASH_GAIN = 0.5`)** — calm-tuning. The C's full-strength `chromo` flash washes most of the frame to a bright colored fog (measured default avg ~150/255). Halving it keeps the dark sky between blooms while the burst cores still flare (avg ~85/255). `FLASH_GAIN = 1.0` would be the C's exact strength; the **Light flash** toggle removes it entirely (pure sparks + glow, avg ~68/255).
-- **`delay` default 16000 µs** (stock 10000) — a touch calmer; the per-step work (12 sub-steps + a full per-pixel blur) is render-bound near display rate anyway, and `MAX_CATCHUP_STEPS = 3` keeps a backgrounded tab from firing a burst of blurs on refocus.
+- **`delay` default 50000 µs** (stock 10000) — a touch calmer; the per-step work (12 sub-steps + a full per-pixel blur) is render-bound near display rate anyway, and `MAX_CATCHUP_STEPS = 3` keeps a backgrounded tab from firing a burst of blurs on refocus.
 - **No mouse interaction** — the C lets a button-press launch a shell and defers recycles while the button is held (`button_down_p` / `deferred`). There is no pointer input here, so shells always recycle immediately on death; the deferral bookkeeping is dropped.
 - **`SHELLCOUNT`/`PIXCOUNT` exposed as params** — the C fixes them (4 and 500, the 4 for SSE lane packing). Here they are the "Fireworks at once" and "Sparks per shell" sliders (defaults 4/500). High values are intentionally intense (denser → brighter).
 - **HSV** — a standard `hsv_to_rgb` stand-in (saturation/value clamped to [0,1], since `rotate_hue` slowly lowers saturation over a shell's life). Vivid by construction (s 0.6–1.0).
@@ -41,7 +41,7 @@ The blur is the **in-place** version of the C's `glow_blur` (the non-SSE branch)
 
 ## Config
 Ranges/defaults/labels mirror `hacks/config/fireworkx.xml`:
-- `delay` — **Frame rate** (µs/step, default 16000, `live`, inverted: drag right = faster).
+- `delay` — **Frame rate** (µs/step, default 50000, `live`, inverted: drag right = faster).
 - `maxlife` — **Activity** (0–100, default 32, `live`; the C's `maxlife` → `max_shell_life = pow(10, maxlife/50 + 2.7)`; higher = longer-lived shells = fewer fresh bursts, so the slider reads "dense → sparse").
 - `shells` — **Fireworks at once** (1–8, default 4, `reinit` — sizes the shell array + light map).
 - `sparks` — **Sparks per shell** (50–1500, default 500, `reinit` — sizes the spark pools).

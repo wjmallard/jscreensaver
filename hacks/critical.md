@@ -27,7 +27,7 @@ Two integer counters drive the lifecycle (the C's `d_i_batch` / `i_restart`):
 every `BATCHCOUNT` (1500) steps an `i_restart` tick fires, and every `RESTART`
 (8) ticks a **full re-seed** runs (new colormap phase, fresh random model, walk
 origin reset). That is one re-seed per `RESTART*(BATCHCOUNT+1)` = **12008 steps**
-(~120 s at the default delay) -- verified exactly with a headless harness.
+(~4 min at the default delay 20000) -- verified exactly with a headless harness.
 
 ## Module shape
 `start(canvas) -> { stop, pause, resume, reinit, config, params }` -- see

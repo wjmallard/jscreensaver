@@ -29,7 +29,7 @@ Per the porter brief this is the SPARSE path (`fillRect` + vector lines), not a 
 - **Recursive flood fill → explicit stack.** `count_adjacent_blanks` recurses in the C; on the big identical boards (e.g. 96×26 = 2496 cells) that is a 2000+-deep call chain. Ported as an iterative stack — identical result, no stack-overflow risk.
 - **`changed_array` dropped**; we full-repaint instead of drawing only the delta. Visually identical (canvas persists; same content each frame).
 - **Mono / `use3D` / `plain` paths dropped.** The C picks a b&w fallback when fewer than 12 colors and four 3-D shading styles; we always use the rainbow palette. `--identical` is exposed as a checkbox (the C's fullrandom mode randomizes it; we honor the toggle).
-- **Units / tuning:** `delay` µs (xml default 10000 → calmer **20000**, so placements read as "watching it solve"). `cycles` (Duration) and `ncolors` (Colors) keep the xml ranges. Keypress / `fps` handling dropped — the host owns keys and the meter.
+- **Units / tuning:** `delay` µs (xml default 10000 → calmer **50000**, so placements read as "watching it solve"). `cycles` (Duration) and `ncolors` (Colors) keep the xml ranges. Keypress / `fps` handling dropped — the host owns keys and the meter.
 - **No XOR / feedback tricks** are involved, so nothing to emulate there.
 
 ## Config

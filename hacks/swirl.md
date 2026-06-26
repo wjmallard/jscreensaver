@@ -27,7 +27,7 @@ The field is a dense per-pixel thing with a `sqrt` + `atan2` **per knot per pixe
 - **two-plane mode.** Used ~30% of swirls (`TWO_PLANE_PCNT`), where each knot has two types and two interleaved patterns are drawn. The C interleaves at half-block granularity by toggling `first_plane` on every `do_point` call; we interleave **per pixel on a `(x+y)` checkerboard**. The C's two-plane `max_resolution = 2` (chunkier) is N/A — we have no resolution passes.
 - **`ncolors` clamped to ≥ 2** (the xml allows `low = 1`). The field-fold divides by `(ncolors - 1)`, and a 1-colour map can't cycle. At the extreme minimum (`ncolors = 2`) the field tends to collapse to a near-uniform parity and the screen strobes between two colours — degenerate, but as it would be in the original; the default 200 uses the full palette.
 - **Added params:** `cyclespeed` (palette rotation/frame — the C derives `shift` from `ncolors`, default ~3) and `duration` (frames between swirls — the C's hardcoded `RESTART = 2500`, eased to 1200). Cycle speed is constant; the C cycles faster while drawing (`dshift = 2·shift`) than while idle (`shift`).
-- **`delay`** default eased 10000 → 16000 µs (one step per refresh on 60 Hz; cycling stays smooth).
+- **`delay`** default eased 10000 → 25000 µs (calmer than stock; cycling stays smooth).
 
 ## Correctness self-review
 Verified with a headless node harness that mocks a minimal DOM and drives the **real** module's rAF loop, capturing the offscreen `ImageData` it blits (default + `ncolors=2` + `count=20,ncolors=255` + `cyclespeed=0`), at dpr = 2:
@@ -42,6 +42,6 @@ Verified with a headless node harness that mocks a minimal DOM and drives the **
 **Worth a browser spot-check (new hack):** the *aesthetics* on a real retina display — whether the `MAX_CELLS` cap leaves enough crispness in the ray/wheel detail (vs. too soft), and whether the centre-out reveal + cycling cadence reads as pleasant. The math is verified bounded and correct; the tuning is by feel. If it looks too soft, raise `MAX_CELLS`; if a swirl lingers too long, lower `duration`.
 
 ## Config
-Units/defaults/labels mirror `hacks/config/swirl.xml`: `delay` (µs/frame, xml 10000 → eased 16000, `invert: true` "Frame rate" slider), `count` → **Count** (knots, 0-20, default 5), `ncolors` → **Number of colors** (clamped 2-255, default 200). Added: `cyclespeed` → **Cycle speed** (0-12, default 3), `duration` → **Duration** (frames/swirl, 200-5000, default 1200).
+Units/defaults/labels mirror `hacks/config/swirl.xml`: `delay` (µs/frame, xml 10000 → eased 25000, `invert: true` "Frame rate" slider), `count` → **Count** (knots, 0-20, default 5), `ncolors` → **Number of colors** (clamped 2-255, default 200). Added: `cyclespeed` → **Cycle speed** (0-12, default 3), `duration` → **Duration** (frames/swirl, 200-5000, default 1200).
 
 **Local dev:** ES-module `import`s need a real server — `python3 -m http.server` in the repo, then <http://localhost:8000/#swirl>. `file://` double-click fails (CORS on the `null` origin); GitHub Pages serves over http, so production is fine.

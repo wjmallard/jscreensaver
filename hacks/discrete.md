@@ -46,4 +46,4 @@ Fixed-timestep **lag accumulator** paced by `config.delay` (µs → divide by 10
 - **No erase transition:** the C's `MI_CLEARWINDOW` becomes an instant fill of the buffer to black (no wipes module).
 
 ## Config
-Ranges mirror `hacks/config/discrete.xml`: `delay` (Frame rate, µs, live, inverted), `cycles` (Timeout — inner frames before clear + new map, live), `ncolors` (Colors, reinit), plus `count` (Points — added for parity, live). Default `delay` is the stock 20000 µs. See [[hopalong]], [[thornbird]], [[squiral]].
+Ranges mirror `hacks/config/discrete.xml`: `delay` (Frame rate, µs, live, inverted), `cycles` (Timeout — inner frames before clear + new map, live), `ncolors` (Colors, reinit), plus `count` (Points — added for parity, live). Default `delay` is 50000 µs (eased from the stock 20000). See [[hopalong]], [[thornbird]], [[squiral]].
