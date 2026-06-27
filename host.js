@@ -117,9 +117,10 @@ import * as whirlygig from './hacks/whirlygig.js';
 import * as xlyap from './hacks/xlyap.js';
 import * as xrayswarm from './hacks/xrayswarm.js';
 
-// Un-shelved 2026-06-26 after a perf fix: vfeedback caps its backing-store
-// resolution so the per-frame hue-rotate feedback pass is affordable (see .md).
-import * as vfeedback from './hacks/vfeedback.js';
+// vfeedback SHELVED 2026-06-27 (hacks/shelved/vfeedback.js): the faithful
+// analogtv-based feedback rebuild produced a clean spiral but only by stacking
+// deviations the original lacks -- it didn't feel like a faithful port. See the
+// journey notes in hacks/shelved/vfeedback.md.
 
 // --- 3D / WebGL shader hacks (run via the shared ./hacks/shadertoy.js harness;
 //     each overlays its own webgl2 canvas over the host canvas, removed on stop) ---
@@ -131,12 +132,14 @@ import * as elementalring from './hacks/elementalring.js';
 import * as gimbalharmonics from './hacks/gimbalharmonics.js';
 import * as goldenapollian from './hacks/goldenapollian.js';
 import * as hexplasma from './hacks/hexplasma.js';
+import * as hypnowheel from './hacks/hypnowheel.js';
 import * as logarithmiccircles from './hacks/logarithmiccircles.js';
 import * as neongravity from './hacks/neongravity.js';
 import * as neontriangulator from './hacks/neontriangulator.js';
 import * as noxfire from './hacks/noxfire.js';
 import * as prococean from './hacks/prococean.js';
 import * as protophore from './hacks/protophore.js';
+import * as quasicrystal from './hacks/quasicrystal.js';
 import * as selfreflect from './hacks/selfreflect.js';
 import * as skyline from './hacks/skyline.js';
 import * as stardome from './hacks/stardome.js';
@@ -166,7 +169,7 @@ import * as rigrekt from './hacks/shelved/rigrekt.js';
 import * as universeball from './hacks/shelved/universeball.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, compass, critical, flow, laser, lisa, lmorph, swirl, worm, abstractile, anemone, anemotaxis, bubbles, celtic, crystal, deluxe, fuzzyflakes, goop, hyperball, hypercube, lightning, polyominoes, rdbomb, starfish, substrate, whirlygig, xlyap, xrayswarm, vfeedback, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, xanalogtv, dangerball, cubicgrid, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, compass, critical, flow, laser, lisa, lmorph, swirl, worm, abstractile, anemone, anemotaxis, bubbles, celtic, crystal, deluxe, fuzzyflakes, goop, hyperball, hypercube, lightning, polyominoes, rdbomb, starfish, substrate, whirlygig, xlyap, xrayswarm, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, hypnowheel, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, quasicrystal, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, xanalogtv, dangerball, cubicgrid, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');

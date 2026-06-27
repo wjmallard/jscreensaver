@@ -1,7 +1,12 @@
 // taxonomy.js — host-owned genre classification for the picker.
 //
 // Every hack carries two cross-cutting facets:
-//   dimension  : '2d' (canvas/'2d' context) | '3d' (WebGL fragment shader)
+//   dimension  : a hack's xscreensaver PROVENANCE -- not how we render it:
+//                  '2d' = ported from a 2D X11 hack (hacks/*.c)
+//                  '3d' = ported from a GLX/OpenGL hack (hacks/glx/*.c)
+//                A 2D-origin hack stays '2d' even when we render it in WebGL for
+//                speed (e.g. xanalogtv). The harness used to draw it (canvas /
+//                shadertoy / self-contained WebGL) is an INDEPENDENT choice.
 //   categories : ONE OR TWO genre keys from CATEGORIES below (the visual family)
 //
 // Membership is many-to-many: a hack can legitimately be two things at once
@@ -145,7 +150,6 @@ export const HACK_TAXONOMY = {
   triangle: { dimension: '2d', categories: ['surfaces', 'worlds'] },
   truchet: { dimension: '2d', categories: ['geometry'] },
   vermiculate: { dimension: '2d', categories: ['curves', 'biota'] },
-  vfeedback: { dimension: '2d', categories: ['optical', 'plasma'] },
   vines: { dimension: '2d', categories: ['curves', 'fractals'] },
   wander: { dimension: '2d', categories: ['plasma', 'curves'] },
   whirlwindwarp: { dimension: '2d', categories: ['particles', 'fluids'] },
@@ -174,12 +178,14 @@ export const HACK_TAXONOMY = {
   gimbalharmonics: { dimension: '3d', categories: ['geometry'] },
   goldenapollian: { dimension: '3d', categories: ['fractals', 'geometry'] },
   hexplasma: { dimension: '3d', categories: ['plasma'] },
+  hypnowheel: { dimension: '3d', categories: ['optical', 'geometry'] },
   logarithmiccircles: { dimension: '3d', categories: ['optical', 'geometry'] },
   neongravity: { dimension: '3d', categories: ['plasma'] },
   neontriangulator: { dimension: '3d', categories: ['geometry'] },
   noxfire: { dimension: '3d', categories: ['plasma'] },
   prococean: { dimension: '3d', categories: ['worlds', 'fluids'] },
   protophore: { dimension: '3d', categories: ['fractals'] },
+  quasicrystal: { dimension: '3d', categories: ['optical', 'geometry'] },
   rigrekt: { dimension: '3d', categories: ['worlds', 'geometry'] },
   selfreflect: { dimension: '3d', categories: ['geometry', 'optical'] },
   skyline: { dimension: '3d', categories: ['worlds'] },
