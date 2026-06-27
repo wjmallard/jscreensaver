@@ -5,171 +5,28 @@
 // module by index.html (chrome markup there, chrome styles in host.css).
 
 import { renderConfig } from './config-box.js';
-import { CATEGORIES, DIMENSIONS, classify } from './taxonomy.js';
-import * as squiral from './hacks/squiral.js';
-import * as coral from './hacks/coral.js';
-import * as cloudlife from './hacks/cloudlife.js';
-import * as demon from './hacks/demon.js';
-import * as petri from './hacks/petri.js';
-import * as ant from './hacks/ant.js';
-import * as sierpinski from './hacks/sierpinski.js';
-import * as binaryring from './hacks/binaryring.js';
-import * as braid from './hacks/braid.js';
-import * as boxfit from './hacks/boxfit.js';
-import * as galaxy from './hacks/galaxy.js';
-import * as grav from './hacks/grav.js';
-import * as pyro from './hacks/pyro.js';
-import * as thornbird from './hacks/thornbird.js';
-import * as spiral from './hacks/spiral.js';
-import * as xspirograph from './hacks/xspirograph.js';
-import * as hopalong from './hacks/hopalong.js';
-import * as greynetic from './hacks/greynetic.js';
-import * as kumppa from './hacks/kumppa.js';
-import * as halftone from './hacks/halftone.js';
-import * as imsmap from './hacks/imsmap.js';
-import * as interaggregate from './hacks/interaggregate.js';
-import * as interference from './hacks/interference.js';
-import * as metaballs from './hacks/metaballs.js';
-import * as piecewise from './hacks/piecewise.js';
-import * as halo from './hacks/halo.js';
-import * as moire from './hacks/moire.js';
-import * as qix from './hacks/qix.js';
-import * as truchet from './hacks/truchet.js';
-import * as helix from './hacks/helix.js';
-import * as moire2 from './hacks/moire2.js';
-import * as penrose from './hacks/penrose.js';
-import * as scooter from './hacks/scooter.js';
-import * as strange from './hacks/strange.js';
-import * as loop from './hacks/loop.js';
-import * as vermiculate from './hacks/vermiculate.js';
-import * as binaryhorizon from './hacks/binaryhorizon.js';
-import * as cynosure from './hacks/cynosure.js';
-import * as deco from './hacks/deco.js';
-import * as fadeplot from './hacks/fadeplot.js';
-import * as popsquares from './hacks/popsquares.js';
-import * as rorschach from './hacks/rorschach.js';
-import * as bouboule from './hacks/bouboule.js';
-import * as cwaves from './hacks/cwaves.js';
-import * as fiberlamp from './hacks/fiberlamp.js';
-import * as mountain from './hacks/mountain.js';
-import * as munch from './hacks/munch.js';
-import * as pedal from './hacks/pedal.js';
-import * as wander from './hacks/wander.js';
-import * as whirlwindwarp from './hacks/whirlwindwarp.js';
-import * as fluidballs from './hacks/fluidballs.js';
-import * as ifs from './hacks/ifs.js';
-import * as attraction from './hacks/attraction.js';
-import * as euler2d from './hacks/euler2d.js';
-import * as eruption from './hacks/eruption.js';
-import * as flame from './hacks/flame.js';
-import * as hexadrop from './hacks/hexadrop.js';
-import * as intermomentary from './hacks/intermomentary.js';
-import * as apollonian from './hacks/apollonian.js';
-import * as ccurve from './hacks/ccurve.js';
-import * as drift from './hacks/drift.js';
-import * as wormhole from './hacks/wormhole.js';
-import * as nerverot from './hacks/nerverot.js';
-import * as rocks from './hacks/rocks.js';
-// 2D wave 3 (un-requested portable tail, batch 1) — curves/particles/growth/attractor.
-import * as discrete from './hacks/discrete.js';
-import * as epicycle from './hacks/epicycle.js';
-import * as fireworkx from './hacks/fireworkx.js';
-import * as forest from './hacks/forest.js';
-import * as lissie from './hacks/lissie.js';
-import * as rotor from './hacks/rotor.js';
-import * as sphere from './hacks/sphere.js';
-import * as triangle from './hacks/triangle.js';
-import * as vines from './hacks/vines.js';
-import * as xflame from './hacks/xflame.js';
+import { CATEGORIES, DIMENSIONS } from './taxonomy.js';
+// The hack catalog is the generated at-rest file (catalog.json, repo root): one
+// metadata entry per active hack { title, module, dim, categories, heavy?, author,
+// year, description }, already alphabetical. We FETCH it before building the
+// picker -- a fetch is catchable, so a missing or broken catalog shows a message
+// instead of the silent blank a failed static import would give (index.html
+// preloads it, so the request is already in flight). Each hack's CODE is then
+// import()ed lazily on first mount (loadModule), so the picker builds from this
+// metadata alone with no hack module loaded -- a broken hack can't blank the site.
+let HACKS;
+try {
+  const res = await fetch('./catalog.json');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  HACKS = (await res.json()).hacks;
+  if (!Array.isArray(HACKS) || !HACKS.length) throw new Error('empty or malformed catalog');
+} catch (err) {
+  console.error('jscreensaver: could not load the hack catalog (catalog.json)', err);
+  document.body.insertAdjacentHTML('beforeend',
+    `<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#5fdd83;background:#000;text-align:center;font:14px ui-monospace,Menlo,monospace">could not load the hack catalog<br>(catalog.json)</div>`);
+  throw err;   // halt init; the message above is what the user sees
+}
 
-// 2D wave 3 (un-requested portable tail, batch 2) — curve plotters, attractors,
-// and the first per-pixel set (julia/swirl/shadebobs are retina-downscaled).
-import * as compass from './hacks/compass.js';
-import * as critical from './hacks/critical.js';
-import * as flow from './hacks/flow.js';
-// julia: SHELVED 2026-06-25 pending perf optimization (per-pixel escape-time field too slow); .js kept, re-add import + HACKS entry to restore.
-import * as laser from './hacks/laser.js';
-import * as lisa from './hacks/lisa.js';
-import * as lmorph from './hacks/lmorph.js';
-// shadebobs: SHELVED 2026-06-25 pending perf optimization (accumulation field clunky/jumpy); .js kept, re-add import + HACKS entry to restore.
-import * as swirl from './hacks/swirl.js';
-import * as worm from './hacks/worm.js';
-
-// 2D wave 3 (un-requested portable tail, batches 3+4) — 4D wireframes, particle
-// swarms, spline blobs, grid tilings, and per-pixel fields (rdbomb/xlyap downscaled).
-import * as abstractile from './hacks/abstractile.js';
-import * as anemone from './hacks/anemone.js';
-import * as anemotaxis from './hacks/anemotaxis.js';
-import * as bubbles from './hacks/bubbles.js';
-import * as celtic from './hacks/celtic.js';
-import * as crystal from './hacks/crystal.js';
-import * as deluxe from './hacks/deluxe.js';
-import * as fuzzyflakes from './hacks/fuzzyflakes.js';
-import * as goop from './hacks/goop.js';
-import * as hyperball from './hacks/hyperball.js';
-import * as hypercube from './hacks/hypercube.js';
-import * as lightning from './hacks/lightning.js';
-import * as polyominoes from './hacks/polyominoes.js';
-import * as rdbomb from './hacks/rdbomb.js';
-import * as starfish from './hacks/starfish.js';
-import * as substrate from './hacks/substrate.js';
-import * as whirlygig from './hacks/whirlygig.js';
-import * as xlyap from './hacks/xlyap.js';
-import * as xrayswarm from './hacks/xrayswarm.js';
-
-// vfeedback SHELVED 2026-06-27 (hacks/shelved/vfeedback.js): the faithful
-// analogtv-based feedback rebuild produced a clean spiral but only by stacking
-// deviations the original lacks -- it didn't feel like a faithful port. See the
-// journey notes in hacks/shelved/vfeedback.md.
-
-// --- 3D / WebGL shader hacks (run via the shared ./hacks/shadertoy.js harness;
-//     each overlays its own webgl2 canvas over the host canvas, removed on stop) ---
-import * as batteredplanet from './hacks/batteredplanet.js';
-import * as darktransit from './hacks/darktransit.js';
-import * as downfall from './hacks/downfall.js';
-import * as driftclouds from './hacks/driftclouds.js';
-import * as elementalring from './hacks/elementalring.js';
-import * as gimbalharmonics from './hacks/gimbalharmonics.js';
-import * as goldenapollian from './hacks/goldenapollian.js';
-import * as hexplasma from './hacks/hexplasma.js';
-import * as hypnowheel from './hacks/hypnowheel.js';
-import * as logarithmiccircles from './hacks/logarithmiccircles.js';
-import * as neongravity from './hacks/neongravity.js';
-import * as neontriangulator from './hacks/neontriangulator.js';
-import * as noxfire from './hacks/noxfire.js';
-import * as prococean from './hacks/prococean.js';
-import * as protophore from './hacks/protophore.js';
-import * as quasicrystal from './hacks/quasicrystal.js';
-import * as selfreflect from './hacks/selfreflect.js';
-import * as skyline from './hacks/skyline.js';
-import * as stardome from './hacks/stardome.js';
-import * as starnest from './hacks/starnest.js';
-import * as stripeytorus from './hacks/stripeytorus.js';
-import * as synthwavecity from './hacks/synthwavecity.js';
-import * as topologica from './hacks/topologica.js';
-import * as trainmandala from './hacks/trainmandala.js';
-import * as trizm from './hacks/trizm.js';
-import * as truchetzoom from './hacks/truchetzoom.js';
-// NTSC television simulation via the shared ./hacks/analogtv.glsl.js harness (a
-// faithful WebGL port of xscreensaver's analogtv.c); overlays its own webgl2
-// canvas like the shadertoy hacks above.
-import * as xanalogtv from './hacks/xanalogtv.js';
-// three.js geometry hacks (no-build, via the 'three' importmap in index.html);
-// self-contained -- each overlays its own WebGLRenderer canvas like the GL hacks
-// above, and exposes getStats() so the picker treats it as 3D.
-import * as dangerball from './hacks/dangerball.js';
-import * as cubicgrid from './hacks/cubicgrid.js';
-// GPU-heavy tier (info.heavy → red dot in the picker); kept in hacks/shelved/,
-// imported in place so each module's own '../shadertoy.js' import still resolves.
-import * as alienbeacon from './hacks/shelved/alienbeacon.js';
-import * as bestill from './hacks/shelved/bestill.js';
-import * as bubblecolors from './hacks/shelved/bubblecolors.js';
-import * as fluxcore from './hacks/shelved/fluxcore.js';
-import * as rigrekt from './hacks/shelved/rigrekt.js';
-import * as universeball from './hacks/shelved/universeball.js';
-
-// Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, compass, critical, flow, laser, lisa, lmorph, swirl, worm, abstractile, anemone, anemotaxis, bubbles, celtic, crystal, deluxe, fuzzyflakes, goop, hyperball, hypercube, lightning, polyominoes, rdbomb, starfish, substrate, whirlygig, xlyap, xrayswarm, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, hypnowheel, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, quasicrystal, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, xanalogtv, dangerball, cubicgrid, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');
@@ -206,6 +63,7 @@ const railFull = (k) => (k === 'All' ? 'All' : CAT_BY_KEY[k].full);
 
 let currentName = null;   // null = nothing running (black landing)
 let handle = null;        // running hack's teardown handle
+let currentModule = null; // running hack's loaded code module (so restart needs no re-import)
 let paused = false;       // 'p' toggles the running hack's loop on/off
 let fadeTimer = 0;        // setTimeout id for the between-hack fade-out
 let catIndex = 0;         // focused rail entry (0 = All)
@@ -266,6 +124,21 @@ function hideTitle() {
   hackName.hidden = true;
 }
 
+// Lazily import a hack's code module the first time it's mounted, caching the
+// PROMISE so concurrent mounts share one fetch and re-mounts are instant; a
+// rejected import is evicted so a later attempt can retry. Only mount() calls
+// this -- the picker runs off manifest metadata -- so no hack code loads until a
+// hack is actually shown.
+const moduleCache = new Map();
+function loadModule(entry) {
+  let p = moduleCache.get(entry.title);
+  if (!p) {
+    p = import(entry.module).catch((e) => { moduleCache.delete(entry.title); throw e; });
+    moduleCache.set(entry.title, p);
+  }
+  return p;
+}
+
 // Swap hacks. When leaving a 2D hack on screen, fade its (frozen) last frame
 // to black via canvas opacity, then start the new hack on the freshly-cleared
 // canvas at full opacity — no fade-IN, since the new hack builds up from black
@@ -273,10 +146,11 @@ function hideTitle() {
 // first mount from the black landing has nothing to fade, so it starts at once.
 function mount(name) {
   if (!byName[name] || name === currentName) return;
+  const entry = byName[name];
   const wasRunning = !!handle;
   const wasGL = !!(handle && handle.getStats);   // 3D renders to its own overlay (removed on stop), not #c
   cancelFade();
-  if (handle) { handle.stop(); handle = null; }
+  if (handle) { handle.stop(); handle = null; currentModule = null; }
   currentName = name;
   paused = false;
   hackName.textContent = name;
@@ -284,11 +158,22 @@ function mount(name) {
   if (location.hash.slice(1) !== name) location.hash = name;
   render();
 
-  const startHack = () => {
+  // Kick the import off now so the network/parse overlaps the leaving-hack fade.
+  const loading = loadModule(entry);
+
+  const startHack = async () => {
     fadeTimer = 0;
-    canvas.style.transition = 'none';   // snap back to full opacity, no fade-in
-    canvas.style.opacity = '1';
-    handle = byName[name].start(canvas);
+    let mod;
+    try { mod = await loading; }
+    catch (e) { if (currentName === name) showLoadError(name, e); return; }
+    if (currentName !== name) return;   // a newer mount superseded this one mid-load
+    try {
+      canvas.style.transition = 'none';   // snap back to full opacity, no fade-in
+      canvas.style.opacity = '1';
+      currentModule = mod;
+      handle = mod.start(canvas);
+    } catch (e) { showLoadError(name, e); return; }
+    syncPauseBtn();
   };
 
   // The fade animates the SHARED 2D host canvas (#c), where 2D hacks draw. A 3D
@@ -307,6 +192,25 @@ function mount(name) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     startHack();
   }
+}
+
+// Failure isolation: if a hack's module fails to import (e.g. a 404) or its
+// start() throws, paint a quiet message on the host canvas instead of leaving a
+// blank screen -- only that one hack is broken; the picker and the rest still work.
+function showLoadError(name, err) {
+  console.error(`jscreensaver: failed to load hack "${name}":`, err);
+  cancelFade();
+  handle = null; currentModule = null;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#5fdd83';
+  ctx.font = '14px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(`could not load "${name}"`, canvas.width / 2, canvas.height / 2);
 }
 
 // View-mode left/right cycle within the genre the current hack was chosen from
@@ -329,7 +233,7 @@ function cycle(dir) {
 function restart() {
   if (!currentName || !handle) return;
   if (handle.reinit) handle.reinit();
-  else { handle.stop(); handle = byName[currentName].start(canvas); }
+  else if (currentModule) { handle.stop(); handle = currentModule.start(canvas); }   // module already loaded
   if (paused) { paused = false; handle.resume?.(); }   // 'r' always un-pauses
   syncPauseBtn();
 }
@@ -356,7 +260,7 @@ function syncPauseBtn() {
 function goHome() {
   closeConfig(); closeAbout(); closeHelp(); closeInfo();
   cancelFade();
-  if (handle) { handle.stop(); handle = null; }
+  if (handle) { handle.stop(); handle = null; currentModule = null; }
   currentName = null;
   hideTitle();
   history.replaceState(null, '', location.pathname + location.search);
@@ -370,10 +274,9 @@ function goHome() {
 // is pre-sorted alphabetically, so each slice stays alphabetical.
 function categoryPool(cat) {
   return HACKS.filter((h) => {
-    const t = classify(h.title);
-    if (cat !== 'All' && !t.categories.includes(cat)) return false;
-    if (t.dimension === '2d' && !show2d) return false;
-    if (t.dimension === '3d' && !show3d) return false;
+    if (cat !== 'All' && !h.categories.includes(cat)) return false;
+    if (h.dim === '2d' && !show2d) return false;
+    if (h.dim === '3d' && !show3d) return false;
     return true;
   });
 }
@@ -410,7 +313,7 @@ function buildRail() {
 function buildList() {
   computeVisible();
   catHead.textContent = railFull(RAIL[catIndex]);
-  const mixed = new Set(visible.map((h) => classify(h.title).dimension)).size > 1;
+  const mixed = new Set(visible.map((h) => h.dim)).size > 1;
   list.textContent = '';
   if (!visible.length) {
     const li = document.createElement('li');
@@ -424,13 +327,13 @@ function buildList() {
       if (mixed) {
         const badge = document.createElement('span');
         badge.className = 'sel-badge';
-        badge.textContent = DIMENSIONS[classify(h.title).dimension].glyph;
+        badge.textContent = DIMENSIONS[h.dim].glyph;
         li.appendChild(badge);
       }
       const label = document.createElement('span');
       label.textContent = h.title;
       li.appendChild(label);
-      if (byName[h.title].info?.heavy) {           // GPU-intensive: trailing red dot
+      if (h.heavy) {                               // GPU-intensive: trailing red dot
         const heavy = document.createElement('span');
         heavy.className = 'sel-heavy';
         heavy.textContent = '\u25CF';            // black circle
@@ -560,13 +463,13 @@ function closeAbout() { about.classList.remove('open'); }
 function openHelp() { closeConfig(); closeAbout(); closeInfo(); help.classList.add('open'); }
 function closeHelp() { help.classList.remove('open'); }
 
-// Info box: the running hack's author / year / description (its module's `info`
-// export), shown read-only.
+// Info box: the running hack's author / year / description, read straight from
+// its manifest entry (no module load needed), shown read-only.
 function openInfo() {
   closeConfig(); closeAbout(); closeHelp();
   const ttl = document.getElementById('info-title');
   const body = document.getElementById('info-body');
-  const meta = currentName ? byName[currentName].info : null;
+  const meta = currentName ? byName[currentName] : null;
   ttl.textContent = currentName || 'info';
   body.textContent = '';
   if (meta) {

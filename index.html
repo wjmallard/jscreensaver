@@ -4,19 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jscreensaver</title>
+  <!-- Preload the hack catalog so host.js's fetch is already in flight by the time
+       the module runs (the picker can't build until the catalog arrives). -->
+  <link rel="preload" href="./catalog.json" as="fetch" crossorigin>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./host.css">
   <!-- three.js (no-build) for the three.js geometry hacks (dangerball, cubicgrid,
        ...). VENDORED locally under vendor/ so there is no runtime CDN dependency and
        the exact bytes are pinned (importmaps can't carry an SRI hash). The shadertoy
        hacks use raw WebGL and don't need it. Must precede the host.js module import so
-       bare 'three' specifiers resolve. (addons are not vendored yet -> CDN; vendor the
-       specific examples/jsm file per-use when a geometry hack first needs one.) -->
+       bare 'three' specifiers resolve. Addons (examples/jsm) are vendored under
+       vendor/three@0.160.0/jsm/ as well -- no CDN; add a file there per-use when a
+       hack first needs one (so far only geometries/ParametricGeometry.js). -->
   <script type="importmap">
   {
     "imports": {
       "three": "./vendor/three@0.160.0/three.module.min.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three/addons/": "./vendor/three@0.160.0/jsm/"
     }
   }
   </script>

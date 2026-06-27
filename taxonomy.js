@@ -52,9 +52,11 @@ export const DIMENSIONS = {
   '3d': { label: '3D', glyph: '\u25C6' },  // black diamond
 };
 
-// slug -> { dimension, categories: [key, key?] }.  slug === each module's
-// `title` export.  Categories chosen by reading each hack's own xscreensaver
-// description (see hacks/<slug>.xml); alphabetical by slug.
+// slug -> { dimension, categories: [key, key?], shelved? }.  slug === each
+// module's `title` export.  Categories chosen by reading each hack's own
+// xscreensaver description (see hacks/<slug>.xml); alphabetical by slug.
+// `shelved: true` marks a classified-but-inactive hack (kept here, ready to
+// revive); tools/build-catalog.mjs skips it when generating catalog.json.
 export const HACK_TAXONOMY = {
   // --- 2D (registered in host.js) ---
   abstractile: { dimension: '2d', categories: ['geometry'] },
@@ -110,7 +112,7 @@ export const HACK_TAXONOMY = {
   interaggregate: { dimension: '2d', categories: ['curves', 'optical'] },
   interference: { dimension: '2d', categories: ['optical', 'plasma'] },
   intermomentary: { dimension: '2d', categories: ['optical'] },
-  julia: { dimension: '2d', categories: ['fractals'] },
+  julia: { dimension: '2d', categories: ['fractals'], shelved: true },  // pending perf
   kumppa: { dimension: '2d', categories: ['plasma'] },
   laser: { dimension: '2d', categories: ['geometry'] },
   lightning: { dimension: '2d', categories: ['fractals', 'curves'] },
@@ -137,7 +139,7 @@ export const HACK_TAXONOMY = {
   rorschach: { dimension: '2d', categories: ['optical'] },
   rotor: { dimension: '2d', categories: ['curves'] },
   scooter: { dimension: '2d', categories: ['cosmic'] },
-  shadebobs: { dimension: '2d', categories: ['plasma', 'particles'] },
+  shadebobs: { dimension: '2d', categories: ['plasma', 'particles'], shelved: true },  // pending perf
   sierpinski: { dimension: '2d', categories: ['fractals'] },
   sphere: { dimension: '2d', categories: ['surfaces', 'geometry'] },
   spiral: { dimension: '2d', categories: ['curves'] },
@@ -174,7 +176,7 @@ export const HACK_TAXONOMY = {
   downfall: { dimension: '3d', categories: ['plasma'] },
   driftclouds: { dimension: '3d', categories: ['fluids'] },
   elementalring: { dimension: '3d', categories: ['geometry'] },
-  fluxcore: { dimension: '3d', categories: ['geometry', 'plasma'] },
+  fluxcore: { dimension: '3d', categories: ['worlds'] },
   gimbalharmonics: { dimension: '3d', categories: ['geometry'] },
   goldenapollian: { dimension: '3d', categories: ['fractals', 'geometry'] },
   hexplasma: { dimension: '3d', categories: ['plasma'] },
