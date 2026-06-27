@@ -6,13 +6,16 @@
   <title>jscreensaver</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./host.css">
-  <!-- three.js (no-build, CDN) for the three.js geometry hacks (dangerball,
-       cubicgrid, ...). The shadertoy hacks use raw WebGL and don't need this.
-       Must come before the host.js module import so bare 'three' specifiers resolve. -->
+  <!-- three.js (no-build) for the three.js geometry hacks (dangerball, cubicgrid,
+       ...). VENDORED locally under vendor/ so there is no runtime CDN dependency and
+       the exact bytes are pinned (importmaps can't carry an SRI hash). The shadertoy
+       hacks use raw WebGL and don't need it. Must precede the host.js module import so
+       bare 'three' specifiers resolve. (addons are not vendored yet -> CDN; vendor the
+       specific examples/jsm file per-use when a geometry hack first needs one.) -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three": "./vendor/three@0.160.0/three.module.min.js",
       "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     }
   }
@@ -24,7 +27,9 @@
   <div id="selector">
     <div class="sel-box">
       <div class="sel-head">
+        <span class="sel-head-link" id="sel-about"><u>a</u>bout</span>
         <span class="sel-title" id="sel-title">jscreensaver</span>
+        <span class="sel-head-link" id="sel-help"><u>h</u>elp</span>
       </div>
       <div class="sel-main" id="sel-main">
         <div class="sel-left">
@@ -40,7 +45,12 @@
         </div>
       </div>
       <div class="sel-foot">
-        <span id="sel-about"><u>a</u>bout</span> &nbsp;&middot;&nbsp; <span id="sel-config"><u>c</u>onfig</span> &nbsp;&middot;&nbsp; <span id="sel-help"><u>h</u>elp</span> &nbsp;&middot;&nbsp; <span id="sel-random">random</span> &nbsp;&middot;&nbsp; <span id="sel-clear">clear</span>
+        <span id="sel-info"><u>i</u>nfo</span>
+        <span id="sel-config"><u>c</u>onfig</span>
+        <span id="sel-restart"><u>r</u>estart</span>
+        <span id="sel-fps"><u>f</u>ps</span>
+        <span id="sel-random">random</span>
+        <span id="sel-clear">clear</span>
       </div>
     </div>
   </div>
@@ -90,7 +100,6 @@
   </div>
 
   <div id="hackname" hidden></div>
-  <div id="cfg-link" hidden><u>c</u>onfig</div>
   <div id="fps" hidden>&ndash; ms/f</div>
 
   <script type="module" src="./host.js"></script>

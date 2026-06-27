@@ -19,8 +19,10 @@
 }
 
 * { margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-canvas { display: block; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; overscroll-behavior: none; }
+/* touch-action:none hands canvas gestures (swipe / tap) to host.js instead of
+   letting the browser scroll, pan, or pull-to-refresh over the screensaver. */
+canvas { display: block; touch-action: none; }
 
 /* Picker + Config + About + Help + Info share a dimmed-overlay + green box look. */
 #selector, #config, #about, #help, #info {
@@ -42,11 +44,17 @@ canvas { display: block; }
 /* Fixed height (not max-height) so the box doesn't grow/shrink and re-center as
    you move between genres of different lengths — short genres get empty space,
    long ones (All) scroll within the stable frame. */
-.sel-box { display: flex; flex-direction: column; width: 380px; height: min(70vh, 460px); font-size: 13px; }
+.sel-box { display: flex; flex-direction: column; width: min(380px, 92vw); height: min(70vh, 460px); font-size: 13px; }
 
-.sel-head { display: flex; align-items: center; justify-content: center; padding: 11px 16px; border-bottom: 1px solid var(--phosphor-divider); }
+/* Header: the project title centred, with about (left) and help (right) flanking
+   it — the two side links take equal flex so the title stays optically centred. */
+.sel-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--phosphor-divider); }
 .sel-title { cursor: pointer; letter-spacing: 0.12em; color: var(--phosphor-bright); }
 .sel-title:hover { color: var(--phosphor-hi); }
+.sel-head-link { flex: 1; font-size: 11.5px; cursor: pointer; color: var(--phosphor-dim); letter-spacing: 0.04em; }
+.sel-head-link:last-of-type { text-align: right; }
+.sel-head-link:hover { color: var(--phosphor-mid); }
+.sel-head-link u { color: var(--phosphor-mid); text-underline-offset: 2px; }
 
 /* Two-pane picker: a left column (2D/3D filter + genre rail) drives the detail
    list. The filter box and the genre-name header share a row, both 30px tall so
@@ -93,17 +101,23 @@ canvas { display: block; }
 .sel-list::-webkit-scrollbar-thumb { background: var(--phosphor-border); border-radius: 4px; }
 .sel-list::-webkit-scrollbar-track { background: transparent; }
 
-/* Footer guides inside the picker. */
+/* Footer: a centred, dot-separated row of per-hack + library actions
+   (info / config / restart / fps / random / clear). Flex with wrap so on a narrow
+   phone the trailing library pair drops to a second line; the dots are CSS
+   ::after separators (one per item but the last) so no literal middots live in the
+   markup and a wrapped line never starts with a stray dot. Each span carries
+   padding for a comfortable touch target. */
 .sel-foot {
-  padding: 9px 16px; border-top: 1px solid var(--phosphor-divider);
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+  row-gap: 2px; padding: 7px 14px; border-top: 1px solid var(--phosphor-divider);
   font-size: 11.5px; letter-spacing: 0.02em; color: var(--phosphor-dim);
-  text-align: center;
 }
-.sel-foot span { cursor: pointer; }
+.sel-foot span { cursor: pointer; padding: 4px 2px; }
 .sel-foot span:hover { color: #7fd49a; }
+.sel-foot span:not(:last-child)::after { content: '\00B7'; margin: 0 0.5em; pointer-events: none; }
 .sel-foot u { color: var(--phosphor-mid); text-underline-offset: 2px; }
-/* config + clear go dim and non-interactive while nothing is running (host.js
-   toggles .disabled), so they don't invite a click that would do nothing. */
+/* The per-hack actions + clear go dim and non-interactive while nothing is running
+   (host.js toggles .disabled); their separator dot inherits the dimmed colour. */
 .sel-foot span.disabled,
 .sel-foot span.disabled:hover { color: var(--phosphor-border); cursor: default; }
 .sel-foot span.disabled u { color: var(--phosphor-border); }
@@ -131,23 +145,19 @@ canvas { display: block; }
 .help-list dt { color: var(--phosphor-bright); white-space: nowrap; }
 .help-list dd { margin: 0; color: var(--phosphor); }
 
-#cfg-link, #fps, #hackname {
+#fps, #hackname {
   position: fixed; z-index: 99998; cursor: default;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11.5px; color: rgba(120, 230, 150, 0.4);
 }
-/* #cfg-link is the dim-green idle corner link (shared rule above) that brightens
-   on hover (rule below). #hackname and #fps are bright white with a dark
-   drop-shadow so they stay legible over any hack — #hackname a transient,
-   non-interactive label (JS fades its opacity), #fps a deliberate toggle. */
+/* #hackname and #fps are bright white with a dark drop-shadow so they stay
+   legible over any hack — #hackname a transient, non-interactive label (JS
+   fades its opacity), #fps a deliberate toggle. */
 #hackname {
   top: 11px; left: 14px; letter-spacing: 0.08em; pointer-events: none;
   color: #fff; text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
 }
-#cfg-link { top: 12px; right: 14px; cursor: pointer; }
-#cfg-link u { text-underline-offset: 2px; }
 #fps {
   bottom: 11px; right: 14px; font-variant-numeric: tabular-nums;
   color: #fff; text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
 }
-#cfg-link:hover { color: rgba(150, 240, 175, 0.78); }

@@ -182,7 +182,6 @@ const catHead = document.getElementById('sel-cat-head');
 const dim2d = document.getElementById('dim-2d');
 const dim3d = document.getElementById('dim-3d');
 const title = document.getElementById('sel-title');
-const cfgLink = document.getElementById('cfg-link');
 const fps = document.getElementById('fps');
 const hackName = document.getElementById('hackname');
 
@@ -265,7 +264,6 @@ function hideTitle() {
 // canvas at full opacity — no fade-IN, since the new hack builds up from black
 // on its own (xscreensaver's symmetric gamma fade-in is wasted on that). The
 // first mount from the black landing has nothing to fade, so it starts at once.
-// Reveal the config affordance only when the new hack exposes a config.
 function mount(name) {
   if (!byName[name] || name === currentName) return;
   const wasRunning = !!handle;
@@ -274,7 +272,6 @@ function mount(name) {
   if (handle) { handle.stop(); handle = null; }
   currentName = name;
   paused = false;
-  cfgLink.hidden = true;
   hackName.textContent = name;
   flashTitle();
   if (location.hash.slice(1) !== name) location.hash = name;
@@ -285,7 +282,6 @@ function mount(name) {
     canvas.style.transition = 'none';   // snap back to full opacity, no fade-in
     canvas.style.opacity = '1';
     handle = byName[name].start(canvas);
-    cfgLink.hidden = !(handle && handle.params);
   };
 
   // The fade animates the SHARED 2D host canvas (#c), where 2D hacks draw. A 3D
@@ -345,7 +341,6 @@ function goHome() {
   cancelFade();
   if (handle) { handle.stop(); handle = null; }
   currentName = null;
-  cfgLink.hidden = true;
   hideTitle();
   history.replaceState(null, '', location.pathname + location.search);
   const ctx = canvas.getContext('2d');
@@ -461,13 +456,16 @@ function setFocus(pane) {
   if (pane === 'list') list.children[cursorIndex]?.scrollIntoView({ block: 'nearest' });
 }
 
-// config + clear are no-ops with nothing running; dim them (and drop their hover)
-// so a dead click isn't invited. The footer only shows via openSelector, and
-// "clear" re-routes through it, so syncing here covers every visible transition.
+// The per-hack footer actions (info/config/restart/fps) and clear are no-ops with
+// nothing running; dim them (and drop their hover) so a dead click isn't invited.
+// random stays live — it picks a hack from the landing too. The footer only shows
+// via openSelector, and "clear" re-routes through it, so syncing here covers every
+// visible transition.
 function syncFooter() {
   const running = !!currentName;
-  document.getElementById('sel-config').classList.toggle('disabled', !running);
-  document.getElementById('sel-clear').classList.toggle('disabled', !running);
+  for (const id of ['sel-info', 'sel-config', 'sel-restart', 'sel-fps', 'sel-clear']) {
+    document.getElementById(id).classList.toggle('disabled', !running);
+  }
 }
 
 function openSelector() {
@@ -623,10 +621,12 @@ buildList();
 title.addEventListener('click', goHome);
 document.getElementById('sel-help').addEventListener('click', openHelp);
 document.getElementById('sel-about').addEventListener('click', openAbout);
+document.getElementById('sel-info').addEventListener('click', () => { if (currentName) openInfo(); });
 document.getElementById('sel-config').addEventListener('click', () => { if (currentName) openConfig(); });
+document.getElementById('sel-restart').addEventListener('click', () => { if (currentName) { restart(); closeSelector(); } });
+document.getElementById('sel-fps').addEventListener('click', () => { if (currentName) { toggleFps(); closeSelector(); } });
 document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
-cfgLink.addEventListener('click', openConfig);
 
 // Click the dimmed area (outside a box) to dismiss.
 selector.addEventListener('click', (e) => { if (e.target === selector) closeSelector(); });
@@ -635,8 +635,35 @@ about.addEventListener('click', (e) => { if (e.target === about) closeAbout(); }
 help.addEventListener('click', (e) => { if (e.target === help) closeHelp(); });
 infoBox.addEventListener('click', (e) => { if (e.target === infoBox) closeInfo(); });
 
-// In view mode, clicking the running hack brings the picker back.
-canvas.addEventListener('click', openSelector);
+// View-mode pointer gestures on the canvas (no overlay is up, so the canvas is the
+// hit target): a tap summons the picker, a horizontal swipe cycles prev/next like
+// the arrow keys. We classify a pointer down->up by total movement: within TAP_SLOP
+// px = a tap; a dominant-horizontal drag past SWIPE_MIN = a swipe (left -> next,
+// right -> previous). Swipes that begin at the very screen edge are left to the OS
+// so they don't fight iOS's back/forward edge-swipe. touch-action:none (host.css)
+// hands us the raw gesture instead of the browser scrolling.
+const TAP_SLOP = 10, SWIPE_MIN = 45, EDGE_GUARD = 20;
+let gesture = null;
+canvas.addEventListener('pointerdown', (e) => {
+  gesture = { x: e.clientX, y: e.clientY, type: e.pointerType };
+  canvas.setPointerCapture?.(e.pointerId);
+});
+canvas.addEventListener('pointerup', (e) => {
+  const g = gesture; gesture = null;
+  if (!g) return;
+  const dx = e.clientX - g.x, dy = e.clientY - g.y;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  if (adx < TAP_SLOP && ady < TAP_SLOP) { onTap(g); return; }
+  if (adx > SWIPE_MIN && adx > ady) {
+    if (g.x <= EDGE_GUARD || g.x >= window.innerWidth - EDGE_GUARD) return;  // edge-swipe: leave to the OS
+    cycle(dx < 0 ? 1 : -1);   // swipe left -> next, swipe right -> previous
+  }
+});
+canvas.addEventListener('pointercancel', () => { gesture = null; });
+
+// A canvas tap summons the picker. Chunk 5 forks this so a touch pointer reveals
+// the control bar instead (mouse keeps opening the picker directly).
+function onTap(g) { openSelector(); }
 
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -668,6 +695,9 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === 'Enter') { e.preventDefault(); if (focusPane === 'rail') setFocus('list'); else commitCursor(); }
     else if (e.key === 'a') { e.preventDefault(); openAbout(); }
     else if (e.key === 'c') { e.preventDefault(); if (currentName) openConfig(); }
+    else if (e.key === 'i') { e.preventDefault(); if (currentName) openInfo(); }
+    else if (e.key === 'r') { e.preventDefault(); if (currentName) { restart(); closeSelector(); } }
+    else if (e.key === 'f') { e.preventDefault(); if (currentName) { toggleFps(); closeSelector(); } }
     else if (e.key === 'h') { e.preventDefault(); openHelp(); }
     else if (e.key === 'q') { e.preventDefault(); goHome(); }  // 'q' = the Clear button
     else if (e.key === 's' || e.key === 'Escape') { e.preventDefault(); closeSelector(); }
