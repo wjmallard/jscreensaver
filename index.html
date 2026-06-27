@@ -6,6 +6,17 @@
   <title>jscreensaver</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./host.css">
+  <!-- three.js (no-build, CDN) for the three.js geometry hacks (dangerball,
+       cubicgrid, ...). The shadertoy hacks use raw WebGL and don't need this.
+       Must come before the host.js module import so bare 'three' specifiers resolve. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
   <canvas id="c"></canvas>

@@ -151,6 +151,11 @@ import * as truchetzoom from './hacks/truchetzoom.js';
 // faithful WebGL port of xscreensaver's analogtv.c); overlays its own webgl2
 // canvas like the shadertoy hacks above.
 import * as xanalogtv from './hacks/xanalogtv.js';
+// three.js geometry hacks (no-build, via the 'three' importmap in index.html);
+// self-contained -- each overlays its own WebGLRenderer canvas like the GL hacks
+// above, and exposes getStats() so the picker treats it as 3D.
+import * as dangerball from './hacks/dangerball.js';
+import * as cubicgrid from './hacks/cubicgrid.js';
 // GPU-heavy tier (info.heavy → red dot in the picker); kept in hacks/shelved/,
 // imported in place so each module's own '../shadertoy.js' import still resolves.
 import * as alienbeacon from './hacks/shelved/alienbeacon.js';
@@ -161,7 +166,7 @@ import * as rigrekt from './hacks/shelved/rigrekt.js';
 import * as universeball from './hacks/shelved/universeball.js';
 
 // Alphabetical — the order shown in the picker and the ← → cycle order.
-const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, compass, critical, flow, laser, lisa, lmorph, swirl, worm, abstractile, anemone, anemotaxis, bubbles, celtic, crystal, deluxe, fuzzyflakes, goop, hyperball, hypercube, lightning, polyominoes, rdbomb, starfish, substrate, whirlygig, xlyap, xrayswarm, vfeedback, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, xanalogtv, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
+const HACKS = [squiral, coral, cloudlife, demon, petri, ant, sierpinski, binaryring, braid, boxfit, galaxy, grav, pyro, thornbird, spiral, xspirograph, hopalong, greynetic, kumppa, halftone, imsmap, interaggregate, interference, metaballs, piecewise, halo, moire, qix, truchet, helix, moire2, penrose, scooter, strange, loop, vermiculate, binaryhorizon, cynosure, deco, fadeplot, popsquares, rorschach, bouboule, cwaves, fiberlamp, mountain, munch, pedal, wander, whirlwindwarp, fluidballs, ifs, attraction, euler2d, eruption, flame, hexadrop, intermomentary, apollonian, ccurve, drift, wormhole, nerverot, rocks, discrete, epicycle, fireworkx, forest, lissie, rotor, sphere, triangle, vines, xflame, compass, critical, flow, laser, lisa, lmorph, swirl, worm, abstractile, anemone, anemotaxis, bubbles, celtic, crystal, deluxe, fuzzyflakes, goop, hyperball, hypercube, lightning, polyominoes, rdbomb, starfish, substrate, whirlygig, xlyap, xrayswarm, vfeedback, batteredplanet, darktransit, downfall, driftclouds, elementalring, gimbalharmonics, goldenapollian, hexplasma, logarithmiccircles, neongravity, neontriangulator, noxfire, prococean, protophore, selfreflect, skyline, stardome, starnest, stripeytorus, synthwavecity, topologica, trainmandala, trizm, truchetzoom, xanalogtv, dangerball, cubicgrid, alienbeacon, bestill, bubblecolors, fluxcore, rigrekt, universeball].sort((a, b) => a.title.localeCompare(b.title));
 const byName = Object.fromEntries(HACKS.map((h) => [h.title, h]));
 
 const canvas = document.getElementById('c');

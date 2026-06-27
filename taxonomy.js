@@ -164,6 +164,8 @@ export const HACK_TAXONOMY = {
   batteredplanet: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   bestill: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   bubblecolors: { dimension: '3d', categories: ['plasma'] },
+  cubicgrid: { dimension: '3d', categories: ['geometry'] },
+  dangerball: { dimension: '3d', categories: ['geometry'] },
   darktransit: { dimension: '3d', categories: ['cosmic'] },
   downfall: { dimension: '3d', categories: ['plasma'] },
   driftclouds: { dimension: '3d', categories: ['fluids'] },
