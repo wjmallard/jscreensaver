@@ -184,6 +184,8 @@ const dim3d = document.getElementById('dim-3d');
 const title = document.getElementById('sel-title');
 const fps = document.getElementById('fps');
 const hackName = document.getElementById('hackname');
+const bar = document.getElementById('bar');
+const hint = document.getElementById('hint');
 
 // Picker taxonomy: a left rail of genres (plus "All") filters the hack list on
 // the right; an optional 2D/3D dimension filter narrows it further. The rail
@@ -251,6 +253,7 @@ function flashTitle() {
     hackName.style.transition = `opacity ${TITLE_FADE_MS}ms linear`;
     hackName.style.opacity = '0';
   }, TITLE_HOLD_MS);
+  maybeShowHint();
 }
 function hideTitle() {
   if (titleTimer) { clearTimeout(titleTimer); titleTimer = 0; }
@@ -471,6 +474,7 @@ function syncFooter() {
 function openSelector() {
   selector.classList.add('open');
   hideTitle();                       // the title stays hidden while the picker is up
+  hideBar();                         // ...and so is the touch control bar
   // Keep the rail on the last-browsed genre — catIndex persists across opens, so
   // e.g. "random" from All keeps landing in All instead of being dragged into
   // whatever genre the last pick happened to belong to. Just drop the cursor on
@@ -612,6 +616,47 @@ function toggleFps() {
   }
 }
 
+// Control bar (touch only): a canvas tap reveals it over the running hack and it
+// auto-hides after BAR_HIDE_MS; a swipe, the picker, or another tap dismisses it.
+// It's per-hack, so with nothing running a tap opens the picker instead. Each
+// button mirrors a footer/keyboard action; "browse" opens the full picker.
+const BAR_HIDE_MS = 3200;
+let barTimer = 0;
+function armBarHide() {
+  if (barTimer) clearTimeout(barTimer);
+  barTimer = setTimeout(hideBar, BAR_HIDE_MS);
+}
+function showBar() {
+  if (!currentName) { openSelector(); return; }
+  bar.hidden = false;
+  void bar.offsetWidth;            // render at opacity 0 before the fade-in
+  bar.classList.add('show');
+  armBarHide();
+}
+function hideBar() {
+  if (barTimer) { clearTimeout(barTimer); barTimer = 0; }
+  bar.classList.remove('show');
+}
+
+// First-visit hint (touch only): a one-time, dim nudge that the canvas takes swipe
+// + tap, shown the first time a hack appears in view mode, then never again
+// (persisted in localStorage; a session flag guards repeat flashTitle calls too).
+const HINT_HOLD_MS = 4000;
+let hintShown = false;
+function maybeShowHint() {
+  if (hintShown) return;
+  hintShown = true;
+  if (!matchMedia('(pointer: coarse)').matches) return;     // touch devices only
+  try {
+    if (localStorage.getItem('jscr-hinted')) return;
+    localStorage.setItem('jscr-hinted', '1');
+  } catch (e) { return; }                                   // private mode: just skip it
+  hint.hidden = false;
+  void hint.offsetWidth;
+  hint.classList.add('show');
+  setTimeout(() => hint.classList.remove('show'), HINT_HOLD_MS);
+}
+
 // Build the genre rail once and wire the 2D/3D filter checkboxes.
 buildRail();
 dim2d.addEventListener('change', applyDimFilter);
@@ -627,6 +672,15 @@ document.getElementById('sel-restart').addEventListener('click', () => { if (cur
 document.getElementById('sel-fps').addEventListener('click', () => { if (currentName) { toggleFps(); closeSelector(); } });
 document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
+
+// Touch control-bar buttons act on the running hack directly (view mode). info /
+// config open a box over the hack (so the bar hides); restart / fps keep the bar
+// up and re-arm its auto-hide; browse hands off to the picker.
+document.getElementById('bar-info').addEventListener('click', () => { hideBar(); openInfo(); });
+document.getElementById('bar-config').addEventListener('click', () => { hideBar(); openConfig(); });
+document.getElementById('bar-restart').addEventListener('click', () => { restart(); armBarHide(); });
+document.getElementById('bar-fps').addEventListener('click', () => { toggleFps(); armBarHide(); });
+document.getElementById('bar-browse').addEventListener('click', () => { hideBar(); openSelector(); });
 
 // Click the dimmed area (outside a box) to dismiss.
 selector.addEventListener('click', (e) => { if (e.target === selector) closeSelector(); });
@@ -656,14 +710,19 @@ canvas.addEventListener('pointerup', (e) => {
   if (adx < TAP_SLOP && ady < TAP_SLOP) { onTap(g); return; }
   if (adx > SWIPE_MIN && adx > ady) {
     if (g.x <= EDGE_GUARD || g.x >= window.innerWidth - EDGE_GUARD) return;  // edge-swipe: leave to the OS
+    hideBar();
     cycle(dx < 0 ? 1 : -1);   // swipe left -> next, swipe right -> previous
   }
 });
 canvas.addEventListener('pointercancel', () => { gesture = null; });
 
-// A canvas tap summons the picker. Chunk 5 forks this so a touch pointer reveals
-// the control bar instead (mouse keeps opening the picker directly).
-function onTap(g) { openSelector(); }
+// A canvas tap on a fine pointer (mouse) opens the picker directly; on a touch
+// pointer it toggles the control bar (the touch fast-path — its "browse" button
+// opens the full picker).
+function onTap(g) {
+  if (g.type === 'mouse') { openSelector(); return; }
+  if (bar.classList.contains('show')) hideBar(); else showBar();
+}
 
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
