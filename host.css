@@ -185,6 +185,12 @@ canvas { display: block; touch-action: none; }
 .bar-btn svg { width: 23px; height: 23px; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.95)); }
 .bar-btn span { text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9); }
 .bar-btn:active { color: var(--phosphor-hi); }
+.bar-btn.disabled { color: rgba(255, 255, 255, 0.3); pointer-events: none; }   /* e.g. a hack with no pause support */
+/* pause/play button swaps its icon + label with the running hack's state (host.js
+   toggles .is-paused on it); only one icon/label of each pair shows at a time. */
+#bar-pause .ic-play, #bar-pause .bar-lb-play { display: none; }
+#bar-pause.is-paused .ic-pause, #bar-pause.is-paused .bar-lb-pause { display: none; }
+#bar-pause.is-paused .ic-play, #bar-pause.is-paused .bar-lb-play { display: block; }
 @media (pointer: fine) { #bar { display: none; } }
 
 /* First-visit hint — a one-time, dim, centred nudge just above the control bar that

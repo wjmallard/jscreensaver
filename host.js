@@ -185,6 +185,7 @@ const title = document.getElementById('sel-title');
 const fps = document.getElementById('fps');
 const hackName = document.getElementById('hackname');
 const bar = document.getElementById('bar');
+const barPause = document.getElementById('bar-pause');
 const hint = document.getElementById('hint');
 
 // Picker taxonomy: a left rail of genres (plus "All") filters the hack list on
@@ -327,6 +328,7 @@ function restart() {
   if (handle.reinit) handle.reinit();
   else { handle.stop(); handle = byName[currentName].start(canvas); }
   if (paused) { paused = false; handle.resume?.(); }   // 'r' always un-pauses
+  syncPauseBtn();
 }
 
 // Freeze / resume the running hack's animation loop. Resets its pacing on
@@ -335,6 +337,15 @@ function togglePause() {
   if (!handle) return;
   paused = !paused;
   if (paused) handle.pause?.(); else handle.resume?.();
+  syncPauseBtn();
+}
+// Reflect the running hack's pause state on the touch bar's pause/play button, and
+// dim it for hacks that expose no pause handler so it never looks like a dead
+// control. A no-op on desktop, where the bar is hidden.
+function syncPauseBtn() {
+  const canPause = !!(handle && handle.pause);
+  barPause.classList.toggle('disabled', !canPause);
+  barPause.classList.toggle('is-paused', canPause && paused);
 }
 
 // Clear / home: stop the hack, drop the hash, clear to black, and hold the
@@ -631,6 +642,7 @@ function showBar() {
   bar.hidden = false;
   void bar.offsetWidth;            // render at opacity 0 before the fade-in
   bar.classList.add('show');
+  syncPauseBtn();
   armBarHide();
 }
 function hideBar() {
@@ -673,12 +685,12 @@ document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
 
 // Touch control-bar buttons act on the running hack directly (view mode). info /
-// config open a box over the hack (so the bar hides); restart / fps keep the bar
+// config open a box over the hack (so the bar hides); restart / pause keep the bar
 // up and re-arm its auto-hide; browse hands off to the picker.
 document.getElementById('bar-info').addEventListener('click', () => { hideBar(); openInfo(); });
 document.getElementById('bar-config').addEventListener('click', () => { hideBar(); openConfig(); });
 document.getElementById('bar-restart').addEventListener('click', () => { restart(); armBarHide(); });
-document.getElementById('bar-fps').addEventListener('click', () => { toggleFps(); armBarHide(); });
+document.getElementById('bar-pause').addEventListener('click', () => { togglePause(); armBarHide(); });
 document.getElementById('bar-browse').addEventListener('click', () => { hideBar(); openSelector(); });
 
 // Click the dimmed area (outside a box) to dismiss.
