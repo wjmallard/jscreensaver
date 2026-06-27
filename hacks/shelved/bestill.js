@@ -28,6 +28,7 @@ export const info = {
   heavy: true,
   author: 'Matt Vianueva (diatribes)',
   description: 'A collection of six calm, still landscape and cloud scenes, from a moonlit "Night Cloud Dance" to a sunlit "Desert Duo".',
+  year: 2025,
 };
 
 // Each entry is verbatim from hacks/glx/glsl/bestill{0..5}-0.glsl (Shadertoy,
