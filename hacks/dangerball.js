@@ -1,5 +1,5 @@
 // dangerball.js -- "DangerBall" as a self-contained, mountable three.js module.
-// start(hostCanvas, opts) -> { stop, pause, resume, getStats }.
+// start(hostCanvas, opts) -> { stop, pause, resume, getStats, reinit, config, params }.
 //
 // Faithful port of xscreensaver's dangerball (Jamie Zawinski, 2001),
 // hacks/glx/dangerball.c. A glossy sphere bristling with matte cone spikes that
@@ -12,7 +12,7 @@
 // cubicgrid.js does.
 //
 // Faithful to the .c:
-//   * 30 spikes; pulse speed 0.05/frame; sphere unit_sphere(16,32); spike cone
+//   * spikes; pulse growth 0.05/frame; sphere unit_sphere(16,32); spike cone
 //     cone(diameter=1, 12 faces, smooth, no cap) -- which in tube.c is a BASE-
 //     RADIUS-1 cone from y=0 (base) to y=1 (tip), so we rebuild that exact
 //     primitive (radial smooth normals) rather than three's ConeGeometry.
@@ -23,21 +23,23 @@
 //   * draw_ball's exact modelview nesting: Scale(1.1)*Translate(wander)*
 //     Rotate(spin)*Scale(2.0)*{sphere, spikes}; the per-spike transform
 //     Ry(az)*Rz(el)*T(0.7)*Rz(-90)*Scale(0.2,len,0.2).
-//   * 128-entry smooth colormap; ball = colors[ccolor] (glossy: white specular,
-//     shininess 128), spikes = colors[(ccolor+shift)%128] (matte: no specular).
+//   * 128-entry smooth colormap; ball = colors[ccolor] (glossy, cyan highlight),
+//     spikes = colors[(ccolor+shift)%128] (matte: no specular).
 //   * one white directional light from (1,1,1), ambient 0.
 //
 // Motion (rotator.js), palette (colormap.js) and RNG (yarandom.js) are faithful
-// standalone ports, consumed here in the SAME ORDER as init_ball/draw_ball so a
-// fixed seed reproduces the original's structural choices.
+// standalone ports.
 //
-// Frame-rate independence + faithful pace: the .c's `delay 30000` is only a
-// *floor* (nominal ~33fps); the original's real effective rate is ~15fps once
-// per-frame draw/vsync/event overhead is counted. Measured from jwz's demo video
-// (object-tracking the pulse: 40 fixed steps per extend/retract cycle, period
-// ~2.7s => ~15fps). So we step the simulation at a fixed 15 logical fps via the
-// accumulator below — refresh-rate independent, and matching the original's pace
-// (an assumed 30fps ran the whole hack ~2x too fast).
+// PACING -- render rate and motion speed are INDEPENDENT axes (so slowing down
+// never gets jittery, unlike a per-step-rate "speed" knob). We render every rAF;
+// motion is a CONTINUOUS velocity. `delay` (us, from the .xml) sets the original's
+// effective frame rate as effFps = 1e6/(delay+OVERHEAD); OVERHEAD encodes the ~2x
+// per-frame overhead measured for the real hack, so the .xml default delay 30000
+// lands at the faithful ~15fps / ~2.7s pulse (see the frame-rate-calibration note).
+// One render frame advances `frames = dt*effFps` original-frames of motion: the
+// pulse/color/wander advance continuously by `frames`, while the rotator's discrete
+// random-walk is ticked once per original-frame and INTERPOLATED between ticks --
+// smooth render AND the original's per-frame event cadence preserved.
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -54,36 +56,47 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   // ---- constants (dangerball.c DEFAULTS / #defines) ----
-  const COUNT = 30;            // MI_COUNT: spike count
-  const SPEED = 0.05;          // DEF_SPEED: the original's per-frame pulse increment
+  const MAX_SPIKES = 100;      // xml count high=100; we build this many, show config.count
   const SPIKE_FACES = 12;      // SPIKE_FACES
   const NCOLORS = 128;         // bp->ncolors
   const DIAM = 0.2;            // draw_spikes: spike thickness scale
   const ROT_SCALE = 22;        // randomize_spikes quantization
   const DEG = Math.PI / 180;
+  const OVERHEAD = 37500;      // us; calibrates the xml default delay 30000 -> ~15fps (the measured effective rate)
 
-  // Render/step at 30fps for SMOOTH motion (the original's true ~15fps effective
-  // rate looked jittery), but scale every per-step motion by SPEED_SCALE so the
-  // WALL-CLOCK pace still matches the original (= the youtube demo): 30 steps/sec
-  // x 0.5 == 15 steps/sec at full speed. Applies to the spike pulse, the spin,
-  // the wander, AND the color cycle. (Measured effective rate ~15fps: a ~2.7s,
-  // 40-step pulse; `delay 30000` is only a floor -- real overhead ~doubles it.)
-  const FPS = 30;
-  const SPEED_SCALE = 0.5;
+  // Live config. Keys/ranges/defaults/labels transcribed 1:1 from
+  // hacks/config/dangerball.xml (the host renders the box from `params` and
+  // mutates `config` in place). `delay` is the original's frame-rate knob, here a
+  // smooth speed control; `spikespeed` is the .xml --speed (pulse growth).
+  const config = {
+    delay: 30000,       // us, frame rate / overall speed (xml default; invert slider)
+    spikespeed: 0.05,   // pulse growth per original-frame (xml --speed / DEF_SPEED)
+    count: 30,          // number of spikes shown (xml --count)
+    wander: true,       // drift through space (do_wander)
+    spin: true,         // tumble (do_spin)
+    wire: false,        // wireframe
+  };
+  const params = [
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'spikespeed', label: 'Spike growth', type: 'range', min: 0.001, max: 0.25, step: 0.001, default: 0.05, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'count', label: 'Number of spikes', type: 'range', min: 1, max: 100, step: 1, default: 30, lowLabel: 'few', highLabel: 'ouch', live: true },
+    { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },
+    { key: 'spin', label: 'Spin', type: 'checkbox', default: true, live: true },
+    { key: 'wire', label: 'Wireframe', type: 'checkbox', default: false, live: true },
+  ];
 
   const seed = opts.seed || 0;            // 0 => time-seeded (random per run)
   const rng = makeYaRandom(seed);
 
   // ---- RNG-consuming init, in init_ball's order: rotator, colormap, spikes ----
   // do_spin & do_wander default True; spin_speed 10, spin_accel 2, wander 0.12.
+  // (No speed-scaling baked in: the rotator runs at the original rate; pacing is
+  // applied by ticking it at effFps below, with interpolation for smoothness.)
   const rot = makeRotator(
     {
-      // spin/wander x SPEED_SCALE: the rotator's velocity scales linearly with
-      // these, so 30 steps/sec at half-speed == the original's 10 / 0.12 at
-      // ~15 steps/sec, same wall-clock rate. (Original values: spin 10, wander 0.12.)
-      spinX: 10 * SPEED_SCALE, spinY: 10 * SPEED_SCALE, spinZ: 10 * SPEED_SCALE,
+      spinX: 10, spinY: 10, spinZ: 10,
       spinAccel: 2.0,
-      wanderSpeed: 0.12 * SPEED_SCALE,
+      wanderSpeed: 0.12,
       randomize: true,
     },
     rng,
@@ -92,20 +105,21 @@ export function start(hostCanvas, opts = {}) {
   const cmap = makeSmoothColormap(rng, NCOLORS);
   const colors = cmap.map((c) => new THREE.Color().setRGB(c.r, c.g, c.b, THREE.SRGBColorSpace));
 
-  // spike azimuth/elevation pairs (degrees), and pulse/color state.
-  const spikes = new Int32Array(COUNT * 2);
-  let pos = 0;            // pulse position, -1..+1; sign = retract phase.
+  // spike azimuth/elevation pairs (degrees), and pulse/color state. We randomize
+  // all MAX_SPIKES and show config.count of them (so the count slider is instant).
+  const spikes = new Int32Array(MAX_SPIKES * 2);
+  let pos = 0;            // pulse position, -1..+1; sign = retract phase (continuous).
   let colorShift = 0;
-  let ccolor = 0;        // color-cycle cursor (float; index = floor, advances SPEED_SCALE/step).
+  let ccolor = 0;        // color-cycle cursor (float; index = floor(ccolor)).
 
   function randomizeSpikes() {
     pos = 0;
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < MAX_SPIKES; i++) {
       spikes[i * 2]     = (rng.random() % 360) - 180;
       spikes[i * 2 + 1] = (rng.random() % 180) - 90;
     }
     // Quantize with C-style truncation toward zero (NOT floor).
-    for (let i = 0; i < COUNT * 2; i++)
+    for (let i = 0; i < MAX_SPIKES * 2; i++)
       spikes[i] = Math.trunc(spikes[i] / ROT_SCALE) * ROT_SCALE;
 
     if ((rng.random() % 3) === 0) colorShift = rng.random() % (NCOLORS / 2);
@@ -179,19 +193,15 @@ export function start(hostCanvas, opts = {}) {
   const coneGeo = makeUnitCone(SPIKE_FACES);
   const sphereGeo = new THREE.SphereGeometry(1, 32, 16);   // unit_sphere(16,32)
 
-  // Ball: glossy, shininess 128. The .c's highlight color = light_specular
-  // (cyan {0,1,1}) x material_specular (white {1,1,1}) = CYAN. three has no
-  // separate light-specular color (light.color stays white for the diffuse), so
-  // we fold the cyan onto the MATERIAL specular here -- the highlight is
-  // light.color * material.specular = white * cyan = the same cyan. Spikes: matte
-  // (specular black => no highlight). color = AMBIENT_AND_DIFFUSE => diffuse `color`.
+  // Ball: glossy, shininess 200. The .c's highlight color = light_specular
+  // (cyan {0,1,1}) x material_specular; three has no separate light-specular
+  // color (light.color stays white for the diffuse), so we fold the cyan onto the
+  // MATERIAL specular here -- the highlight is light.color * material.specular = a
+  // cyan highlight. Dimmed/tightened so the PI light intensity doesn't blow it out.
   const ballMat = new THREE.MeshPhongMaterial({
     color: 0x000000,
-    // Cyan highlight, scaled DOWN: full-cyan x the PI light intensity blew out a
-    // big white core, so we dim the material specular (smaller clipped core +
-    // dimmer) and raise shininess a bit to tighten the spot.
-    specular: 0x004040,   // dim cyan (~0.25) instead of full 0x00ffff
-    shininess: 200,       // tighter highlight (was 128)
+    specular: 0x004040,   // dim cyan -> small, cyan-tinted specular highlight
+    shininess: 200,
   });
   const spikeMat = new THREE.MeshPhongMaterial({
     color: 0x000000,
@@ -219,10 +229,10 @@ export function start(hostCanvas, opts = {}) {
   outer.add(trans);
   scene.add(outer);
 
-  // 30 cone meshes sharing the geometry + matte material; matrices rebuilt each
-  // frame (only 30, cheap) to match draw_spikes exactly.
+  // MAX_SPIKES cone meshes sharing the geometry + matte material; matrices rebuilt
+  // each frame (cheap), with the first config.count made visible (count slider).
   const spikeMeshes = [];
-  for (let i = 0; i < COUNT; i++) {
+  for (let i = 0; i < MAX_SPIKES; i++) {
     const m = new THREE.Mesh(coneGeo, spikeMat);
     m.matrixAutoUpdate = false;        // we set m.matrix by hand.
     spikesGroup.add(m);
@@ -231,10 +241,14 @@ export function start(hostCanvas, opts = {}) {
   const tmpM = new THREE.Matrix4();
 
   function updateSpikeMatrices() {
-    // draw_spikes: pos -> eased length.
+    // draw_spikes: |pos| -> eased length.
     const pp = pos < 0 ? -pos : pos;
     const len = (Math.asin(0.5 + pp / 2) - 0.5) * 2;
-    for (let i = 0; i < COUNT; i++) {
+    const n = config.count;
+    for (let i = 0; i < MAX_SPIKES; i++) {
+      const vis = i < n;
+      spikeMeshes[i].visible = vis;
+      if (!vis) continue;
       const az = spikes[i * 2] * DEG;        // rotate about Y
       const el = spikes[i * 2 + 1] * DEG;    // rotate about Z
       const m = spikeMeshes[i].matrix;
@@ -247,33 +261,33 @@ export function start(hostCanvas, opts = {}) {
     }
   }
 
-  // move_spikes: one original-frame step of the pulse state machine.
-  function moveSpikesStep() {
-    if (pos >= 0) {                 // moving outward
-      pos += SPEED * SPEED_SCALE;
-      if (pos >= 1) pos = -1;       // reverse gears at apex
-    } else {                        // moving inward
-      pos += SPEED * SPEED_SCALE;
-      if (pos >= 0) randomizeSpikes();   // stop at end -> new set (sets pos=0)
-    }
+  // move_spikes, made CONTINUOUS: advance |pos| by `d` this frame. pos runs
+  // 0->1 (outward), flips to -1 at apex, -1->0 (inward), then a fresh set.
+  function advancePulse(d) {
+    if (pos >= 0) { pos += d; if (pos >= 1) pos = -1; }
+    else { pos += d; if (pos >= 0) randomizeSpikes(); }
   }
 
-  // One simulation step == one draw_ball pass. A fixed-timestep accumulator
-  // (below) runs this at a constant 30 steps/sec on any display, so motion renders
-  // smoothly; each step's motion is scaled by SPEED_SCALE so the wall-clock pace
-  // matches the original's ~15fps. Mirrors draw_ball's order: position, rotation
-  // (consumes RNG), color, pulse.
-  let lastP = rot.getPosition(false);
-  let lastR = rot.getRotation(false);
-  let drawColor = 0;
-  function simStep() {
-    lastP = rot.getPosition(true);
-    lastR = rot.getRotation(true);
-    drawColor = Math.floor(ccolor);           // color index for this frame
-    ccolor += SPEED_SCALE;                     // x0.5: cycle at the original's wall-clock rate
-    if (ccolor >= NCOLORS) ccolor -= NCOLORS;
-    moveSpikesStep();
+  // ---- rotator sampling + interpolation (the discrete random-walk) ----
+  // We tick the rotator once per original-frame (at effFps) and interpolate the
+  // rendered orientation/position between the last two samples, so the tumble is
+  // smooth at any speed while keeping the original per-frame event cadence.
+  const r0 = rot.getRotation(false);
+  const p0 = rot.getPosition(false);
+  let prevR = { ...r0 }, curR = { ...r0 };
+  let prevP = { ...p0 }, curP = { ...p0 };
+  let rotAccum = 0;
+  function tickRotator() {
+    prevR = curR; curR = rot.getRotation(true);
+    prevP = curP; curP = rot.getPosition(true);
   }
+  // shortest-path lerp on the [0,1) rotation circle (rotx etc. are abs, wrap at 1).
+  function lerpAngle(a, b, t) {
+    let d = b - a;
+    if (d > 0.5) d -= 1; else if (d < -0.5) d += 1;
+    return a + d * t;
+  }
+  const lerp = (a, b, t) => a + (b - a) * t;
 
   // ---- sizing (reshape_ball: gluPerspective + the portrait fit scale) ----
   function syncSize() {
@@ -290,12 +304,10 @@ export function start(hostCanvas, opts = {}) {
   syncSize();
   window.addEventListener('resize', syncSize);
 
-  // ---- render loop: 30Hz fixed-timestep sim + render-on-each-rAF-frame ----
-  const STEP = 1 / FPS;        // logical tick period (~the .c's delay 30000us)
-  const MAX_STEPS = 6;         // catch-up cap (avoids spiral after a long stall)
+  // ---- render loop: continuous motion at effFps, rotator interpolated ----
+  const MAX_TICKS = 8;         // rotator catch-up cap (avoids spiral after a stall)
   let raf = 0;
   let last = 0;
-  let acc = 0;
   let paused = false;
   let ms = 16;
 
@@ -307,23 +319,44 @@ export function start(hostCanvas, opts = {}) {
     ms += (frame - ms) * 0.1;
     if (paused) return;
 
-    // Advance the simulation at a constant 30 steps/sec regardless of refresh.
-    acc += Math.min(frame / 1000, 0.25);
-    let steps = 0;
-    while (acc >= STEP && steps < MAX_STEPS) {
-      simStep();
-      acc -= STEP;
-      steps++;
-    }
-    if (steps === MAX_STEPS) acc = 0;   // drop backlog after a stall
+    const dt = Math.min(frame / 1000, 0.25);
+    const effFps = 1e6 / (config.delay + OVERHEAD);   // original-frames per second (live)
+    const frames = dt * effFps;                        // original-frames of motion this render-frame
 
-    // Render the current sim state (mirrors draw_ball's modelview + colors).
-    trans.position.set((lastP.x - 0.5) * 8, (lastP.y - 0.5) * 8, (lastP.z - 0.5) * 15);
-    // glRotatef x,y,z (degrees) == three Euler 'XYZ' (radians) == Rx*Ry*Rz.
-    rotG.rotation.set(lastR.x * 2 * Math.PI, lastR.y * 2 * Math.PI, lastR.z * 2 * Math.PI, 'XYZ');
+    // Continuous: pulse + color advance smoothly (no per-step jitter).
+    advancePulse(config.spikespeed * frames);
+    ccolor = (ccolor + frames) % NCOLORS;
 
-    ballMat.color.copy(colors[drawColor]);
-    spikeMat.color.copy(colors[(drawColor + colorShift) % NCOLORS]);
+    // Discrete random-walk: tick at the original cadence, interpolate for render.
+    rotAccum += frames;
+    let ticks = 0;
+    while (rotAccum >= 1 && ticks < MAX_TICKS) { tickRotator(); rotAccum -= 1; ticks++; }
+    if (ticks === MAX_TICKS) rotAccum = 0;   // drop backlog after a stall
+    const a = rotAccum;                       // [0,1) interpolation fraction
+
+    // Render (mirrors draw_ball's modelview + colors).
+    if (config.spin) {
+      // glRotatef x,y,z (deg) == three Euler 'XYZ' == Rx*Ry*Rz; rotx in [0,1) -> *2pi.
+      rotG.rotation.set(
+        lerpAngle(prevR.x, curR.x, a) * 2 * Math.PI,
+        lerpAngle(prevR.y, curR.y, a) * 2 * Math.PI,
+        lerpAngle(prevR.z, curR.z, a) * 2 * Math.PI,
+        'XYZ',
+      );
+    } else rotG.rotation.set(0, 0, 0);
+
+    if (config.wander) {
+      trans.position.set(
+        (lerp(prevP.x, curP.x, a) - 0.5) * 8,
+        (lerp(prevP.y, curP.y, a) - 0.5) * 8,
+        (lerp(prevP.z, curP.z, a) - 0.5) * 15,
+      );
+    } else trans.position.set(0, 0, 0);
+
+    const ci = Math.floor(ccolor) % NCOLORS;
+    ballMat.color.copy(colors[ci]);
+    spikeMat.color.copy(colors[(ci + colorShift) % NCOLORS]);
+    ballMat.wireframe = spikeMat.wireframe = config.wire;
 
     updateSpikeMatrices();
     renderer.render(scene, camera);
@@ -343,8 +376,11 @@ export function start(hostCanvas, opts = {}) {
       canvas.remove();
     },
     pause() { paused = true; },
-    resume() { last = 0; acc = 0; paused = false; },
+    resume() { last = 0; paused = false; },
     getStats() { return { ms, scale: 1, w: canvas.width, h: canvas.height }; },
+    reinit() { randomizeSpikes(); },   // fresh spike directions + colors (host 're-seed')
+    config,
+    params,
   };
 }
 
