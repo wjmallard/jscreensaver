@@ -225,9 +225,19 @@ uniform float uRoll;     // vertical roll offset [0,1) — loss of vertical sync
 uniform float uRolling;  // 1 = draw the dark blanking bar at the roll seam
 uniform float uSlant;    // loss of horizontal sync: per-line diagonal tear
 uniform float uHdrift;   // loss of horizontal sync: whole-picture horizontal slide
+uniform float uPuheight; // power-on vertical fill: 0 = collapsed to a centre line, 1 = full
+uniform float uPuwidth;  // power-on horizontal fill (scanwidth ramp)
+uniform float uPubright;  // power-on brightness ramp (the bright thin line while warming up)
+uniform float uTtxSeed;  // per-frame randomiser for the teletext VBI dots
 void main(){
   vec2 uv = gl_FragCoord.xy/uOut;
-  float ntscY = (1.0-uv.y)*ATV_VISLINES;            // 0..200, 0 = top
+  // Power-on warm-up (analogtv.c puramp/puheight): the picture grows out of a
+  // bright horizontal line at screen centre. Squeeze screen space into the centre
+  // band (overall_top..overall_bot) and blank the surround; un-squish to sample.
+  float yc = (uv.y - 0.5) / max(uPuheight, 1e-4) + 0.5;
+  float xc = (uv.x - 0.5) / max(uPuwidth, 1e-4) + 0.5;
+  if (yc < 0.0 || yc > 1.0 || xc < 0.0 || xc > 1.0) { o = vec4(0.0,0.0,0.0,1.0); return; }
+  float ntscY = (1.0-yc)*ATV_VISLINES;              // 0..200, 0 = top
   // Vertical roll: scroll the field; a dark blanking bar rides the wrap seam.
   float rolled = fract(ntscY/ATV_VISLINES + uRoll);
   float bar = mix(1.0,
@@ -236,11 +246,44 @@ void main(){
   float sl = rolled * ATV_VISLINES;
   // Horizontal: top bar-bend (decays down the screen) + hsync tear + drift.
   float bend = uBend * exp(-0.17*sl) * (0.7 + cos(sl*0.6));
-  float u = uv.x + bend + uSlant*(rolled - 0.5) + uHdrift;
+  float u = xc + bend + uSlant*(rolled - 0.5) + uHdrift;
+  // Right-edge squish + brighten (analogtv squishright_i / squishdiv): the beam
+  // slows toward the right, compressing and brightening the last sliver of each
+  // line. Mostly overscanned off a real set, so keep it subtle; remap WITHIN the
+  // zone so content squeezes toward the edge but still fills it (no black gap).
+  float sqBright = 1.0;
+  if (u > 0.92) {
+    float t = (u - 0.92) / 0.08;       // 0..1 across the right-edge zone
+    u = 0.92 + 0.08 * t * t;           // squeeze content rightward, reaching u=1.0
+    sqBright = 1.0 + t * 0.30;
+  }
   vec3 dec = (u < 0.0 || u > 1.0) ? vec3(0.0)
              : texture(uDec, vec2(u, (ATV_OVERSCAN + sl)/ATV_NL)).rgb;
-  o = vec4(atv_crt(dec * bar, fract(sl)), 1.0);
+  vec3 col = atv_crt(dec * bar * uPubright * sqBright, fract(sl));
+  // Teletext: random black/white dots in the vertical-blank lines, only ever
+  // glimpsed in the dark bar as the picture rolls (analogtv_setup_teletext).
+  if (uRolling > 0.5) {
+    float band = 1.0 - smoothstep(0.015, 0.05, rolled);   // thin band at the field top
+    if (band > 0.0) {
+      float cell = floor(u * ATV_NS / 6.0);
+      float dr = fract(sin(dot(vec3(cell, floor(sl), uTtxSeed), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+      col = mix(col, vec3(step(0.5, dr)), band * 0.85);
+    }
+  }
+  o = vec4(col, 1.0);
 }`;
+
+// Power-on ramp, verbatim from analogtv.c puramp(): a squared (1-e^-t) curve
+// that stays 0 until 'start' seconds after power-on, then eases to 1 (the 'over'
+// factor overshoots so it reaches 1 a touch sooner, still clamped). Drives the
+// vertical fill, scan width, and brightness as the set warms up.
+function puramp(powerup, tc, start, over) {
+  const pt = powerup - start;
+  if (pt < 0.0) return 0.0;
+  if (pt > 900.0 || pt / tc > 8.0) return 1.0;
+  const r = (1.0 - Math.exp(-pt / tc)) * over;
+  return r > 1.0 ? 1.0 : r * r;
+}
 
 export function startAnalogTV(hostCanvas, opts) {
   const {
@@ -280,8 +323,14 @@ export function startAnalogTV(hostCanvas, opts) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
   });
-  let imagesReady = 0;
+  // An images[] entry is either a URL string (a PNG, loaded once) or { canvas }
+  // for a hack-drawn live texture that the harness re-uploads every frame (e.g.
+  // xanalogtv's station ID + running clock). uImagesReady waits only on the URLs.
+  const imgCanvas = images.map((x) => (x && x.canvas) ? x.canvas : null);
+  let imagesReady = 0, staticImages = 0;
   images.forEach((url, i) => {
+    if (imgCanvas[i]) return;
+    staticImages++;
     const im = new Image();
     im.onload = () => {
       gl.bindTexture(gl.TEXTURE_2D, imgTex[i]);
@@ -391,6 +440,8 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
   }
 
   let clockMs = config.startClock != null ? config.startClock : Math.random() * 60000;
+  let powerupSec = 0;           // seconds since power-on (analogtv.c it->powerup)
+  let powerupWas = false;       // previous config.powerup, to re-arm on toggle
   let frame = 0, rafId = 0, lastNow = 0, acc = 0;
   let agcGain = 1.0;            // auto-gain (analogtv agclevel); servoed each frame
   const stats = { ms: 16 };
@@ -401,6 +452,17 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
   function runPipeline(w, h, tSec) {
     const ctx = { time: tSec, frame, w, h };
     frameState = frameKnobs ? (frameKnobs(ctx) || {}) : {};
+
+    // Power-on warm-up (analogtv.c): puheight squeezes the picture into a centre
+    // band that grows to full; pubright keeps the early thin line bright. Opt-in
+    // via config.powerup; re-armed on each off->on so toggling it replays.
+    if (config.powerup && !powerupWas) powerupSec = 0;
+    powerupWas = !!config.powerup;
+    powerupSec += 1 / (config.fps || 30);
+    const pu = config.powerup ? powerupSec : 999;
+    const puheight = puramp(pu, 2.0, 1.0, 1.3) * (1.125 - 0.125 * puramp(pu, 2.0, 2.0, 1.1));
+    const puwidth = puramp(pu, 0.5, 0.3, 1.0);
+    const pubright = puramp(pu, 1.0, 0.0, 1.0) / (0.5 + 0.5 * puheight);
 
     // --- Encode: source -> composite (sample space) ---
     gl.useProgram(pEnc);
@@ -416,9 +478,13 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     for (let i = 0; i < imgTex.length; i++) {
       gl.activeTexture(gl.TEXTURE2 + i);
       gl.bindTexture(gl.TEXTURE_2D, imgTex[i]);
+      if (imgCanvas[i] && imgCanvas[i].width > 0) {     // live canvas: re-upload
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imgCanvas[i]);
+      }
       gl.uniform1i(loc(pEnc, `uImage${i}`), 2 + i);
     }
-    if (imgTex.length) gl.uniform1f(loc(pEnc, 'uImagesReady'), imagesReady >= imgTex.length ? 1.0 : 0.0);
+    if (imgTex.length) gl.uniform1f(loc(pEnc, 'uImagesReady'), imagesReady >= staticImages ? 1.0 : 0.0);
     if (setUniforms) setUniforms(gl, pEnc, ctx);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -446,6 +512,10 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     gl.uniform1f(loc(pFin, 'uRolling'), knob('rolling', 0));
     gl.uniform1f(loc(pFin, 'uSlant'), knob('slant', 0));
     gl.uniform1f(loc(pFin, 'uHdrift'), knob('hdrift', 0));
+    gl.uniform1f(loc(pFin, 'uPuheight'), puheight);
+    gl.uniform1f(loc(pFin, 'uPuwidth'), puwidth);
+    gl.uniform1f(loc(pFin, 'uPubright'), pubright);
+    gl.uniform1f(loc(pFin, 'uTtxSeed'), frame % 1009);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     if (feedback) {
@@ -526,7 +596,7 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     },
     pause() { if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } },
     resume() { if (!rafId) { lastNow = 0; acc = 0; rafId = requestAnimationFrame(render); } },
-    reinit() { clockMs = Math.random() * 600000; },
+    reinit() { clockMs = Math.random() * 600000; powerupSec = 0; },
     getStats() { return { ms: stats.ms, w: canvas.width, h: canvas.height }; },
     config, params,
   };
