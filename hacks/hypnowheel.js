@@ -112,10 +112,12 @@ export function start(canvas) {
     layers: 4,         // .xml "layers"
     count: 13,         // .xml "count" (Arms)
     twistiness: 4.0,   // .xml "twistiness"
-    // .c default is wander OFF (-> constant twist). We default it ON: the demo
-    // video and the .xml description ("tightness fluctuates in and out") both run
-    // with wander -- the signature look. Turn off for the literal .c default.
-    wander: true,      // .xml "wander"
+    // wander OFF (the .c default, and what the demo video shows): all discs stay
+    // CONCENTRIC -- ONE wheel -- and that single center wanders via the global
+    // rotator, while the counter-rotating constant-twist (+/-2) spirals beat into
+    // a shifting moire. Wander ON instead gives each disc its OWN drifting center
+    // (several separate wheels) plus a slowly fluctuating twist.
+    wander: false,     // .xml "wander"
     symmetric: false,  // .xml "symmetric" (Symmetric twisting)
   };
 
@@ -124,7 +126,7 @@ export function start(canvas) {
     { key: 'layers', label: 'Layers', type: 'range', min: 1, max: 50, step: 1, default: 4, lowLabel: '1', highLabel: '50', live: false },
     { key: 'twistiness', label: 'Twistiness', type: 'range', min: 0.2, max: 10, step: 0.1, default: 4.0, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'speed', label: 'Speed', type: 'range', min: 0.1, max: 20, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
-    { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: false },
+    { key: 'wander', label: 'Wander', type: 'checkbox', default: false, live: false },
     { key: 'symmetric', label: 'Symmetric twisting', type: 'checkbox', default: false, live: false },
     { key: 'resolution', label: 'Resolution', type: 'range', min: 0.25, max: 1, step: 0.05, default: 1.0, lowLabel: 'fast', highLabel: 'crisp', live: true },
   ];
