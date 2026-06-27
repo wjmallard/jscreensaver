@@ -152,6 +152,7 @@ export const HACK_TAXONOMY = {
   whirlygig: { dimension: '2d', categories: ['curves'] },
   worm: { dimension: '2d', categories: ['biota', 'curves'] },
   wormhole: { dimension: '2d', categories: ['cosmic'] },
+  xanalogtv: { dimension: '2d', categories: ['optical'] },
   xflame: { dimension: '2d', categories: ['plasma'] },
   xlyap: { dimension: '2d', categories: ['fractals'] },
   xrayswarm: { dimension: '2d', categories: ['particles'] },
