@@ -25,22 +25,24 @@ Builds the FBO chain, runs the pipeline at a fixed 30 fps (TV-authentic, and it 
 `opts`:
 - `source` — GLSL defining `vec3 atv_source(vec2 uv)` (the picture; `uv` in `[0,1]`, y-down). May read `uTime`/`uFrame`/`uPrev` and custom uniforms.
 - `decl`, `setUniforms(gl, prog, ctx)` — extra encode uniforms; `ctx.pass` is `0` for the main station and `1` for the second station (see `twoStation`).
-- `frameKnobs(ctx) → { … }` — per-frame values merged over `config` (all optional): `color, tint, brightness, contrast, noise, seed, agc, ghostfir[4], mixB, ofsX, ofsY, bend, roll, rolling, slant, hdrift`.
+- `frameKnobs(ctx) → { … }` — per-frame values merged over `config` (all optional): `color, tint, brightness, contrast, noise, seed, agc, ghostfir[4], hfloss, mixB, ofsX, ofsY, bend, roll, rolling, slant, hdrift`.
 - `images: [url | {canvas}]` — bound as `uImage0…`. A **URL** is a PNG loaded once; a **`{canvas}`** is a live 2D canvas the harness re-uploads every frame (used for [[xanalogtv]]'s station-ID + clock overlay). `uImagesReady` flags when the URLs are in.
-- `feedback` — the final frame ping-pongs into `uPrev` and an output-brightness **AGC servo** scales decode gain toward `config.agcTarget` (keeps a feedback loop from collapsing to black or whiting out).
-- `ghost` — adds the RF multipath echo pass (`ghostfir`).
+- `ghost` — adds the RF multipath echo pass (`ghostfir`), plus the high-frequency-loss term (`hfloss`).
 - `bloom` — adds the `crtload` precompute (line-luma reduce → 0.95 IIR-as-FIR) and the horizontal breathing.
 - `twoStation` — encodes a second station (pass 1) and additively sums it into the composite at a wrapped, drifting offset.
-- `config` / `params` / `name`. Notable `config`: `fps`, `resolution` (backing-store scale), `powerup` (opt-in warm-up, re-armed on each off→on), `startClock` (deterministic test clock), `agcTarget`, `speed`, `squeezebottom`.
+- `config` / `params` / `name`. Notable `config`: `fps`, `resolution` (backing-store scale), `powerup` (opt-in warm-up, re-armed on each off→on), `startClock` (deterministic test clock), `speed`, `squeezebottom`.
+
+> **Self-feedback** (`atv_source` reading the previous final frame, for a video-feedback hack) was supported via a `feedback`/`agcServo` path; it was **sliced out 2026-06-27** since no live hack used it. The exact machinery + a re-integration recipe are archived in `hacks/shelved/vfeedback.md`.
 
 ## Pipeline order (per 30 fps step)
-`encode` (source → composite) → [`twoStation`: encode pass-1 → additive sum] → [`ghost`: composite += Σ ghostfir·box-sum at lags 4/8/12/16] → `decode` (composite → linear RGB, with luma-only AGC + the colormode chroma gate) → [`bloom`: reduce line-luma → `crtload` IIR] → `final` (CRT geometry + scanlines + gamma; for `feedback`, ping-pong + AGC probe).
+`encode` (source → composite) → [`twoStation`: encode pass-1 → additive sum] → [`ghost`: composite += Σ ghostfir·box-sum at lags 4/8/12/16, + hfloss·(sample 2 away within the subcarrier group)] → `decode` (composite → linear RGB, with luma-only AGC + the colormode chroma gate) → [`bloom`: reduce line-luma → `crtload` IIR] → `final` (CRT geometry + scanlines + gamma, drawn straight to the canvas).
 
 ## Deviations from the C
 - **IIR → FIR** band-limiting, as above (faithful in result, not in arithmetic).
 - **Sample width 760** vs the C's 912/line (≈ 755 active); 760 keeps ~190 carrier cycles/line as on a real set while staying a clean buffer width.
 - **Clean carrier** (no 103° burst tint) — see above; the per-hack `tint` default is therefore 0.
-- **AGC** is a per-frame scalar from the reception parameters (`agc = 1/rx_signal_level`) for non-feedback hacks, and an output-brightness servo for feedback hacks; both apply to the **luma path only** (matching `analogtv_ntsc_to_yiq`, where the Y filter carries `agclevel` and the I/Q filters do not).
+- **AGC** is a per-frame scalar from the reception parameters (`agc = 1/rx_signal_level`), applied to the **luma path only** (matching `analogtv_ntsc_to_yiq`, where the Y filter carries `agclevel` and the I/Q filters do not).
+- **Revived:** `hfloss` (high-frequency loss) — the original leaves its driver gated behind `if (0)`, so it never runs; this port enables it (each sample picks up `hfloss ×` the sample 2 away in its subcarrier group → luma lift + chroma wash on weak signals), driven per-frame by the caller. Faithful to the arithmetic at `analogtv.c:1292`, just no longer dead.
 - **Dropped:** `hashnoise` (disabled in the original — `#if 0`), the PseudoColor/colormap path, and X11 plumbing.
 
 ## Validation

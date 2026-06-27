@@ -183,15 +183,16 @@ float atv_encode(float s, float v){
 //
 // opts:
 //   source      GLSL defining `vec3 atv_source(vec2 uv)` (the picture content;
-//               uv in [0,1], y-down). May use uTime/uFrame/uPrev + custom uniforms.
+//               uv in [0,1], y-down). May use uTime/uFrame + custom uniforms.
 //   decl        extra `uniform ...;` lines for the encode (source) pass.
-//   feedback    true if atv_source samples uPrev (the previous final frame).
 //   setUniforms (gl, encProgram, ctx) => void — set custom encode uniforms/frame.
 //   frameKnobs  (ctx) => {color,tint,brightness,contrast,noise,seed} (all optional;
 //               merged over config) — lets a hack vary knobs/snow per channel.
 //   config, params, name
-//   config.fps  pipeline update rate (default 30, TV-authentic; also makes the
-//               feedback fold rate independent of display refresh).
+//   config.fps  pipeline update rate (default 30, TV-authentic; keeps the cadence
+//               independent of display refresh).
+//   (Self-feedback support — atv_source reading the previous final frame — was
+//    sliced out 2026-06-27; the full machinery is archived in hacks/shelved/vfeedback.md.)
 //
 // Returns { stop, pause, resume, reinit, getStats, config, params }.
 // ===========================================================================
@@ -222,9 +223,17 @@ void main(){
 // lags 4/8/12/16 (= 1..4 colour-subcarrier cycles) -- a faint, slightly delayed
 // copy of the picture to the right, like a long monitor cable. uGhostFir holds
 // the four tap weights (analogtv reception_update). Runs between encode/decode.
+//
+// uHfloss is analogtv's high-frequency loss: each sample mixes in uHfloss * the
+// sample 2 away (180 deg of subcarrier) within its 4-sample group. That neighbour
+// is in phase for luma and antiphase for chroma, so a positive value lifts luma
+// and washes out colour (a negative one does the reverse) -- a wavering softness
+// on a weak/multipath signal. analogtv gates this behind `if (0)`; revived here,
+// driven per channel from the multipath strength.
 const ATV_GHOST_MAIN = `
 uniform sampler2D uSig;
 uniform vec4 uGhostFir;
+uniform float uHfloss;
 void main(){
   int s = int(floor(gl_FragCoord.x));
   int line = int(floor(gl_FragCoord.y));
@@ -236,7 +245,12 @@ void main(){
     for (int j=0;j<4;j++) bs += texelFetch(uSig, ivec2(s-lag+j, line), 0).r;
     ghost += uGhostFir[k]*bs;
   }
-  o = vec4(v + ghost, 0.0, 0.0, 1.0);
+  // hfloss: mix in the sample 2 away within the 4-aligned subcarrier group (+2 in
+  // the first half of the group, -2 in the second), as analogtv_add_signal's
+  // p[i] += sig[(i+2)&3] * hfloss.
+  int partner = ((s & 3) < 2) ? s + 2 : s - 2;
+  float hf = texelFetch(uSig, ivec2(partner, line), 0).r;
+  o = vec4(v + ghost + uHfloss*hf, 0.0, 0.0, 1.0);
 }`;
 
 // Bloom precompute, part 1 (reduce): mean luma of each decoded scan line -> a
@@ -386,7 +400,7 @@ function puramp(powerup, tc, start, over) {
 
 export function startAnalogTV(hostCanvas, opts) {
   const {
-    source, decl = '', feedback = false, ghost = false, bloom = false, twoStation = false, images = [],
+    source, decl = '', ghost = false, bloom = false, twoStation = false, images = [],
     setUniforms, frameKnobs,
     config = {}, params = [], name = 'analogtv',
   } = opts;
@@ -408,10 +422,10 @@ export function startAnalogTV(hostCanvas, opts) {
   gl.getExtension('OES_texture_float_linear');
 
   // External images (bundled TV test cards): the picture content for xanalogtv's
-  // image channels and the feedback seed for vfeedback. Bound to texture units
-  // >= 2 (0 = signal/decoded, 1 = uPrev). Each starts as a 1x1 black placeholder
-  // and is replaced when the PNG finishes loading; uImagesReady flags when all
-  // are in, so a hack can hold a "no signal" state until then.
+  // image channels (logo, test cards, the live station-ID canvas). Bound to texture
+  // units >= 2 (0 = signal/decoded, 1 = reserved). Each starts as a 1x1 black
+  // placeholder and is replaced when the PNG finishes loading; uImagesReady flags
+  // when all are in, so a hack can hold a "no signal" state until then.
   const imgTex = images.map(() => {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -463,7 +477,7 @@ export function startAnalogTV(hostCanvas, opts) {
   const imgDecl = images.map((_, i) => `uniform sampler2D uImage${i};`).join('\n') +
     (images.length ? '\nuniform float uImagesReady;' : '');
   const encSrc = ATV_HEAD +
-    `uniform float uTime; uniform int uFrame; uniform sampler2D uPrev; uniform vec2 uPrevRes;\n` +
+    `uniform float uTime; uniform int uFrame;\n` +
     imgDecl + '\n' + decl + '\n' + ATV_GLSL + ATV_ENCODE_GLSL + '\n' + source + `
 void main(){
   float s = floor(gl_FragCoord.x);
@@ -477,12 +491,6 @@ void main(){
   const pReduce = bloom ? program(ATV_HEAD + ATV_GLSL + ATV_REDUCE_MAIN) : null;
   const pCrtload = bloom ? program(ATV_HEAD + ATV_GLSL + ATV_CRTLOAD_MAIN) : null;
   const pAddB = twoStation ? program(ATV_HEAD + ATV_ADDB_MAIN) : null;
-  // AGC probe: copy the final frame into an RGBA8 mip chain so its 1x1 top level
-  // is the mean colour (feedback hacks only — see the auto-gain servo below).
-  const pCopy = feedback
-    ? program(ATV_HEAD + `uniform sampler2D uTex; uniform vec2 uOut;
-void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
-    : null;
 
   const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
 
@@ -514,35 +522,6 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
   const sigBTex = twoStation ? makeTex(ATV_NS, ATV_NL) : null;
   const sigBFbo = twoStation ? mkFbo(sigBTex) : null;
 
-  // Canvas-res final ping-pong (only needed for self-feedback hacks).
-  let finTex = [null, null], finFbo = [null, null], finW = 0, finH = 0, cur = 0;
-  // AGC probe targets: an RGBA8 mip chain + a framebuffer onto its 1x1 top level.
-  let mfTex = null, mfFbo = null, readFbo = null, maxLevel = 0;
-  const readPx = new Uint8Array(4);
-  function ensureFinal(w, h) {
-    if (!feedback) return;
-    if (w === finW && h === finH && finTex[0]) return;
-    for (const t of finTex) if (t) gl.deleteTexture(t);
-    for (const f of finFbo) if (f) gl.deleteFramebuffer(f);
-    if (mfTex) gl.deleteTexture(mfTex);
-    if (mfFbo) gl.deleteFramebuffer(mfFbo);
-    if (readFbo) gl.deleteFramebuffer(readFbo);
-    finTex = [makeTex(w, h), makeTex(w, h)];
-    finFbo = [mkFbo(finTex[0]), mkFbo(finTex[1])];
-    // Mipmapped RGBA8 copy target for the brightness measurement.
-    mfTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, mfTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    mfFbo = mkFbo(mfTex);
-    maxLevel = Math.floor(Math.log2(Math.max(w, h)));
-    readFbo = gl.createFramebuffer();
-    finW = w; finH = h; cur = 0;
-  }
-
   const loc = (p, n) => gl.getUniformLocation(p, n);
   function syncSize() {
     const dpr = window.devicePixelRatio || 1;
@@ -557,7 +536,6 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
   let powerupSec = 0;           // seconds since power-on (analogtv.c it->powerup)
   let powerupWas = false;       // previous config.powerup, to re-arm on toggle
   let frame = 0, rafId = 0, lastNow = 0, acc = 0;
-  let agcGain = 1.0;            // auto-gain (analogtv agclevel); servoed each frame
   const stats = { ms: 16 };
 
   function knob(k, d) { const v = (frameState && frameState[k] != null) ? frameState[k] : config[k]; return v == null ? d : v; }
@@ -583,12 +561,6 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     gl.bindFramebuffer(gl.FRAMEBUFFER, sigFbo); gl.viewport(0, 0, ATV_NS, ATV_NL);
     gl.uniform1f(loc(pEnc, 'uTime'), tSec);
     gl.uniform1i(loc(pEnc, 'uFrame'), frame);
-    if (feedback) {
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, finTex[1 - cur] || finTex[0]);
-      gl.uniform1i(loc(pEnc, 'uPrev'), 1);
-      gl.uniform2f(loc(pEnc, 'uPrevRes'), finW, finH);
-    }
     for (let i = 0; i < imgTex.length; i++) {
       gl.activeTexture(gl.TEXTURE2 + i);
       gl.bindTexture(gl.TEXTURE_2D, imgTex[i]);
@@ -632,6 +604,7 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
       gl.uniform1i(loc(pGhost, 'uSig'), 0);
       const gf = (frameState && frameState.ghostfir) || [0, 0, 0, 0];
       gl.uniform4f(loc(pGhost, 'uGhostFir'), gf[0], gf[1], gf[2], gf[3]);
+      gl.uniform1f(loc(pGhost, 'uHfloss'), (frameState && frameState.hfloss) || 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       decSrcTex = sig2Tex;
     }
@@ -643,12 +616,12 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     gl.uniform1i(loc(pDec, 'uSig'), 0);
     gl.uniform4f(loc(pDec, 'uKnobs'),
       knob('color', 1.0), knob('tint', 0.0) * Math.PI / 180, knob('brightness', -0.05),
-      knob('contrast', 1.4) * (feedback ? agcGain : 1.0));
+      knob('contrast', 1.4));
     gl.uniform1f(loc(pDec, 'uNoise'), knob('noise', 0.0));
     gl.uniform1f(loc(pDec, 'uSeed'), (frame % 1024) + 1);
-    // Signal-level AGC for non-feedback hacks (xanalogtv); feedback hacks keep
-    // their output-based servo on contrast instead.
-    gl.uniform1f(loc(pDec, 'uAgc'), feedback ? 1.0 : knob('agc', 1.0));
+    // Signal-level AGC (agclevel = 1/level), the faithful per-frame scalar from the
+    // reception strength, applied to the luma path only.
+    gl.uniform1f(loc(pDec, 'uAgc'), knob('agc', 1.0));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     // --- Bloom precompute: line-luma reduce -> crtload IIR (optional) ---
@@ -667,10 +640,9 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
-    // --- Final: decoded -> screen (or ping-pong FBO for feedback) ---
+    // --- Final: decoded -> screen ---
     gl.useProgram(pFin);
-    const target = feedback ? finFbo[cur] : null;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target); gl.viewport(0, 0, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, w, h);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, decTex);
     gl.uniform1i(loc(pFin, 'uDec'), 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, crtloadTex || decTex);
@@ -688,41 +660,12 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     gl.uniform1f(loc(pFin, 'uTtxSeed'), frame % 1009);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    if (feedback) {
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, finFbo[cur]);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-      // --- AGC (analogtv agclevel = 1/signal_level): measure the mean frame
-      // brightness and servo the decode gain toward a target so the feedback
-      // loop self-stabilizes (no collapse-to-black, no runaway white-out). ---
-      gl.useProgram(pCopy);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, mfFbo); gl.viewport(0, 0, w, h);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, finTex[cur]);
-      gl.uniform1i(loc(pCopy, 'uTex'), 0);
-      gl.uniform2f(loc(pCopy, 'uOut'), w, h);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, readFbo);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, mfTex, maxLevel);
-      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, readPx);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      const luma = (0.30 * readPx[0] + 0.59 * readPx[1] + 0.11 * readPx[2]) / 255;
-      const target = (config.agcTarget == null ? 0.45 : config.agcTarget);
-      // Rate-limited multiplicative servo; clamp the absolute gain for safety.
-      const adj = Math.min(1.12, Math.max(0.90, target / Math.max(luma, 0.01)));
-      agcGain = Math.min(8.0, Math.max(0.2, agcGain * adj));
-
-      cur ^= 1;
-    }
     frame++;
   }
 
   const stepMs = 1000 / (config.fps || 30);
   function render(now) {
     const [w, h] = syncSize();
-    ensureFinal(w, h);
     if (lastNow === 0) lastNow = now;
     let dt = now - lastNow; lastNow = now;
     if (dt < 0) dt = 0; if (dt > 250) dt = 250;
@@ -734,12 +677,6 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
       let steps = 0;
       while (acc >= stepMs && steps < 2) { clockMs += stepMs * speed; runPipeline(w, h, clockMs / 1000); acc -= stepMs; steps++; }
       if (acc > stepMs) acc = 0;
-    } else if (feedback && finTex[1 - cur]) {
-      // Between TV frames, re-show the last field so the canvas isn't black.
-      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, finFbo[1 - cur]);
-      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     rafId = requestAnimationFrame(render);
   }
@@ -759,12 +696,7 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
       if (sig2Fbo) gl.deleteFramebuffer(sig2Fbo);
       for (const t of [lumaTex, crtloadTex, sigBTex]) if (t) gl.deleteTexture(t);
       for (const f of [lumaFbo, crtloadFbo, sigBFbo]) if (f) gl.deleteFramebuffer(f);
-      for (const t of finTex) if (t) gl.deleteTexture(t);
-      for (const f of finFbo) if (f) gl.deleteFramebuffer(f);
       for (const t of imgTex) gl.deleteTexture(t);
-      if (mfTex) gl.deleteTexture(mfTex);
-      if (mfFbo) gl.deleteFramebuffer(mfFbo);
-      if (readFbo) gl.deleteFramebuffer(readFbo);
       const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
       canvas.remove();
     },
