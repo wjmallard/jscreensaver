@@ -87,7 +87,7 @@ float atv_noise(float s, float line, float seed){
 
 // DECODE: composite signal (sig, sample-space) -> linear RGB for line 'line',
 // integer sample 's'. knobs = vec4(color, tint_radians, brightness, contrast).
-vec3 atv_decode(sampler2D sig, int s, int line, vec4 knobs, float noiselevel, float seed){
+vec3 atv_decode(sampler2D sig, int s, int line, vec4 knobs, float noiselevel, float seed, float agc){
   // Noise is part of the composite signal (analogtv_init_signal), so it runs
   // through the same demod the picture does — faithful to the .c.
   float Y=0.0, Ir=0.0, Qr=0.0;
@@ -113,7 +113,10 @@ vec3 atv_decode(sampler2D sig, int s, int line, vec4 knobs, float noiselevel, fl
   float ct=cos(tint), st=sin(tint);
   float I = 2.0*(Ir*ct - Qr*st)*color;
   float Q = 2.0*(Ir*st + Qr*ct)*color;
-  vec3 rgb = atv_yiq2rgb(vec3(Y + bright, I, Q)) * contrast;
+  // AGC (analogtv agclevel = 1/rx_signal_level) scales the luma path only -- the
+  // chroma demod (multiq2) carries no agclevel in analogtv_ntsc_to_yiq -- so a
+  // weak/dead channel boosts its snow toward full brightness without tinting it.
+  vec3 rgb = atv_yiq2rgb(vec3(Y * agc + bright, I, Q)) * contrast;
   return max(rgb, 0.0);
 }
 
@@ -207,10 +210,95 @@ uniform sampler2D uSig;
 uniform vec4 uKnobs;     // color, tint(rad), brightness, contrast
 uniform float uNoise;
 uniform float uSeed;
+uniform float uAgc;      // agclevel = 1/rx_signal_level (luma gain)
 void main(){
   int s = int(floor(gl_FragCoord.x));
   int line = int(floor(gl_FragCoord.y));
-  o = vec4(atv_decode(uSig, s, line, uKnobs, uNoise, uSeed), 1.0);
+  o = vec4(atv_decode(uSig, s, line, uKnobs, uNoise, uSeed, uAgc), 1.0);
+}`;
+
+// Ghost pass: RF multipath echo (analogtv_add_signal's ghostfir). Adds, to each
+// composite sample, a weighted sum of four box-summed groups of 4 samples at
+// lags 4/8/12/16 (= 1..4 colour-subcarrier cycles) -- a faint, slightly delayed
+// copy of the picture to the right, like a long monitor cable. uGhostFir holds
+// the four tap weights (analogtv reception_update). Runs between encode/decode.
+const ATV_GHOST_MAIN = `
+uniform sampler2D uSig;
+uniform vec4 uGhostFir;
+void main(){
+  int s = int(floor(gl_FragCoord.x));
+  int line = int(floor(gl_FragCoord.y));
+  float v = texelFetch(uSig, ivec2(s, line), 0).r;
+  float ghost = 0.0;
+  for (int k=0;k<4;k++){
+    int lag = 4*(k+1);
+    float bs = 0.0;
+    for (int j=0;j<4;j++) bs += texelFetch(uSig, ivec2(s-lag+j, line), 0).r;
+    ghost += uGhostFir[k]*bs;
+  }
+  o = vec4(v + ghost, 0.0, 0.0, 1.0);
+}`;
+
+// Bloom precompute, part 1 (reduce): mean luma of each decoded scan line -> a
+// 1 x ATV_NL column. Feeds the crtload IIR below.
+const ATV_REDUCE_MAIN = `
+uniform sampler2D uDec;
+void main(){
+  int line = int(floor(gl_FragCoord.y));
+  float sum = 0.0; int n = 0;
+  for (int x=0; x<int(ATV_NS); x+=4){
+    sum += dot(texelFetch(uDec, ivec2(x, line), 0).rgb, vec3(0.30,0.59,0.11));
+    n++;
+  }
+  o = vec4(sum/float(n), 0.0, 0.0, 1.0);
+}`;
+
+// Bloom precompute, part 2 (crtload): the flyback-load IIR from analogtv_draw,
+//   crtload[l] = 0.95*crtload[l-1] + 0.05*(baseload + (totsignal-30000)/1e5 + squeeze)
+// run as the equivalent 0.95^j FIR over the line-luma column. Unit bridge: with
+// PIC_LEN=755, BLACK=10, WHITE=100, the IRE totsignal maps to mean displayed luma
+// as (totsignal-30000)/1e5 = 0.6795*meanY - 0.2245, and baseload=0.5; lines above
+// the picture sit at baseload (the crtload[TOP-1] boundary). squeezebottom adds
+// extra load at the bottom rows.
+const ATV_CRTLOAD_MAIN = `
+uniform sampler2D uLuma;
+uniform float uSqueezeBottom;
+void main(){
+  int l = int(floor(gl_FragCoord.y));
+  float crt = 0.0, w = 0.05;
+  for (int j=0; j<90; j++){
+    int m = l - j;
+    float cin;
+    if (m < int(ATV_OVERSCAN) || m >= int(ATV_NL)) {
+      cin = 0.5;                                  // baseload boundary above/below
+    } else {
+      float meanY = texelFetch(uLuma, ivec2(0, m), 0).r;
+      float slsrc = float(m) - ATV_OVERSCAN;
+      float sq = slsrc > 184.0 ? (slsrc-184.0)*(slsrc-184.0)*0.001*uSqueezeBottom : 0.0;
+      cin = 0.2755 + 0.6795*meanY + sq;
+    }
+    crt += w * cin;
+    w *= 0.95;
+  }
+  o = vec4(crt, 0.0, 0.0, 1.0);
+}`;
+
+// Two-station overlay: a second station's composite (in uSigB), added to the main
+// signal at a wrapped (x,y) sample offset and a fainter level (analogtv's second
+// reception with its own rec->ofs). Drawn with additive blending onto the main
+// signal. Because it carries its own carrier phase via the shift, it demodulates
+// to slightly off colours -- the classic co-channel ghost / interference beat.
+const ATV_ADDB_MAIN = `
+uniform sampler2D uSigB;
+uniform float uMixB;
+uniform vec2 uOfs;
+void main(){
+  int NS = ${ATV_NS}, NL = ${ATV_NL};
+  int s = int(floor(gl_FragCoord.x));
+  int line = int(floor(gl_FragCoord.y));
+  int bs = ((s - int(uOfs.x)) % NS + NS) % NS;
+  int bl = ((line - int(uOfs.y)) % NL + NL) % NL;
+  o = vec4(uMixB * texelFetch(uSigB, ivec2(bs, bl), 0).r, 0.0, 0.0, 1.0);
 }`;
 
 // Final pass: decoded RGB (sample space) -> screen with the CRT geometry model
@@ -229,6 +317,8 @@ uniform float uPuheight; // power-on vertical fill: 0 = collapsed to a centre li
 uniform float uPuwidth;  // power-on horizontal fill (scanwidth ramp)
 uniform float uPubright;  // power-on brightness ramp (the bright thin line while warming up)
 uniform float uTtxSeed;  // per-frame randomiser for the teletext VBI dots
+uniform sampler2D uCrtload; // per-line flyback load (bloom), 1 x ATV_NL
+uniform float uBloom;    // 1 = apply bloom horizontal breathing
 void main(){
   vec2 uv = gl_FragCoord.xy/uOut;
   // Power-on warm-up (analogtv.c puramp/puheight): the picture grows out of a
@@ -244,9 +334,18 @@ void main(){
                   smoothstep(0.0,0.05,rolled) * (1.0 - smoothstep(0.93,1.0,rolled)),
                   clamp(uRolling,0.0,1.0));
   float sl = rolled * ATV_VISLINES;
+  // Bloom (analogtv crtload): brighter lines load the flyback and widen the scan,
+  // so the picture breathes slightly smaller when bright. hscale<=1 keeps it
+  // filling the screen (a small overscan rides the breathing, so no black bars).
+  float hscale = 1.0;
+  if (uBloom > 0.5) {
+    float crt = texelFetch(uCrtload, ivec2(0, int(ATV_OVERSCAN + sl)), 0).r;
+    float bloomthisrow = clamp(-10.0*crt, -10.0, 2.0);
+    hscale = min(1.0, (0.79 - 0.006623*bloomthisrow) / 0.853);
+  }
   // Horizontal: top bar-bend (decays down the screen) + hsync tear + drift.
   float bend = uBend * exp(-0.17*sl) * (0.7 + cos(sl*0.6));
-  float u = xc + bend + uSlant*(rolled - 0.5) + uHdrift;
+  float u = 0.5 + (xc - 0.5)*hscale + bend + uSlant*(rolled - 0.5) + uHdrift;
   // Right-edge squish + brighten (analogtv squishright_i / squishdiv): the beam
   // slows toward the right, compressing and brightening the last sliver of each
   // line. Mostly overscanned off a real set, so keep it subtle; remap WITHIN the
@@ -287,7 +386,7 @@ function puramp(powerup, tc, start, over) {
 
 export function startAnalogTV(hostCanvas, opts) {
   const {
-    source, decl = '', feedback = false, images = [],
+    source, decl = '', feedback = false, ghost = false, bloom = false, twoStation = false, images = [],
     setUniforms, frameKnobs,
     config = {}, params = [], name = 'analogtv',
   } = opts;
@@ -374,6 +473,10 @@ void main(){
   const pEnc = program(encSrc);
   const pDec = program(ATV_HEAD + ATV_GLSL + ATV_DEC_MAIN);
   const pFin = program(ATV_HEAD + ATV_GLSL + ATV_FIN_MAIN);
+  const pGhost = ghost ? program(ATV_HEAD + ATV_GHOST_MAIN) : null;
+  const pReduce = bloom ? program(ATV_HEAD + ATV_GLSL + ATV_REDUCE_MAIN) : null;
+  const pCrtload = bloom ? program(ATV_HEAD + ATV_GLSL + ATV_CRTLOAD_MAIN) : null;
+  const pAddB = twoStation ? program(ATV_HEAD + ATV_ADDB_MAIN) : null;
   // AGC probe: copy the final frame into an RGBA8 mip chain so its 1x1 top level
   // is the mean colour (feedback hacks only — see the auto-gain servo below).
   const pCopy = feedback
@@ -399,6 +502,17 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
   // Fixed sample-accurate signal buffers (decoupled from canvas size).
   const sigTex = makeTex(ATV_NS, ATV_NL), sigFbo = mkFbo(sigTex);
   const decTex = makeTex(ATV_NS, ATV_NL), decFbo = mkFbo(decTex);
+  // Optional post-encode ghost (multipath) buffer; decode reads it when enabled.
+  const sig2Tex = ghost ? makeTex(ATV_NS, ATV_NL) : null;
+  const sig2Fbo = ghost ? mkFbo(sig2Tex) : null;
+  // Optional bloom precompute buffers: per-line mean luma -> crtload (both 1 x NL).
+  const lumaTex = bloom ? makeTex(1, ATV_NL) : null;
+  const lumaFbo = bloom ? mkFbo(lumaTex) : null;
+  const crtloadTex = bloom ? makeTex(1, ATV_NL) : null;
+  const crtloadFbo = bloom ? mkFbo(crtloadTex) : null;
+  // Optional second-station composite buffer (two-station overlay).
+  const sigBTex = twoStation ? makeTex(ATV_NS, ATV_NL) : null;
+  const sigBFbo = twoStation ? mkFbo(sigBTex) : null;
 
   // Canvas-res final ping-pong (only needed for self-feedback hacks).
   let finTex = [null, null], finFbo = [null, null], finW = 0, finH = 0, cur = 0;
@@ -450,7 +564,7 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
   let frameState = null;
 
   function runPipeline(w, h, tSec) {
-    const ctx = { time: tSec, frame, w, h };
+    const ctx = { time: tSec, frame, w, h, pass: 0 };
     frameState = frameKnobs ? (frameKnobs(ctx) || {}) : {};
 
     // Power-on warm-up (analogtv.c): puheight squeezes the picture into a centre
@@ -488,17 +602,70 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     if (setUniforms) setUniforms(gl, pEnc, ctx);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
+    // --- Two stations: encode a second station (pass 1) and add it into the
+    // composite at a wrapped, drifting offset and fainter level (co-channel ghost).
+    if (twoStation && frameState && frameState.mixB > 0) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, sigBFbo); gl.viewport(0, 0, ATV_NS, ATV_NL);
+      ctx.pass = 1;
+      if (setUniforms) setUniforms(gl, pEnc, ctx);   // hack sets the 2nd station's uniforms
+      ctx.pass = 0;
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      gl.useProgram(pAddB);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, sigFbo); gl.viewport(0, 0, ATV_NS, ATV_NL);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sigBTex);
+      gl.uniform1i(loc(pAddB, 'uSigB'), 0);
+      gl.uniform1f(loc(pAddB, 'uMixB'), frameState.mixB);
+      gl.uniform2f(loc(pAddB, 'uOfs'), frameState.ofsX || 0, frameState.ofsY || 0);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.disable(gl.BLEND);
+      gl.useProgram(pEnc);   // restore for any following frame symmetry
+    }
+
+    // --- Ghost: add RF multipath echo to the composite (optional) ---
+    let decSrcTex = sigTex;
+    if (ghost) {
+      gl.useProgram(pGhost);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, sig2Fbo); gl.viewport(0, 0, ATV_NS, ATV_NL);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sigTex);
+      gl.uniform1i(loc(pGhost, 'uSig'), 0);
+      const gf = (frameState && frameState.ghostfir) || [0, 0, 0, 0];
+      gl.uniform4f(loc(pGhost, 'uGhostFir'), gf[0], gf[1], gf[2], gf[3]);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      decSrcTex = sig2Tex;
+    }
+
     // --- Decode: composite -> linear RGB (sample space) ---
     gl.useProgram(pDec);
     gl.bindFramebuffer(gl.FRAMEBUFFER, decFbo); gl.viewport(0, 0, ATV_NS, ATV_NL);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sigTex);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, decSrcTex);
     gl.uniform1i(loc(pDec, 'uSig'), 0);
     gl.uniform4f(loc(pDec, 'uKnobs'),
       knob('color', 1.0), knob('tint', 0.0) * Math.PI / 180, knob('brightness', -0.05),
       knob('contrast', 1.4) * (feedback ? agcGain : 1.0));
     gl.uniform1f(loc(pDec, 'uNoise'), knob('noise', 0.0));
     gl.uniform1f(loc(pDec, 'uSeed'), (frame % 1024) + 1);
+    // Signal-level AGC for non-feedback hacks (xanalogtv); feedback hacks keep
+    // their output-based servo on contrast instead.
+    gl.uniform1f(loc(pDec, 'uAgc'), feedback ? 1.0 : knob('agc', 1.0));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // --- Bloom precompute: line-luma reduce -> crtload IIR (optional) ---
+    if (bloom) {
+      gl.useProgram(pReduce);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, lumaFbo); gl.viewport(0, 0, 1, ATV_NL);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, decTex);
+      gl.uniform1i(loc(pReduce, 'uDec'), 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      gl.useProgram(pCrtload);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, crtloadFbo); gl.viewport(0, 0, 1, ATV_NL);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, lumaTex);
+      gl.uniform1i(loc(pCrtload, 'uLuma'), 0);
+      gl.uniform1f(loc(pCrtload, 'uSqueezeBottom'), knob('squeezebottom', 0));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
 
     // --- Final: decoded -> screen (or ping-pong FBO for feedback) ---
     gl.useProgram(pFin);
@@ -506,6 +673,9 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     gl.bindFramebuffer(gl.FRAMEBUFFER, target); gl.viewport(0, 0, w, h);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, decTex);
     gl.uniform1i(loc(pFin, 'uDec'), 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, crtloadTex || decTex);
+    gl.uniform1i(loc(pFin, 'uCrtload'), 1);
+    gl.uniform1f(loc(pFin, 'uBloom'), bloom ? 1.0 : 0.0);
     gl.uniform2f(loc(pFin, 'uOut'), w, h);
     gl.uniform1f(loc(pFin, 'uBend'), knob('bend', 0));
     gl.uniform1f(loc(pFin, 'uRoll'), knob('roll', 0));
@@ -582,9 +752,13 @@ void main(){ o = texture(uTex, gl_FragCoord.xy/uOut); }`)
     stop() {
       if (rafId) cancelAnimationFrame(rafId); rafId = 0;
       window.removeEventListener('resize', onResize);
-      for (const p of [pEnc, pDec, pFin]) gl.deleteProgram(p);
+      for (const p of [pEnc, pDec, pFin, pGhost, pReduce, pCrtload, pAddB]) if (p) gl.deleteProgram(p);
       gl.deleteTexture(sigTex); gl.deleteTexture(decTex);
       gl.deleteFramebuffer(sigFbo); gl.deleteFramebuffer(decFbo);
+      if (sig2Tex) gl.deleteTexture(sig2Tex);
+      if (sig2Fbo) gl.deleteFramebuffer(sig2Fbo);
+      for (const t of [lumaTex, crtloadTex, sigBTex]) if (t) gl.deleteTexture(t);
+      for (const f of [lumaFbo, crtloadFbo, sigBFbo]) if (f) gl.deleteFramebuffer(f);
       for (const t of finTex) if (t) gl.deleteTexture(t);
       for (const f of finFbo) if (f) gl.deleteFramebuffer(f);
       for (const t of imgTex) gl.deleteTexture(t);
