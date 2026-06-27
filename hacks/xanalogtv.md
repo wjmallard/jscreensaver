@@ -1,6 +1,6 @@
 # xanalogtv — port notes
 
-Port of `xanalogtv.c` by Trevor Blackwell (2003) — a dusty old television flipping through the channels. Some carry colour bars with the station logo and light snow, some show test cards, some are dead channels of static, and a few pick up two stations at once. Changing the channel loses sync — a burst of static, a quick roll/tear — before it locks back on, with the odd glitch mid-channel, like a real flaky set.
+Port of `xanalogtv.c` by Trevor Blackwell (2003) — a dusty old television flipping through the channels. Some carry colour bars with the station logo and light snow, some show test cards, some are dead channels of static, and a few pick up two stations at once. Changing the channel loses sync — a burst of static and a quick vertical roll — before it locks back on, like a real flaky set.
 
 It is built entirely on the shared NTSC engine [[analogtv]] (`hacks/analogtv.glsl.js`): xanalogtv only supplies the **picture content** (`atv_source`) and a per-frame **reception model**; the engine does the signal simulation, CRT model, and all the timing/geometry faults.
 
@@ -12,10 +12,8 @@ Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hack
 Each channel also has a stable "personality" derived from a hash of its index: ~2/3 of channels carry an RF **ghost** (multipath strength), and ~1/8 (currently idx 3 and 6) share the channel with a fainter **second station**.
 
 ## Reception model (`reception()` → `frameKnobs`)
-- **Channel-change re-lock**, faithful to `analogtv_sync`: the new station's signal offset is random, so vertical sync lands at a random error and then **walks back incrementally** (≤ ~32 of the 262 frame lines per frame). Most changes barely roll; some roll for a few frames before catching. A ~3-frame static burst (`channel_change_cycles`) and a brief (~0.4 s) horizontal/colour settle ride along. This deliberately replaces an earlier version that did the same big roll+tear on *every* change (too repetitive).
-- **Colour lock after picture** (`colormode`/burst): chroma is gated off until just after the picture appears, so a channel snaps in black-and-white and the colour fades in.
-- **Persistent mid-image sync loss**: occasionally (mean `config.syncloss` ≈ 22 s) the vertical/horizontal hold drifts on its own for 3–8 s (free roll and/or tear) before catching — the deliberate rare drama.
-- **Snow & AGC**: the same faint snow (`barsnow`) is injected on every channel; the engine's AGC (`agc = 1/√(noise² + Σ level²)`) then boosts no-signal channels so their static is bright while stations sit near unity.
+- **Channel-change re-lock**, faithful to `analogtv_sync`: the new station's signal offset is random, so vertical sync lands at a random error and then **walks back incrementally** (≤ ~32 of the 262 frame lines per frame). Most changes barely roll; some roll for a few frames before catching. A ~3-frame static burst (`channel_change_cycles`) and a brief (~0.4 s) colour-burst settle (with only a small horizontal nudge) ride along. Sync disruption is otherwise vertical — stock xanalogtv only loses sync on a channel change, and `flutter_horiz_desync` (the recurring horizontal tear) is never enabled, so there is no full-screen diagonal wobble mid-channel.
+- **Colour lock after picture** (`colormode`/burst): chroma is gated off until just after the picture appears, so a channel snaps in black-and-white and the colour fades in.- **Snow & AGC**: the same faint snow (`barsnow`) is injected on every channel; the engine's AGC (`agc = 1/√(noise² + Σ level²)`) then boosts no-signal channels so their static is bright while stations sit near unity.
 
 ## The analogtv feature set (#1–#10)
 Driven from here, implemented in the engine:
@@ -23,7 +21,7 @@ Driven from here, implemented in the engine:
 - **#2 right-edge squish + brighten** — the beam slows at the right; remapped to fill the edge (no black gap). *On (subtle, as in stock).*
 - **#3 AGC** — luma normalised to signal strength (the dead-channel snow boost above). *On.*
 - **#4 ghosting** (`ghostfir`) — RF multipath echo, ~2/3 of channels, faithful tap range. *On.*
-- **#5 hfloss** — **skipped**: dead code in stock (`rec->hfloss` is only set inside an `if (0)`, so it is always 0; a faithful port is a no-op).
+- **#5 hfloss** — high-frequency loss: each composite sample mixes in a fraction of the sample 180° of subcarrier away (in phase for luma, antiphase for chroma), so it lifts luma and washes out colour on a weak signal. **The stock code gates its driver behind `if (0)`, so it never runs; revived here** — driven by a slow zero-mean random walk whose size tracks each channel's multipath, giving a subtle colour/brightness waver on the multipath channels that decays to nothing on the clean ones. *On (config `hfloss`); subtle by design.*
 - **#6 two stations** — a fainter test-card second station summed in at a random, slowly drifting offset (its own carrier phase → the interference beat). ~1/8 of channels. *On.*
 - **#7 power-on warm-up** (`puramp`) — black → bright centre line → vertical expand → full picture. Exposed as a **"Power-on warm-up" checkbox, default off** (re-arms / replays when ticked).
 - **#8 station ID + clock** — "jscreensaver.net" + a live `Date()` clock in the original's `%y.%m.%d %H:%M:%S` format, drawn to a 2D canvas the engine re-uploads each frame (`uImage4`) and composited on the bars station, so it bleeds and scans through the real encode. *On.*
@@ -32,11 +30,12 @@ Driven from here, implemented in the engine:
 
 ## Deviations from the C
 - **Bundled images instead of an image directory.** The original pulls broadcast pictures from your xscreensaver image folder, which a browser can't reach. This port uses the three bundled test cards + procedural bars/snow; the test cards and logo are copied from `xscreensaver-6.15/hacks/images/` and ship under xscreensaver's license (this being a port).
-- **Station ID text.** Content is "jscreensaver.net" + `Date()` (chosen for this site) rather than the host's `gethostname` + `localtime`; it's drawn with a monospace canvas font rather than the C's 6×10 "ugly" bitmap font (an acceptable adaptation — it still rides the NTSC encode).
+- **Station ID text.** Rendered in the original's own X11 6×10 "ugly" bitmap font — jwz's `6x10font.png` (256 glyphs of 7×10), blitted glyph-by-glyph (nearest-neighbour) and run through the NTSC encode, so it bleeds and scans like the C does. Only the *content* differs: "jscreensaver.net" + `Date()` (chosen for this site) rather than the host's `gethostname` + `localtime`.
 - **Deterministic per-channel personalities.** Which channels ghost or carry a second station is a fixed hash of the channel index, where the C re-randomizes each run — so behaviour is stable across sessions rather than shuffled.
-- **#5 / #9** as noted above.
+- **Revived dead code (#5 hfloss).** Stock ships it disabled (`if (0)`); this port enables it at the original coefficients (off via config `hfloss`). See above.
+- **#9** as noted above.
 
 ## Config
-Exposed in the config box: `color` (B&W↔vivid), `tint` (°), `brightness`, `contrast`, `barsnow` (Snow: clear↔noisy), `dwell` (Channel hold, default **10 s**, range 2–20), and the `powerup` checkbox. Internal (not surfaced): `syncloss` (mean seconds between persistent sync-loss events), `squeezebottom` (per-set bottom-bloom skew), `fps`. The colour/tint/brightness/contrast defaults (`1.0 / 0 / −0.05 / 1.4`) are the validated mapping onto the engine's clean-carrier knobs.
+Exposed in the config box: `color` (B&W↔vivid), `tint` (°), `brightness`, `contrast`, `barsnow` (Snow: clear↔noisy), `dwell` (Channel hold, default **10 s**, range 2–20), and the `powerup` checkbox. Internal (not surfaced): `squeezebottom` (per-set bottom-bloom skew), `hfloss` (revived high-frequency loss, default on), `fps`. The colour/tint/brightness/contrast defaults (`1.0 / 0 / −0.05 / 1.4`) are the validated mapping onto the engine's clean-carrier knobs.
 
 **Local dev:** ES-module imports need a server (`python3 -m http.server`, then <http://localhost:8000/#xanalogtv>); `file://` won't load. GitHub Pages serves over http, so production is unaffected.

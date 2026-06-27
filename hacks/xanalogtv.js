@@ -90,19 +90,24 @@ vec3 atv_source(vec2 uv){
 }
 `;
 
-const round = Math.round;
 const rnd = Math.random;
 
 // Deterministic per-channel pseudo-random in [0,1) (stable ghost per channel).
 const hash01 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
-// Per-channel multipath ghost FIR (analogtv reception_update): ~2/3 of channels
-// pick up a multipath echo of random strength; the rest get the weak default
-// ghost. Four taps at lags 4/8/12/16 samples, applied by the harness ghost pass.
+// Per-channel multipath strength (analogtv reception->multipath): ~2/3 of
+// channels pick up a multipath echo of strength 0.3..1; the rest are clean. Drives
+// both the ghost FIR and the high-frequency loss, so they share one source.
+function channelMultipath(idx) {
+  return hash01(idx * 3 + 1) < 0.667 ? (0.3 + 0.7 * hash01(idx * 3 + 2)) : 0;
+}
+
+// Per-channel multipath ghost FIR (analogtv reception_update): the multipath
+// channels carry an echo; the rest get the weak default ghost. Four taps at lags
+// 4/8/12/16 samples, applied by the harness ghost pass.
 function channelGhost(idx) {
-  // ~2/3 of channels carry a multipath echo (strength 0.3..1); the rest get the
-  // weak default ghost. Taps ~+/-0.05*m, in the analogtv reception_update range.
-  const m = hash01(idx * 3 + 1) < 0.667 ? (0.3 + 0.7 * hash01(idx * 3 + 2)) : 0;
+  // Taps ~+/-0.05*m, in the analogtv reception_update range.
+  const m = channelMultipath(idx);
   if (m <= 0) return [0, 0, -0.02, 0.01];     // default (multipath == 0) ghostfir
   return [
     (hash01(idx * 7 + 1) * 2 - 1) * 0.05 * m,
@@ -117,8 +122,8 @@ export function start(canvas) {
     color: 1.0, tint: 0, brightness: -0.05, contrast: 1.4,
     barsnow: 0.11,     // light snow over the picture channels
     dwell: 10.0,       // seconds per channel
-    syncloss: 22,      // mean seconds between sustained mid-image sync-loss events
     powerup: false,    // CRT power-on warm-up animation (off by default)
+    hfloss: true,      // high-frequency loss: colour-washing softness on weak/multipath channels (analogtv `if(0)`, revived)
     squeezebottom: rnd() * 5 - 1,   // per-set bottom-edge bloom skew (analogtv squeezebottom)
     fps: 30,
   };
@@ -141,6 +146,45 @@ export function start(canvas) {
   const tctx = textCanvas.getContext('2d');
   const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
   let lastStamp = '';
+
+  // The real X11 "6x10" bitmap font (analogtv ugly_font), which jwz dumped to a
+  // PNG: 256 ASCII-indexed glyphs of 7x10 in a 1792x10 strip (glyph c at sx=c*7).
+  // The PNG stores each glyph in its ALPHA channel (ink = opaque, ground = clear;
+  // colour is black throughout), so we just recolour the ink to white once, then
+  // blit glyphs nearest-neighbour -- the station ID + clock render as the genuine
+  // chunky font and bleed through the NTSC encode, not as a smooth system mono.
+  const FONT_CW = 7, FONT_CH = 10;
+  let fontCv = null;                     // white-on-alpha glyph atlas (null until loaded)
+  const fontImg = new Image();
+  fontImg.onload = () => {
+    const fc = document.createElement('canvas');
+    fc.width = fontImg.width; fc.height = fontImg.height;
+    const fx = fc.getContext('2d');
+    fx.drawImage(fontImg, 0, 0);
+    const id = fx.getImageData(0, 0, fc.width, fc.height), d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = d[i + 1] = d[i + 2] = 255;  // ink -> white; keep the PNG's alpha as the glyph mask
+    }
+    fx.putImageData(id, 0, 0);
+    fontCv = fc;
+    lastStamp = '';                      // force a redraw now that the glyphs exist
+    drawStationText();
+  };
+  fontImg.src = img('6x10font.png');
+
+  // Blit one string centred at (cxFrac, cyFrac) of the text canvas, scaled by s.
+  function drawText(str, cxFrac, cyFrac, s) {
+    const W = textCanvas.width, H = textCanvas.height;
+    const gw = FONT_CW * s, gh = FONT_CH * s;
+    let x = Math.round(W * cxFrac - (str.length * gw) / 2);
+    const y = Math.round(H * cyFrac - gh / 2);
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i) & 0xff;
+      tctx.drawImage(fontCv, c * FONT_CW, 0, FONT_CW, FONT_CH, x, y, gw, gh);
+      x += gw;
+    }
+  }
+
   function drawStationText() {
     const d = new Date();
     const stamp = pad2(d.getFullYear() % 100) + '.' + pad2(d.getMonth() + 1) + '.' +
@@ -150,24 +194,20 @@ export function start(canvas) {
     lastStamp = stamp;
     const W = textCanvas.width, H = textCanvas.height;
     tctx.clearRect(0, 0, W, H);
-    tctx.textAlign = 'center';
-    tctx.textBaseline = 'middle';
-    tctx.lineJoin = 'round';
-    const fpx = Math.round(H * 0.058);
-    tctx.font = 'bold ' + fpx + 'px "Courier New", monospace';
-    tctx.lineWidth = Math.max(2, fpx * 0.22);
-    tctx.strokeStyle = '#000';
-    tctx.fillStyle = '#fff';
-    tctx.strokeText('jscreensaver.net', W / 2, H * 0.11);
-    tctx.fillText('jscreensaver.net', W / 2, H * 0.11);
-    tctx.strokeText(stamp, W / 2, H * 0.525);
-    tctx.fillText(stamp, W / 2, H * 0.525);
+    if (!fontCv) return;                 // font still loading; harness re-uploads next frame
+    tctx.imageSmoothingEnabled = false;
+    const s = Math.max(1, Math.round(H * 0.05 / FONT_CH));   // ~2x: chunky but legible
+    drawText('jscreensaver.net', 0.5, 0.11, s);
+    drawText(stamp, 0.5, 0.525, s);
   }
   drawStationText();
   IMAGES.push({ canvas: textCanvas });
 
-  // Reception state: mostly locked, with a roll/tear "lock-on" after each channel
-  // change and the odd mid-channel glitch.
+  // Reception state: locked, with a brief vertical-roll "lock-on" after each
+  // channel change. Stock xanalogtv only loses sync on a channel change (and
+  // re-locks vertically); it has NO recurring mid-channel tearing -- horiz_desync
+  // is the static top bar-bend below, and flutter_horiz_desync is never enabled in
+  // xanalogtv (only apple2 turns it on).
   // analogtv_sync re-locks vertical sync incrementally, walking at most ~32 of
   // the V=262 frame lines per frame toward the new signal. In my roll units (a
   // fraction of the visible field) that cap is ~32/200.
@@ -176,11 +216,9 @@ export function start(canvas) {
   let chanType = 1;
   let vsyncErr = 0;          // current vertical-sync error; 0 = locked (analogtv cur_vsync)
   let acquire = 0;           // brief post-change hsync/colour re-lock window (1 -> 0)
-  let tear = 0;              // rare one-off horizontal tic while settled
   let lastIdx = -1, sinceChange = 1e9;
-  let rollPos = 0, rollVel = 0;                            // free-roll integrator (sync loss)
-  let syncLoss = 0, lossRoll = false, lossTear = false;   // sustained mid-image sync loss
   const bend = (rnd() * 2 - 1) * 0.012;   // per-set top bar-bend (horiz_desync, frand(10)-5)
+  let hfloss = 0, hfloss2 = 0;            // high-frequency loss random walk (analogtv reception_update)
 
   function reception(time) {
     const dwell = config.dwell || 10;
@@ -196,55 +234,38 @@ export function start(canvas) {
       vsyncErr += rnd() - 0.5;
       vsyncErr -= Math.round(vsyncErr);    // wrap to the nearest lock, in [-0.5, 0.5]
       acquire = 1.0;
-      syncLoss = 0;
     } else {
       sinceChange++;
     }
+
+    // High-frequency loss (analogtv reception_update, normally `if (0)`): a slow
+    // zero-mean random walk whose magnitude tracks this channel's multipath, so it
+    // wavers the colour/luma on weak channels and decays back to 0 (~16-frame time
+    // constant) on a clean one. config.hfloss turns it off.
+    const mp = config.hfloss ? channelMultipath(idx) : 0;
+    hfloss2 += -(hfloss2 / 16) + mp * (rnd() * 0.08 - 0.04);
+    hfloss = 0.5 * hfloss + 0.5 * hfloss2;
 
     // Heavy static is essentially one frame in the original (channel_change_cycles,
     // reset right after the draw); keep it to a brief flash, not a long burst.
     const switching = sinceChange < 3;
     chanType = switching ? 1 : CHAN[idx];
-    const settled = !switching && vsyncErr === 0 && acquire < 0.05 && chanType !== 1;
 
-    // Occasional PERSISTENT mid-image loss of sync: the vertical/horizontal hold
-    // drifts on its own for a few seconds (rolling and/or tearing), then catches.
-    // config.syncloss = mean seconds between events. (The deliberate rare drama.)
-    if (settled && syncLoss <= 0 && Math.floor(rnd() * ((config.syncloss || 22) * fps)) === 0) {
-      syncLoss = (3 + rnd() * 5) * fps;     // 3-8 s adrift
-      lossRoll = rnd() < 0.7;               // usually vertical roll
-      lossTear = rnd() < 0.55;              // often also/instead a horizontal tear
-      if (!lossRoll && !lossTear) lossRoll = true;
-      rollPos = vsyncErr;
-      rollVel = (rnd() * 0.04 + 0.02) * (rnd() < 0.5 ? -1 : 1);
-    }
-
-    let roll, rolling, slant, hdrift;
-    if (syncLoss > 0) {                     // free drift, not re-locking yet
-      syncLoss -= 1;
-      if (lossRoll) { rollVel += (rnd() - 0.5) * 0.003; rollPos += rollVel; }  // wander
-      roll = lossRoll ? (rollPos - round(rollPos)) : 0;
-      rolling = lossRoll ? 1 : 0;
-      slant = lossTear ? (0.16 + 0.08 * Math.sin(time * 2.7)) * Math.sin(time * 10.0) : 0;
-      hdrift = lossTear ? 0.06 * Math.sin(time * 1.7) : 0;
-      if (syncLoss <= 0) { vsyncErr = rollPos - Math.round(rollPos); acquire = 1.0; }
-    } else {
-      // Re-lock vertical sync by walking toward lock at the analogtv_sync cap: a
-      // quick, monotone catch (a few frames), proportional to how far it landed.
-      if (vsyncErr > VSTEP) vsyncErr -= VSTEP;
-      else if (vsyncErr < -VSTEP) vsyncErr += VSTEP;
-      else vsyncErr = 0;
-      roll = vsyncErr;
-      rolling = vsyncErr !== 0 ? 1 : 0;
-      // Brief horizontal re-lock wobble + colour-burst settle (~0.4s), much
-      // smaller than a full roll; plus a rare one-off hsync tic when settled.
-      acquire = Math.max(0, acquire - 1 / (0.4 * fps));
-      if (settled && Math.floor(rnd() * 400) === 0) tear = 1.0;
-      tear = Math.max(0, tear - 0.08);
-      const aq = acquire * acquire;
-      slant = aq * 0.05 * Math.sin(time * 30.0) + tear * 0.3;
-      hdrift = aq * 0.025 * Math.sin(time * 47.0) + tear * 0.12 * Math.sin(time * 30.0);
-    }
+    // Re-lock vertical sync by walking toward lock at the analogtv_sync cap: a
+    // quick, monotone catch (a few frames), proportional to how far the new
+    // channel's random signal offset landed.
+    if (vsyncErr > VSTEP) vsyncErr -= VSTEP;
+    else if (vsyncErr < -VSTEP) vsyncErr += VSTEP;
+    else vsyncErr = 0;
+    const roll = vsyncErr;
+    const rolling = vsyncErr !== 0 ? 1 : 0;
+    // A small, brief horizontal re-lock wobble + colour-burst settle (~0.4 s) as it
+    // catches -- mostly vertical; no full-screen diagonal tear (stock xanalogtv has
+    // no mid-channel horizontal flutter).
+    acquire = Math.max(0, acquire - 1 / (0.4 * fps));
+    const aq = acquire * acquire;
+    const slant = aq * 0.05 * Math.sin(time * 30.0);
+    const hdrift = aq * 0.025 * Math.sin(time * 47.0);
 
     // Same injected snow on every channel (analogtv noise_level); AGC does the
     // rest. nl is the composite noise amplitude used both as the snow level and
@@ -278,11 +299,11 @@ export function start(canvas) {
     const burst = chanType === 1 ? 0 : 1 - acquire;
     return {
       chanType, chanType2, mixB, ofsX, ofsY,
-      snow, burst, agc, ghostfir: channelGhost(idx),
+      snow, burst, agc, ghostfir: channelGhost(idx), hfloss,
       roll, rolling, slant, hdrift, bend,
     };
   }
-  let rx = { chanType: 1, chanType2: 0, mixB: 0, ofsX: 0, ofsY: 0, snow: 0.5, burst: 0, agc: 1, ghostfir: [0, 0, 0, 0], roll: 0, rolling: 0, slant: 0, hdrift: 0, bend };
+  let rx = { chanType: 1, chanType2: 0, mixB: 0, ofsX: 0, ofsY: 0, snow: 0.5, burst: 0, agc: 1, ghostfir: [0, 0, 0, 0], hfloss: 0, roll: 0, rolling: 0, slant: 0, hdrift: 0, bend };
 
   const params = [
     { key: 'color', label: 'Color', type: 'range', min: 0, max: 2, step: 0.05, default: 1.0, lowLabel: 'B&W', highLabel: 'vivid', live: true },
@@ -306,7 +327,7 @@ export function start(canvas) {
       return {
         color: config.color * rx.burst, tint: config.tint,
         brightness: config.brightness, contrast: config.contrast,
-        noise: rx.snow, agc: rx.agc, ghostfir: rx.ghostfir,
+        noise: rx.snow, agc: rx.agc, ghostfir: rx.ghostfir, hfloss: rx.hfloss,
         mixB: rx.mixB, ofsX: rx.ofsX, ofsY: rx.ofsY,
         bend: rx.bend, roll: rx.roll, rolling: rx.rolling, slant: rx.slant, hdrift: rx.hdrift,
       };
