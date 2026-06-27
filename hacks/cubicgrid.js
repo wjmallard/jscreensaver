@@ -27,8 +27,8 @@ import * as THREE from 'three';
 export const title = 'cubicgrid';
 
 export const info = {
-  author: 'after Vasek Potocek (xscreensaver cubicgrid)',
-  description: 'A finite 3D lattice of dots, colored by position in the RGB cube, seen from within as it slowly tumbles — rows align and view-throughs open and evolve.',
+  author: 'Vasek Potocek',
+  description: 'A finite 3D lattice of dots, colored by position in the RGB cube, seen from within as it slowly tumbles \u2014 rows align and view-throughs open and evolve.',
   year: 2007,
 };
 
