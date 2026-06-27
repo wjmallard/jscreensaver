@@ -187,8 +187,11 @@ export function start(hostCanvas, opts = {}) {
   // (specular black => no highlight). color = AMBIENT_AND_DIFFUSE => diffuse `color`.
   const ballMat = new THREE.MeshPhongMaterial({
     color: 0x000000,
-    specular: 0x00ffff,   // cyan -> reproduces the original's cyan specular highlight
-    shininess: 128,
+    // Cyan highlight, scaled DOWN: full-cyan x the PI light intensity blew out a
+    // big white core, so we dim the material specular (smaller clipped core +
+    // dimmer) and raise shininess a bit to tighten the spot.
+    specular: 0x004040,   // dim cyan (~0.25) instead of full 0x00ffff
+    shininess: 200,       // tighter highlight (was 128)
   });
   const spikeMat = new THREE.MeshPhongMaterial({
     color: 0x000000,
