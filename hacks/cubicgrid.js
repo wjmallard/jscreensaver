@@ -38,15 +38,27 @@ export function start(hostCanvas) {
   const DOT_PX = 1.0;    // on-screen dot size, CSS px (orig "bigdots" ~2.5; smaller = finer)
   const CAM_Z = 18;      // observer distance (matches the video: lattice fills the frame)
 
-  // Live config: the host renders a settings box from `params` and mutates
-  // `config` in place; the loop reads it each frame. Maps to the .c's spin / -bigdots.
+  // delay (us) scales the spin around the xml default 20000; OVERHEAD encodes the
+  // ~2x per-frame overhead so the default reproduces the measured pace. cubicgrid's
+  // rotation is continuous (dt-scaled), so it stays smooth at any speed.
+  const OVERHEAD = 37500;
+  const REF_DELAY = 20000 + OVERHEAD;   // delay factor == 1 at the xml default
+
+  // Live config. Keys/ranges/defaults/labels transcribed 1:1 from
+  // hacks/config/cubicgrid.xml (the host renders the box from `params`, mutating
+  // `config`). `speed` and `delay` both scale the spin (as in the original); `zoom`
+  // is dot spacing; `bigdots` toggles dot size. (symmetry: only cubic is ported.)
   const config = {
-    speed: 1.0,      // spin-rate multiplier (1.0 = the tuned pace)
-    dotSize: 1.0,    // on-screen point size, CSS px (the .c's -bigdots)
+    delay: 20000,     // us, frame rate (xml default; invert slider)
+    speed: 1.0,       // spin-rate multiplier (xml --speed; ratio)
+    zoom: 20,         // dot spacing / lattice extent (xml --zoom; DEF_ZOOM)
+    bigdots: true,    // big vs fine dots (xml --bigdots, default on)
   };
   const params = [
-    { key: 'speed', label: 'Speed', type: 'range', min: 0, max: 3, step: 0.05, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
-    { key: 'dotSize', label: 'Dot size', type: 'range', min: 0.5, max: 4, step: 0.5, default: 1.0, lowLabel: 'fine', highLabel: 'bold', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Speed', type: 'range', min: 0.2, max: 10, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'zoom', label: 'Dot spacing', type: 'range', min: 15, max: 100, step: 1, default: 20, lowLabel: 'close', highLabel: 'far', live: true },
+    { key: 'bigdots', label: 'Big dots', type: 'checkbox', default: true, live: true },
   ];
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -131,10 +143,13 @@ export function start(hostCanvas) {
     ms += (frame - ms) * 0.1;
     if (paused) return;
     const dt = Math.min(frame / 1000, 0.1);
-    points.rotation.x += dt * SPIN.x * config.speed;
-    points.rotation.y += dt * SPIN.y * config.speed;
-    points.rotation.z += dt * SPIN.z * config.speed;
-    mat.size = config.dotSize * dpr;   // live dot size
+    // speed x delay-factor both scale the spin (continuous/dt-scaled -> smooth).
+    const rate = config.speed * (REF_DELAY / (config.delay + OVERHEAD));
+    points.rotation.x += dt * SPIN.x * rate;
+    points.rotation.y += dt * SPIN.y * rate;
+    points.rotation.z += dt * SPIN.z * rate;
+    mat.size = (config.bigdots ? DOT_PX : DOT_PX * 0.5) * dpr;   // live dot size
+    points.scale.setScalar(config.zoom / SIZE);                  // live dot spacing
     renderer.render(scene, camera);
   }
   raf = requestAnimationFrame(tick);
