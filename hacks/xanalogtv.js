@@ -14,7 +14,7 @@
 // procedural bars/static channels instead.
 // See hacks/xanalogtv.md and the memory note analogtv-ntsc-shader-port.
 
-import { startAnalogTV } from './analogtv.glsl.js';
+import { startAnalogTV, ATV_NS, ATV_NL } from './analogtv.glsl.js';
 
 export const title = 'xanalogtv';
 
@@ -93,13 +93,33 @@ vec3 atv_source(vec2 uv){
 const round = Math.round;
 const rnd = Math.random;
 
+// Deterministic per-channel pseudo-random in [0,1) (stable ghost per channel).
+const hash01 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+// Per-channel multipath ghost FIR (analogtv reception_update): ~2/3 of channels
+// pick up a multipath echo of random strength; the rest get the weak default
+// ghost. Four taps at lags 4/8/12/16 samples, applied by the harness ghost pass.
+function channelGhost(idx) {
+  // ~2/3 of channels carry a multipath echo (strength 0.3..1); the rest get the
+  // weak default ghost. Taps ~+/-0.05*m, in the analogtv reception_update range.
+  const m = hash01(idx * 3 + 1) < 0.667 ? (0.3 + 0.7 * hash01(idx * 3 + 2)) : 0;
+  if (m <= 0) return [0, 0, -0.02, 0.01];     // default (multipath == 0) ghostfir
+  return [
+    (hash01(idx * 7 + 1) * 2 - 1) * 0.05 * m,
+    (hash01(idx * 7 + 2) * 2 - 1) * 0.05 * m,
+    (hash01(idx * 7 + 3) * 2 - 1) * 0.05 * m,
+    (hash01(idx * 7 + 4) * 2 - 1) * 0.05 * m,
+  ];
+}
+
 export function start(canvas) {
   const config = {
     color: 1.0, tint: 0, brightness: -0.05, contrast: 1.4,
     barsnow: 0.11,     // light snow over the picture channels
-    dwell: 7.0,        // seconds per channel
+    dwell: 10.0,       // seconds per channel
     syncloss: 22,      // mean seconds between sustained mid-image sync-loss events
     powerup: false,    // CRT power-on warm-up animation (off by default)
+    squeezebottom: rnd() * 5 - 1,   // per-set bottom-edge bloom skew (analogtv squeezebottom)
     fps: 30,
   };
 
@@ -163,7 +183,7 @@ export function start(canvas) {
   const bend = (rnd() * 2 - 1) * 0.012;   // per-set top bar-bend (horiz_desync, frand(10)-5)
 
   function reception(time) {
-    const dwell = config.dwell || 7;
+    const dwell = config.dwell || 10;
     const fps = config.fps || 30;
     const idx = Math.floor(time / dwell) % CHAN.length;
 
@@ -226,13 +246,43 @@ export function start(canvas) {
       hdrift = aq * 0.025 * Math.sin(time * 47.0) + tear * 0.12 * Math.sin(time * 30.0);
     }
 
-    const snow = switching ? 0.5 : (chanType === 1 ? 0.5 : config.barsnow);
+    // Same injected snow on every channel (analogtv noise_level); AGC does the
+    // rest. nl is the composite noise amplitude used both as the snow level and
+    // in the signal-strength calc below.
+    const nl = Math.max(config.barsnow || 0.06, 0.02);
+    const snow = nl;
+    const stationLevel = (chanType === 1 || switching) ? 0.0 : 1.0;
+
+    // Two-station co-channel ghost (analogtv MAX_MULTICHAN=2): only ~1/8 of live
+    // stations share the channel with a fainter second station (a test card) at a
+    // random, slowly drifting (x,y) signal offset -- its own carrier phase gives
+    // the interference beat. (In analogtv a 2nd reception needs a weak 1st station
+    // AND a 1-in-4 roll ~= 1/8.) Suppressed while tuning / on dead channels.
+    let chanType2 = 0, mixB = 0, ofsX = 0, ofsY = 0;
+    if (stationLevel > 0 && hash01(idx * 5 + 2) < 0.13) {
+      const T2 = [3, 4, 5];
+      chanType2 = T2[Math.floor(hash01(idx * 5 + 3) * 3) % 3];
+      mixB = 0.22 + 0.18 * hash01(idx * 5 + 6);
+      ofsX = hash01(idx * 5 + 4) * ATV_NS + (hash01(idx * 5 + 7) - 0.5) * 6.0 * time;
+      ofsY = hash01(idx * 5 + 5) * ATV_NL + (hash01(idx * 5 + 8) - 0.5) * 0.6 * time;
+    }
+
+    // AGC (analogtv rx_signal_level = sqrt(noise^2 + sum level^2)): a channel with
+    // a station sits near unity gain; a dead/tuning channel has no station, so
+    // agc = 1/noise boosts the snow to near full brightness. The second station
+    // adds a little signal energy, lowering the gain slightly.
+    const agc = 1.0 / Math.sqrt(nl * nl + stationLevel * stationLevel + mixB * mixB);
+
     // Colourburst gate (analogtv colormode): no chroma on a dead channel; on a
     // station the colour locks in just after the picture (burst 0 -> 1).
     const burst = chanType === 1 ? 0 : 1 - acquire;
-    return { chanType, snow, burst, roll, rolling, slant, hdrift, bend };
+    return {
+      chanType, chanType2, mixB, ofsX, ofsY,
+      snow, burst, agc, ghostfir: channelGhost(idx),
+      roll, rolling, slant, hdrift, bend,
+    };
   }
-  let rx = { chanType: 1, snow: 0.5, burst: 0, roll: 0, rolling: 0, slant: 0, hdrift: 0, bend };
+  let rx = { chanType: 1, chanType2: 0, mixB: 0, ofsX: 0, ofsY: 0, snow: 0.5, burst: 0, agc: 1, ghostfir: [0, 0, 0, 0], roll: 0, rolling: 0, slant: 0, hdrift: 0, bend };
 
   const params = [
     { key: 'color', label: 'Color', type: 'range', min: 0, max: 2, step: 0.05, default: 1.0, lowLabel: 'B&W', highLabel: 'vivid', live: true },
@@ -240,25 +290,31 @@ export function start(canvas) {
     { key: 'brightness', label: 'Brightness', type: 'range', min: -0.3, max: 0.3, step: 0.01, default: -0.05, live: true },
     { key: 'contrast', label: 'Contrast', type: 'range', min: 0.5, max: 2.5, step: 0.05, default: 1.4, live: true },
     { key: 'barsnow', label: 'Snow', type: 'range', min: 0, max: 0.3, step: 0.01, default: 0.11, lowLabel: 'clear', highLabel: 'noisy', live: true },
-    { key: 'dwell', label: 'Channel hold', type: 'range', min: 2, max: 20, step: 1, default: 7, unit: 's', live: true },
+    { key: 'dwell', label: 'Channel hold', type: 'range', min: 2, max: 20, step: 1, default: 10, unit: 's', live: true },
     { key: 'powerup', label: 'Power-on warm-up', type: 'checkbox', default: false, live: true },
   ];
 
   return startAnalogTV(canvas, {
     source: SOURCE,
     images: IMAGES,
+    ghost: true,
+    bloom: true,
+    twoStation: true,
     frameKnobs: (ctx) => {
       drawStationText();
       rx = reception(ctx.time);
       return {
         color: config.color * rx.burst, tint: config.tint,
         brightness: config.brightness, contrast: config.contrast,
-        noise: rx.snow,
+        noise: rx.snow, agc: rx.agc, ghostfir: rx.ghostfir,
+        mixB: rx.mixB, ofsX: rx.ofsX, ofsY: rx.ofsY,
         bend: rx.bend, roll: rx.roll, rolling: rx.rolling, slant: rx.slant, hdrift: rx.hdrift,
       };
     },
-    setUniforms: (gl, prog) => {
-      gl.uniform1i(gl.getUniformLocation(prog, 'uChanType'), rx.chanType);
+    setUniforms: (gl, prog, ctx) => {
+      // pass 0 = main station, pass 1 = the fainter co-channel second station.
+      const ct = (ctx && ctx.pass === 1) ? rx.chanType2 : rx.chanType;
+      gl.uniform1i(gl.getUniformLocation(prog, 'uChanType'), ct);
     },
     config,
     params,
