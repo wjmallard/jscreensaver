@@ -232,6 +232,34 @@ function cancelFade() {
   canvas.style.opacity = '1';
 }
 
+// The corner hack-name (#hackname) is a transient label: it flashes on each
+// mount / return-to-view, holds briefly, then fades out so the running hack is
+// unobstructed. It's a pure label (not clickable — info lives in the footer and
+// the touch control bar), and stays hidden while the picker is open. flashTitle
+// is a no-op when nothing's running or the picker is up; closeSelector re-arms
+// it on the way back to view.
+const TITLE_HOLD_MS = 2000, TITLE_FADE_MS = 1000;
+let titleTimer = 0;
+function flashTitle() {
+  if (titleTimer) { clearTimeout(titleTimer); titleTimer = 0; }
+  if (!currentName || selector.classList.contains('open')) { hideTitle(); return; }
+  hackName.hidden = false;
+  hackName.style.transition = 'none';
+  hackName.style.opacity = '1';
+  void hackName.offsetWidth;                 // commit opacity:1 before arming the fade
+  titleTimer = setTimeout(() => {
+    titleTimer = 0;
+    hackName.style.transition = `opacity ${TITLE_FADE_MS}ms linear`;
+    hackName.style.opacity = '0';
+  }, TITLE_HOLD_MS);
+}
+function hideTitle() {
+  if (titleTimer) { clearTimeout(titleTimer); titleTimer = 0; }
+  hackName.style.transition = 'none';
+  hackName.style.opacity = '0';
+  hackName.hidden = true;
+}
+
 // Swap hacks. When leaving a 2D hack on screen, fade its (frozen) last frame
 // to black via canvas opacity, then start the new hack on the freshly-cleared
 // canvas at full opacity — no fade-IN, since the new hack builds up from black
@@ -248,7 +276,7 @@ function mount(name) {
   paused = false;
   cfgLink.hidden = true;
   hackName.textContent = name;
-  hackName.hidden = false;
+  flashTitle();
   if (location.hash.slice(1) !== name) location.hash = name;
   render();
 
@@ -318,7 +346,7 @@ function goHome() {
   if (handle) { handle.stop(); handle = null; }
   currentName = null;
   cfgLink.hidden = true;
-  hackName.hidden = true;
+  hideTitle();
   history.replaceState(null, '', location.pathname + location.search);
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -444,6 +472,7 @@ function syncFooter() {
 
 function openSelector() {
   selector.classList.add('open');
+  hideTitle();                       // the title stays hidden while the picker is up
   // Keep the rail on the last-browsed genre — catIndex persists across opens, so
   // e.g. "random" from All keeps landing in All instead of being dragged into
   // whatever genre the last pick happened to belong to. Just drop the cursor on
@@ -460,6 +489,7 @@ function closeSelector() {
   if (!currentName) return;                       // nothing running — keep it up
   if (!selector.classList.contains('open')) return;
   selector.classList.remove('open');
+  flashTitle();                      // back to view: re-announce the running hack, then fade
 }
 
 function moveCursor(delta) {
@@ -597,7 +627,6 @@ document.getElementById('sel-config').addEventListener('click', () => { if (curr
 document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
 cfgLink.addEventListener('click', openConfig);
-hackName.addEventListener('click', openInfo);   // the corner name opens its info box
 
 // Click the dimmed area (outside a box) to dismiss.
 selector.addEventListener('click', (e) => { if (e.target === selector) closeSelector(); });
