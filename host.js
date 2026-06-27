@@ -459,14 +459,14 @@ function setFocus(pane) {
   if (pane === 'list') list.children[cursorIndex]?.scrollIntoView({ block: 'nearest' });
 }
 
-// The per-hack footer actions (info/config/restart/fps) and clear are no-ops with
+// The per-hack footer actions (info/config/restart) and clear are no-ops with
 // nothing running; dim them (and drop their hover) so a dead click isn't invited.
 // random stays live — it picks a hack from the landing too. The footer only shows
 // via openSelector, and "clear" re-routes through it, so syncing here covers every
 // visible transition.
 function syncFooter() {
   const running = !!currentName;
-  for (const id of ['sel-info', 'sel-config', 'sel-restart', 'sel-fps', 'sel-clear']) {
+  for (const id of ['sel-info', 'sel-config', 'sel-restart', 'sel-clear']) {
     document.getElementById(id).classList.toggle('disabled', !running);
   }
 }
@@ -669,7 +669,6 @@ document.getElementById('sel-about').addEventListener('click', openAbout);
 document.getElementById('sel-info').addEventListener('click', () => { if (currentName) openInfo(); });
 document.getElementById('sel-config').addEventListener('click', () => { if (currentName) openConfig(); });
 document.getElementById('sel-restart').addEventListener('click', () => { if (currentName) { restart(); closeSelector(); } });
-document.getElementById('sel-fps').addEventListener('click', () => { if (currentName) { toggleFps(); closeSelector(); } });
 document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
 
@@ -756,7 +755,6 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === 'c') { e.preventDefault(); if (currentName) openConfig(); }
     else if (e.key === 'i') { e.preventDefault(); if (currentName) openInfo(); }
     else if (e.key === 'r') { e.preventDefault(); if (currentName) { restart(); closeSelector(); } }
-    else if (e.key === 'f') { e.preventDefault(); if (currentName) { toggleFps(); closeSelector(); } }
     else if (e.key === 'h') { e.preventDefault(); openHelp(); }
     else if (e.key === 'q') { e.preventDefault(); goHome(); }  // 'q' = the Clear button
     else if (e.key === 's' || e.key === 'Escape') { e.preventDefault(); closeSelector(); }

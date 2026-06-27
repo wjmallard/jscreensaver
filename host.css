@@ -102,7 +102,7 @@ canvas { display: block; touch-action: none; }
 .sel-list::-webkit-scrollbar-track { background: transparent; }
 
 /* Footer: a centred, dot-separated row of per-hack + library actions
-   (info / config / restart / fps / random / clear). Flex with wrap so on a narrow
+   (info / config / restart / random / clear). Flex with wrap so on a narrow
    phone the trailing library pair drops to a second line; the dots are CSS
    ::after separators (one per item but the last) so no literal middots live in the
    markup and a wrapped line never starts with a stray dot. Each span carries
