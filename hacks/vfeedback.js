@@ -68,7 +68,14 @@ export function start(canvas) {
     { key: 'noise', label: 'Noise', type: 'range', min: 0, max: 0.2, step: 0.005, default: 0.02, lowLabel: 'low', highLabel: 'high', live: true },
   ];
 
-  let S = 1;               // devicePixelRatio
+  // Cap the canvas backing store so the per-frame feedback pass (a full-canvas
+  // ctx.filter hue-rotate + drawImage, the GPU-bound step) operates on far
+  // fewer pixels. Video feedback is intrinsically blurry and the C's source is
+  // NTSC-resolution (about 720 px), so the GPU upscale back to the display is
+  // invisible. The longer backing-store edge is held at or below MAX_EDGE.
+  const MAX_EDGE = 1280;
+
+  let S = 1;               // effective backing-store px per CSS px (see init)
   let W, H;                // canvas size, device px
   let cx, cy;              // center, device px
   let scratch, sctx;       // scratch canvas for the self-feedback copy
@@ -288,9 +295,14 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
+    // S is the backing-store px per CSS px (NOT the raw dpr): with the MAX_EDGE
+    // cap the backing store can be smaller than device pixels, and every sim
+    // size derives from S/W/H, so using the effective scale keeps on-screen
+    // sizes identical to a full-res render. Only the internal resolution (and
+    // thus the per-frame filter cost) drops.
+    S = W / Math.max(1, window.innerWidth);
     cx = W >> 1;
     cy = H >> 1;
 
@@ -341,10 +353,17 @@ export function start(canvas) {
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(window.innerWidth * dpr);
-    canvas.height = Math.round(window.innerHeight * dpr);
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    // Effective backing scale: the true dpr, but clamped so the longer edge
+    // never exceeds MAX_EDGE device px. On a small window this is just dpr; on a
+    // big/Retina one it drops below dpr and the browser GPU-upscales the smaller
+    // backing store to the full CSS size (smoothly, image-rendering is auto).
+    const eff = Math.min(dpr, MAX_EDGE / Math.max(cssW, cssH));
+    canvas.width = Math.max(1, Math.round(cssW * eff));
+    canvas.height = Math.max(1, Math.round(cssH * eff));
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
