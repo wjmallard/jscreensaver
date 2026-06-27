@@ -218,6 +218,13 @@ export function start(canvas) {
   let acquire = 0;           // brief post-change hsync/colour re-lock window (1 -> 0)
   let lastIdx = -1, sinceChange = 1e9;
   const bend = (rnd() * 2 - 1) * 0.012;   // per-set top bar-bend (horiz_desync, frand(10)-5)
+  // #9 per-session miscalibration (xanalogtv_init), like a set knocked slightly off
+  // at the factory: 1/4 of sessions get a tint kick -- pow(.,7) keeps it usually
+  // tiny but occasionally a big hue swing -- and the colour always creeps up a
+  // little. analogtv adds frand(0.3) to color_control (default TVColor/100 = 0.70);
+  // our color=1.0 maps to that 0.70, so the same bump is /0.70 in our units.
+  const tintBias = (rnd() < 0.25) ? Math.pow(rnd() * 2 - 1, 7) * 180 : 0;   // degrees
+  const colorBias = rnd() * 0.3 / 0.70;                                     // up to ~+0.43
   let hfloss = 0, hfloss2 = 0;            // high-frequency loss random walk (analogtv reception_update)
 
   function reception(time) {
@@ -325,7 +332,7 @@ export function start(canvas) {
       drawStationText();
       rx = reception(ctx.time);
       return {
-        color: config.color * rx.burst, tint: config.tint,
+        color: (config.color + colorBias) * rx.burst, tint: config.tint + tintBias,
         brightness: config.brightness, contrast: config.contrast,
         noise: rx.snow, agc: rx.agc, ghostfir: rx.ghostfir, hfloss: rx.hfloss,
         mixB: rx.mixB, ofsX: rx.ofsX, ofsY: rx.ofsY,

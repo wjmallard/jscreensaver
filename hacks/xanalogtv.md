@@ -25,7 +25,7 @@ Driven from here, implemented in the engine:
 - **#6 two stations** — a fainter test-card second station summed in at a random, slowly drifting offset (its own carrier phase → the interference beat). ~1/8 of channels. *On.*
 - **#7 power-on warm-up** (`puramp`) — black → bright centre line → vertical expand → full picture. Exposed as a **"Power-on warm-up" checkbox, default off** (re-arms / replays when ticked).
 - **#8 station ID + clock** — "jscreensaver.net" + a live `Date()` clock in the original's `%y.%m.%d %H:%M:%S` format, drawn to a 2D canvas the engine re-uploads each frame (`uImage4`) and composited on the bars station, so it bleeds and scans through the real encode. *On.*
-- **#9 tint/desync wander** — the static per-set top bar-bend (`horiz_desync = frand(10)−5`) is faithful and present; the continuous `flutter_horiz_desync` walk is never enabled in stock, so it isn't added. The remaining piece — a per-session `tint_control` randomization — is **held** because it fights the deliberate `tint = 0` calibration (pending a decision).
+- **#9 tint/desync wander** — the static per-set top bar-bend (`horiz_desync = frand(10)−5`) is faithful and present; the continuous `flutter_horiz_desync` walk is never enabled in stock, so it isn't added. The **per-session tint/colour miscalibration** (`xanalogtv_init`) is now in too: 1/4 of sessions add `pow(frand(2)−1,7)·180°` to the tint (the `pow(.,7)` keeps it usually tiny, occasionally a big hue swing), and every session adds `frand(0.3)` to colour — like a set knocked slightly off at the factory. Mapped onto the engine's knobs: tint is additive degrees; the colour bump is `/0.70` (our `color = 1.0` ≡ the original's `color_control = TVColor/100 = 0.70`). *On.*
 - **#10 teletext** — random black/white VBI dots, only ever glimpsed in the dark bar as the picture rolls. *On (minor, as in stock).*
 
 ## Deviations from the C
@@ -33,7 +33,6 @@ Driven from here, implemented in the engine:
 - **Station ID text.** Rendered in the original's own X11 6×10 "ugly" bitmap font — jwz's `6x10font.png` (256 glyphs of 7×10), blitted glyph-by-glyph (nearest-neighbour) and run through the NTSC encode, so it bleeds and scans like the C does. Only the *content* differs: "jscreensaver.net" + `Date()` (chosen for this site) rather than the host's `gethostname` + `localtime`.
 - **Deterministic per-channel personalities.** Which channels ghost or carry a second station is a fixed hash of the channel index, where the C re-randomizes each run — so behaviour is stable across sessions rather than shuffled.
 - **Revived dead code (#5 hfloss).** Stock ships it disabled (`if (0)`); this port enables it at the original coefficients (off via config `hfloss`). See above.
-- **#9** as noted above.
 
 ## Config
 Exposed in the config box: `color` (B&W↔vivid), `tint` (°), `brightness`, `contrast`, `barsnow` (Snow: clear↔noisy), `dwell` (Channel hold, default **10 s**, range 2–20), and the `powerup` checkbox. Internal (not surfaced): `squeezebottom` (per-set bottom-bloom skew), `hfloss` (revived high-frequency loss, default on), `fps`. The colour/tint/brightness/contrast defaults (`1.0 / 0 / −0.05 / 1.4`) are the validated mapping onto the engine's clean-carrier knobs.
