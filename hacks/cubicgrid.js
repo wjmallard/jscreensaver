@@ -38,6 +38,17 @@ export function start(hostCanvas) {
   const DOT_PX = 1.0;    // on-screen dot size, CSS px (orig "bigdots" ~2.5; smaller = finer)
   const CAM_Z = 18;      // observer distance (matches the video: lattice fills the frame)
 
+  // Live config: the host renders a settings box from `params` and mutates
+  // `config` in place; the loop reads it each frame. Maps to the .c's spin / -bigdots.
+  const config = {
+    speed: 1.0,      // spin-rate multiplier (1.0 = the tuned pace)
+    dotSize: 1.0,    // on-screen point size, CSS px (the .c's -bigdots)
+  };
+  const params = [
+    { key: 'speed', label: 'Speed', type: 'range', min: 0, max: 3, step: 0.05, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'dotSize', label: 'Dot size', type: 'range', min: 0.5, max: 4, step: 0.5, default: 1.0, lowLabel: 'fine', highLabel: 'bold', live: true },
+  ];
+
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
   // Our own overlay canvas — the host's shared canvas is locked to a 2D context.
@@ -120,9 +131,10 @@ export function start(hostCanvas) {
     ms += (frame - ms) * 0.1;
     if (paused) return;
     const dt = Math.min(frame / 1000, 0.1);
-    points.rotation.x += dt * SPIN.x;
-    points.rotation.y += dt * SPIN.y;
-    points.rotation.z += dt * SPIN.z;
+    points.rotation.x += dt * SPIN.x * config.speed;
+    points.rotation.y += dt * SPIN.y * config.speed;
+    points.rotation.z += dt * SPIN.z * config.speed;
+    mat.size = config.dotSize * dpr;   // live dot size
     renderer.render(scene, camera);
   }
   raf = requestAnimationFrame(tick);
@@ -140,5 +152,8 @@ export function start(hostCanvas) {
     pause() { paused = true; },
     resume() { last = 0; paused = false; },
     getStats() { return { ms, scale: 1, w: canvas.width, h: canvas.height }; },
+    reinit() { points.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2); },
+    config,
+    params,
   };
 }
