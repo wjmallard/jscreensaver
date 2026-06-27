@@ -145,6 +145,7 @@ export const HACK_TAXONOMY = {
   triangle: { dimension: '2d', categories: ['surfaces', 'worlds'] },
   truchet: { dimension: '2d', categories: ['geometry'] },
   vermiculate: { dimension: '2d', categories: ['curves', 'biota'] },
+  vfeedback: { dimension: '2d', categories: ['optical', 'plasma'] },
   vines: { dimension: '2d', categories: ['curves', 'fractals'] },
   wander: { dimension: '2d', categories: ['plasma', 'curves'] },
   whirlwindwarp: { dimension: '2d', categories: ['particles', 'fluids'] },
