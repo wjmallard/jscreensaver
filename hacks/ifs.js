@@ -16,11 +16,13 @@
 // Rendering: tens of thousands of points accumulate per frame, so this uses the
 // BLIT path (like thornbird / hopalong) — a persistent Uint32 ImageData buffer
 // that we plot/erase individual pixels into and putImageData once per frame,
-// rather than tens of thousands of per-point fillRect calls. A per-frame bit
-// board dedupes repeated hits (matching the C's getdot/setdot), and the buffer
-// is cleared each frame, so the figure is redrawn fresh every step (the C only
-// erases its dirty bbox, but a full clear of a Uint32 buffer is just as cheap
-// and avoids tracking the box).
+// rather than tens of thousands of per-point fillRect calls. A bit board dedupes
+// repeated hits within each lens pass (the C memsets its getdot/setdot board
+// before every pass), and the buffer is cleared each frame, so the figure is
+// redrawn fresh every step (the C only erases its dirty bbox, but a full clear
+// of a Uint32 buffer is just as cheap and avoids tracking the box).
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'ifs';
 
@@ -37,10 +39,10 @@ export function start(canvas) {
   // the original. (`mode`, `recurse` and `multi` aren't surfaced in the stock
   // UI; the C defaults are recurse=False / multi=True, which we follow.)
   const config = {
-    delay: 30000,     // µs between frames (--delay)
+    delay: 30000,     // µs between frames (--delay; xml stock 20000 — see .md)
     functions: 3,     // number of affine lenses (--functions)
     detail: 9,        // exponent: points drawn = functions^detail (--detail)
-    ncolors: 200,     // size of the rainbow palette (--colors)
+    ncolors: 200,     // size of the make_smooth_colormap palette (--colors)
     translate: true,  // morph: let lenses wander (--no-translate to disable)
     scale: true,      // morph: let lenses breathe (--no-scale to disable)
     rotate: true,     // morph: let lenses spin (--no-rotate to disable)
@@ -52,8 +54,8 @@ export function start(canvas) {
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'functions', label: 'Number of functions', type: 'range', min: 2, max: 6, step: 1, default: 3, lowLabel: '2', highLabel: '6', live: false },
-    { key: 'detail', label: 'Detail (exponential)', type: 'range', min: 4, max: 14, step: 1, default: 9, lowLabel: 'low', highLabel: 'high', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'detail', label: 'Detail', type: 'range', min: 4, max: 14, step: 1, default: 9, lowLabel: 'low', highLabel: 'high', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'translate', label: 'Translate', type: 'checkbox', default: true, live: true },
     { key: 'scale', label: 'Scale', type: 'checkbox', default: true, live: true },
     { key: 'rotate', label: 'Rotate', type: 'checkbox', default: true, live: true },
@@ -65,7 +67,7 @@ export function start(canvas) {
   let W, H, S;                 // canvas size (device px) and devicePixelRatio
   let imageData, pixels;       // persistent Uint32 accumulation buffer
   let board;                   // Uint8 per-pixel "drawn this frame?" dedupe map
-  let palette;                 // ncolors packed-ABGR rainbow values
+  let palette;                 // ncolors packed-ABGR palette values
   let lenses;                  // array of Lens objects (the IFS)
   let lensnum;                 // == functions (captured at init)
   let length;                  // == detail (captured at init)
@@ -79,49 +81,44 @@ export function start(canvas) {
     return Math.random() * up;
   }
 
-  // hsl (h deg, s/l in [0,1]) -> little-endian 0xAABBGGRR, matching ImageData.
-  function hslToUint(h, s, l) {
-    const k = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h / 60;
-    const x = k * (1 - Math.abs(hp % 2 - 1));
-    let r = 0, g = 0, bl = 0;
-    if (hp < 1)      { r = k; g = x; }
-    else if (hp < 2) { r = x; g = k; }
-    else if (hp < 3) { g = k; bl = x; }
-    else if (hp < 4) { g = x; bl = k; }
-    else if (hp < 5) { r = x; bl = k; }
-    else             { r = k; bl = x; }
-    const m = l - k / 2;
-    const R = Math.round((r + m) * 255);
-    const G = Math.round((g + m) * 255);
-    const B = Math.round((bl + m) * 255);
-    return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
-  }
-
+  // Build the palette via make_smooth_colormap (the exact utils/colors.c routine,
+  // ported in colormap.js): 2-5 random HSV anchors interpolated into a closed
+  // loop, with min-separation + min-avg-saturation/value retries — so it is
+  // OFTEN muted/pastel, NOT a vivid full-spectrum rainbow. This is what ifs.c
+  // uses (make_smooth_colormap in ifs_init), built ONCE per run; ifs_draw only
+  // advances the colour INDEX (it never rebuilds the map). Pack each [r,g,b]
+  // (0..255) into the little-endian 0xAABBGGRR Uint32 the blit path expects.
   function buildPalette() {
-    // The C makes >= lensnum colours; mirror that floor.
+    // The C floors the colour count at lensnum (and at 1); mirror that.
     let n = Math.max(2, Math.round(config.ncolors));
     if (n < lensnum) n = lensnum;
     palette = new Uint32Array(n);
-    for (let i = 0; i < n; i++) palette[i] = hslToUint((i * 360 / n) % 360, 1, 0.55);
+    const map = makeSmoothColormapRGB(n);
+    for (let i = 0; i < n; i++) {
+      const [r, g, b] = map[i];
+      palette[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
+    }
   }
 
   // Precompute the fixed-point matrix/vector for a lens (lensmatrix()).
   // The matrix carries an extra factor of 2^10 and coordinates an extra 2^8,
-  // so STEP() shifts the products back down by 10. We keep these as plain JS
-  // numbers (float64) instead of the C's int, because the intermediate
-  // products can exceed 2^31 on large canvases and JS bit-ops would truncate
-  // to int32; float64 holds them exactly and Math.floor(.../1024) reproduces
-  // the C's arithmetic >>10 (floor division) for both signs.
+  // so STEP() shifts the products back down by 10. The six coefficients are
+  // stored as integers (the C's `int ua..uty`, truncated toward zero on
+  // assignment). But the STEP PRODUCTS are evaluated in float64 rather than
+  // int32, because on a large canvas the pre-shift sum can exceed 2^31 — where
+  // the C's int math silently overflows (UB). float64 holds the sum exactly and
+  // Math.floor(.../1024) reproduces the arithmetic >>10 (floor division) for
+  // both signs, so the result is bit-identical to the C wherever it does not
+  // overflow (and cleaner where it would).
   function lensmatrix(l) {
     const cr = Math.cos(l.r);
     const sr = Math.sin(l.r);
-    l.ua = 1024.0 * l.s * cr;
-    l.ub = -1024.0 * l.s * sr;
+    l.ua = Math.trunc(1024.0 * l.s * cr);
+    l.ub = Math.trunc(-1024.0 * l.s * sr);
     l.uc = -l.ub;
     l.ud = l.ua;
-    l.utx = 131072.0 * W * (l.s * (sr - cr) + l.tx / 16 + 1);
-    l.uty = -131072.0 * H * (l.s * (sr + cr) + l.ty / 16 - 1);
+    l.utx = Math.trunc(131072.0 * W * (l.s * (sr - cr) + l.tx / 16 + 1));
+    l.uty = Math.trunc(-131072.0 * H * (l.s * (sr + cr) + l.ty / 16 - 1));
   }
 
   // Build one fresh lens (CreateLens()). nr/ns/nx/ny are the seed rotation,
@@ -206,7 +203,7 @@ export function start(canvas) {
 
   // Plot a point given in 256ths of a pixel (sp()). Out-of-range points are
   // dropped (this is also the divergence guard); each pixel is drawn at most
-  // once per frame via the bit board, then painted as a pscale-sized dot.
+  // once per pass via the bit board, then painted as a pscale-sized dot.
   function sp(x, y, color) {
     if (x < 0 || x >= width8 || y < 0 || y >= height8) return;
     x = x >> 8;
@@ -227,10 +224,11 @@ export function start(canvas) {
     }
   }
 
-  // Run the chaos game (iterate()): from the centre point, pick a random lens
-  // `count` times, dropping the first 10 (burn-in), plotting each later point.
-  // When p > 0 (multi mode) one extra fixed lens transform is applied before
-  // plotting, which fans the per-lens passes out into distinct sub-clouds.
+  // Run the chaos game (iterate()): from the persisted point (the C's st->x/y,
+  // carried across passes and frames), pick a random lens `count` times,
+  // dropping the first 10 (burn-in), plotting each later point. When p > 0
+  // (multi mode) one extra fixed lens transform is applied before plotting,
+  // which fans the per-lens passes out into distinct sub-clouds.
   function iterate(count, p) {
     let x = px;
     let y = py;
@@ -258,20 +256,20 @@ export function start(canvas) {
     py = y;
   }
 
-  // One frame of ifs_draw(): clear, advance the colour, iterate per lens (multi
-  // mode), then morph every lens for next frame. `multi` is on by default in
-  // the C, so we always run the per-lens (multi) loop; each lens i gets its own
-  // colour and the extra p=i transform.
+  // One frame of ifs_draw(): erase, advance the colour, run one chaos-game pass
+  // per lens (multi mode), then morph every lens for next frame. `multi` is on
+  // by default in the C, so we always run the per-lens (multi) loop; each lens i
+  // gets its own colour and the extra p=i transform. The dedupe board is reset
+  // BEFORE EACH pass (the C memsets it per lens), so where two passes overlap
+  // the later/higher-index pass overwrites — last-pass-wins, as in the C. The
+  // chaos-game point (px/py) is NOT reset here; it persists across passes and
+  // frames exactly like the C's st->x/st->y (each pass burns in 10 steps
+  // regardless, so the carried point only helps it stay on the attractor).
   function step() {
-    // erase the whole accumulation buffer + dedupe board for this frame.
+    // erase the whole accumulation buffer for this frame.
     pixels.fill(BLACK);
-    board.fill(0);
 
     ccolour = (ccolour + 1) % palette.length;
-
-    // chaos game starts from the centre, in 256ths of a pixel (width<<7).
-    px = (W * 128) | 0;
-    py = (H * 128) | 0;
 
     // points per pass = functions^(detail-1); guard the budget so a high
     // "Detail" on a small machine can't lock the tab (the C trusts the user).
@@ -280,6 +278,7 @@ export function start(canvas) {
     count = Math.min(count, 4000000);
 
     for (let i = 0; i < lensnum; i++) {
+      board.fill(0);          // the C memsets the dedupe board before each pass
       iterate(count, i);
     }
 
@@ -323,6 +322,12 @@ export function start(canvas) {
     buildPalette();
     ccolour = 0;
     seedLenses();
+
+    // Chaos-game point persists across frames (the C's st->x/st->y, zeroed by
+    // calloc); each pass's 10-step burn-in pulls it onto the attractor. (The C
+    // only ever seeds the centre for its command-line recurse path, not iterate.)
+    px = 0;
+    py = 0;
   }
 
   function resize() {

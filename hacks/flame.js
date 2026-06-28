@@ -61,7 +61,7 @@ export function start(canvas) {
     { key: 'delay2', label: 'Linger', type: 'range', min: 1000, max: 10000000, step: 1000, default: 2000000, unit: ' \u00B5s', lowLabel: '0 seconds', highLabel: '10 seconds', live: true },
     { key: 'iterations', label: 'Number of fractals', type: 'range', min: 1, max: 250, step: 1, default: 25, lowLabel: 'few', highLabel: 'many', live: true },
     { key: 'points', label: 'Complexity', type: 'range', min: 100, max: 80000, step: 100, default: 10000, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   const MAXLEV = 4;       // max functions per frame (C: MAXLEV)
@@ -149,8 +149,10 @@ export function start(canvas) {
       if (totalPoints > maxTotal) return 0;   // how long each fractal runs
 
       if (x > -1.0 && x < 1.0 && y > -1.0 && y < 1.0) {
-        const px = ((W / 2) * (x + 1.0)) | 0;
-        const py = ((H / 2) * (y + 1.0)) | 0;
+        // C: (int)((width/2)*(x+1)); width/2 is INTEGER division (width is int),
+        // so W>>1 (not W/2) to match exactly for odd canvas widths.
+        const px = ((W >> 1) * (x + 1.0)) | 0;
+        const py = ((H >> 1) * (y + 1.0)) | 0;
         plot(px, py);
       }
       return 1;
