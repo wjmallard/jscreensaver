@@ -58,7 +58,8 @@
       ],
       "author": "David Bagley",
       "year": 1997,
-      "description": "A cellular automaton that is really a two-dimensional Turing machine: as the heads (\"ants\") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced."
+      "description": "A cellular automaton that is really a two-dimensional Turing machine: as the heads (\"ants\") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced.",
+      "retired": "4.22"
     },
     {
       "title": "apollonian",
@@ -188,7 +189,8 @@
       ],
       "author": "James Macnicol",
       "year": 1996,
-      "description": "A simulation of the bubble formation that happens when water boils: small bubbles appear and, as they get closer to each other, combine to form larger bubbles which eventually pop."
+      "description": "A simulation of the bubble formation that happens when water boils: small bubbles appear and, as they get closer to each other, combine to form larger bubbles which eventually pop.",
+      "retired": "5.08"
     },
     {
       "title": "ccurve",
@@ -256,7 +258,8 @@
       ],
       "author": "Martin Pool",
       "year": 1999,
-      "description": "Draws a system of self-organizing lines. It starts out as random squiggles, but after a few iterations, order begins to appear."
+      "description": "Draws a system of self-organizing lines. It starts out as random squiggles, but after a few iterations, order begins to appear.",
+      "retired": "5.08"
     },
     {
       "title": "crystal",
@@ -540,7 +543,8 @@
       ],
       "author": "Peter Baumung",
       "year": 1999,
-      "description": "Draws a fractal forest."
+      "description": "Draws a fractal forest.",
+      "retired": "5.08"
     },
     {
       "title": "fuzzyflakes",
@@ -701,7 +705,8 @@
       ],
       "author": "Joe Keane",
       "year": 2000,
-      "description": "A wireframe projection of a hyperball, rotating around any or all of its four axes."
+      "description": "A wireframe projection of a hyperball, rotating around any or all of its four axes.",
+      "retired": "5.10"
     },
     {
       "title": "hypercube",
@@ -712,7 +717,8 @@
       ],
       "author": "Joe Keane, Fritz Mueller, Jamie Zawinski",
       "year": 1992,
-      "description": "2D projection of a 4D object."
+      "description": "2D projection of a 4D object.",
+      "retired": "5.10"
     },
     {
       "title": "hypnowheel",
@@ -804,7 +810,8 @@
       ],
       "author": "Pascal Pensa",
       "year": 1995,
-      "description": "Moving radiating lines, that look vaguely like scanning laser beams."
+      "description": "Moving radiating lines, that look vaguely like scanning laser beams.",
+      "retired": "5.08"
     },
     {
       "title": "lightning",
@@ -816,7 +823,8 @@
       ],
       "author": "Keith Romberg",
       "year": 1996,
-      "description": "Crackling fractal lightning bolts."
+      "description": "Crackling fractal lightning bolts.",
+      "retired": "5.08"
     },
     {
       "title": "lisa",
@@ -827,7 +835,8 @@
       ],
       "author": "Caleb Cullen",
       "year": 1997,
-      "description": "Draws animated full-loop lissajous figures."
+      "description": "Draws animated full-loop lissajous figures.",
+      "retired": "5.08"
     },
     {
       "title": "lissie",
@@ -838,7 +847,8 @@
       ],
       "author": "Alexander Jolk",
       "year": 1996,
-      "description": "Another Lissajous figure. This one draws the progress of circular shapes along a path."
+      "description": "Another Lissajous figure. This one draws the progress of circular shapes along a path.",
+      "retired": "5.08"
     },
     {
       "title": "lmorph",
@@ -849,7 +859,8 @@
       ],
       "author": "Sverre H. Huseby and Glenn T. Lines",
       "year": 1995,
-      "description": "This generates random spline-ish line drawings and morphs between them."
+      "description": "This generates random spline-ish line drawings and morphs between them.",
+      "retired": "5.08"
     },
     {
       "title": "logarithmiccircles",
@@ -1157,7 +1168,8 @@
       ],
       "author": "Tom Lawrence",
       "year": 1997,
-      "description": "Draws a line segment moving along a complex spiraling curve."
+      "description": "Draws a line segment moving along a complex spiraling curve.",
+      "retired": "5.08"
     },
     {
       "title": "scooter",
@@ -1214,7 +1226,8 @@
       ],
       "author": "Tom Duff and Jamie Zawinski",
       "year": 1982,
-      "description": "Draws shaded spheres in multiple colors."
+      "description": "Draws shaded spheres in multiple colors.",
+      "retired": "5.08"
     },
     {
       "title": "spiral",
@@ -1225,7 +1238,8 @@
       ],
       "author": "Peter Schmitzberger",
       "year": 1997,
-      "description": "Moving circular moiré patterns."
+      "description": "Moving circular moiré patterns.",
+      "retired": "5.08"
     },
     {
       "title": "squiral",
@@ -1338,7 +1352,8 @@
       ],
       "author": "Tim Auckland",
       "year": 2002,
-      "description": "This fractal is among those generated by \"Discrete\"."
+      "description": "This fractal is among those generated by \"Discrete\".",
+      "retired": "6.05"
     },
     {
       "title": "topologica",
@@ -1442,7 +1457,8 @@
       ],
       "author": "Tracy Camp and David Hansen",
       "year": 1997,
-      "description": "Generates a continuous sequence of small, curvy geometric patterns."
+      "description": "Generates a continuous sequence of small, curvy geometric patterns.",
+      "retired": "5.08"
     },
     {
       "title": "wander",
@@ -1477,7 +1493,8 @@
       ],
       "author": "Ashton Trey Belew",
       "year": 2001,
-      "description": "Zooming chains of sinusoidal spots."
+      "description": "Zooming chains of sinusoidal spots.",
+      "retired": "5.08"
     },
     {
       "title": "worm",
@@ -1489,7 +1506,8 @@
       ],
       "author": "Brad Taylor, Dave Lemke, Boris Putanec, and Henrik Theiling",
       "year": 1991,
-      "description": "Draws multicolored worms that crawl around the screen."
+      "description": "Draws multicolored worms that crawl around the screen.",
+      "retired": "5.08"
     },
     {
       "title": "wormhole",
