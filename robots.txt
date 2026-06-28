@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jscreensaver.net/sitemap.xml
