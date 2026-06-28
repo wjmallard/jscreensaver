@@ -235,6 +235,42 @@ export function makeSmoothColormap(rng, ncolors = 128) {
   return colors;
 }
 
+// make_random_colormap (colors.c). `ncolors` INDEPENDENT random colours (no
+// ramp). bright_p: random hue 0-360, saturation 30%-100%, value 66%-100% (vivid
+// but not full-saturation) via hsv_to_rgb. Otherwise each channel is an
+// independent random 16-bit value, with a value-contrast retry so the first two
+// of a tiny (<= 4) map differ. Returns `ncolors` { r, g, b } in [0,1]
+// (16-bit-quantized as the X server consumes it). Draws RNG in the same order as
+// the C (random() % N).
+export function makeRandomColormap(rng, ncolors = 64, brightP = true) {
+  if (ncolors <= 0) return [];
+  const colors = new Array(ncolors);
+  for (;;) {   // RETRY_ALL:
+    for (let i = 0; i < ncolors; i++) {
+      if (brightP) {
+        const H = rng.random() % 360;                  // range 0-360
+        const S = ((rng.random() % 70) + 30) / 100.0;  // range 30%-100%
+        const V = ((rng.random() % 34) + 66) / 100.0;  // range 66%-100%
+        colors[i] = hsvToRgb(H, S, V);
+      } else {
+        colors[i] = {
+          r: (rng.random() % 0xFFFF) / 65536,
+          g: (rng.random() % 0xFFFF) / 65536,
+          b: (rng.random() % 0xFFFF) / 65536,
+        };
+      }
+    }
+    // Small non-bright maps: make sure the first two contrast in value (V = the
+    // max channel, per rgb_to_hsv); otherwise repick the whole map.
+    if (!brightP && ncolors <= 4) {
+      const v0 = Math.max(colors[0].r, colors[0].g, colors[0].b);
+      const v1 = Math.max(colors[1].r, colors[1].g, colors[1].b);
+      if (Math.abs(v1 - v0) < 0.5) continue;   // goto RETRY_ALL
+    }
+    return colors;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Canvas-friendly helpers (0..255), for the 2D hacks.
 //
@@ -260,6 +296,14 @@ function to255(c) {
 // make_smooth_colormap as `ncolors` [r,g,b] triplets in 0..255.
 export function makeSmoothColormapRGB(ncolors = 128, rng = mathRng) {
   return makeSmoothColormap(rng, ncolors).map((c) => [to255(c.r), to255(c.g), to255(c.b)]);
+}
+
+// make_random_colormap as `ncolors` [r,g,b] in 0..255. bright (default) = vivid
+// random HSV (the C's BRIGHT_COLORS — e.g. thornbird); bright=false = fully
+// random channels. Re-rolled per run, so Math.random's order is fine (only the
+// distribution must match the C).
+export function makeRandomColormapRGB(ncolors = 64, bright = true, rng = mathRng) {
+  return makeRandomColormap(rng, ncolors, bright).map((c) => [to255(c.r), to255(c.g), to255(c.b)]);
 }
 
 // make_color_ramp (h1,s1,v1 -> h2,s2,v2) as `ncolors` [r,g,b] in 0..255.
