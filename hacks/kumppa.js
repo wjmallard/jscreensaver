@@ -6,19 +6,26 @@
 //
 // "Spiraling, spinning, and very, very fast splashes of color rush toward the
 // screen." Each step the hack injects a little fresh color near the center,
-// then spins + zooms the *entire framebuffer* slightly outward about the
-// center. Repeated, that pulls every painted mark into a spiral streak racing
-// off the edges, fed continuously by new color at the core.
+// then spins the *entire framebuffer* slightly outward about the center.
+// Repeated, that pulls every painted mark into a spiral streak racing off the
+// edges, fed continuously by new color at the core.
 //
-// Canvas self-feedback (the load-bearing deviation):
-//   The C builds a feedback graphics context and, via rotate()/make_rots(), an
-//   integer pixel-shuffle that copies the window onto itself through a small
-//   rotation + outward scale about (midx,midy) — an X11 trick canvas has no
-//   equivalent for. We emulate it directly: keep a scratch canvas, copy the
-//   current frame into it, then redraw it back onto the main canvas through
-//   ctx.translate(cx,cy)/rotate(theta)/scale(z)/translate(-cx,-cy)+drawImage.
-//   z > 1 zooms outward, theta rotates — the bilinear sampling of drawImage is
-//   the smear. New blobs are then splatted on top. See kumppa.md.
+// Framebuffer feedback — faithful integer block-copy (the load-bearing part):
+//   The C's rotate()/make_rots()/palaRotate() copy the window onto ITSELF as
+//   many small FIXED-SIZE blocks, each XCopyArea'd to a destination shifted by
+//   an integer (du-dv, du+dv) shear about (midx,midy). The blocks keep their
+//   size — it is a size-preserving translation per block, NOT a scale — so the
+//   painted lines stay thin and the black gaps between the spiral arms survive.
+//   We transcribe all three functions verbatim and replay each block as a
+//   SAME-SIZE drawImage from a per-step `scratch` snapshot (the C's useDBE
+//   double-buffer mode) -- NOT an in-place self-copy, which would force a GPU
+//   sync on every drawImage (fine for X11's server-side XCopyArea, ruinous in a
+//   browser at thousands/frame). imageSmoothingEnabled = false, no resample.
+//   make_rots() builds the column/row dithering tables once per speed/size. The
+//   previous port faked this with one uniform ctx.scale(z): that magnified the
+//   WHOLE frame ~speed/2 every step, so every line thickened ~5%/frame and after
+//   ~60 frames (center -> edge) ballooned ~19x, merging the lines and flooding
+//   the gaps solid. A uniform scale can never be faithful here. See kumppa.md.
 //
 // Two looks, from the C's `random` resource:
 //   - cosilines ON  (default): 4 smooth Lissajous lines whose endpoints are
@@ -39,14 +46,14 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/kumppa.xml. The C exposes delay, speed
-  // (labelled "Density" in the xml — it sets the per-step spin/zoom rate), and
-  // random (the cosilines toggle). `ncolors` is added for parity with the other
-  // ports; the C hardcodes a 32-entry blue->green->red->violet ramp.
+  // (labelled "Density" in the xml — it sets the per-step spin rate), and random
+  // (the cosilines toggle). `ncolors` is added for parity with the other ports;
+  // the C hardcodes a 32-entry blue->green->red->violet ramp.
   const config = {
     delay: 10000,      // µs between steps (the C/xml stock default: ~100 steps/sec,
                        // the signature fast rush toward the screen).
-    speed: 0.10,       // per-step spin/zoom rate, 0.0001..0.2 (--speed / "Density");
-                       // the C/xml stock default. Drives both theta and zoom = speed/2.
+    speed: 0.10,       // per-step spin rate, 0.0001..0.2 (--speed / "Density"); the
+                       // C/xml stock default. Sets rotsizeX = (int)(2/speed+1) groups.
     random: true,      // true = smooth cosi-lines, false = random splats (--random)
     ncolors: 32,       // size of the hue ramp the marks cycle through
   };
@@ -72,12 +79,34 @@ export function start(canvas) {
     [-0.02, -0.04, -0.13, 34, 20, 15],
   ];
 
-  let S = 1;               // devicePixelRatio
-  let W, H;                // canvas size, device px
-  let cx, cy;              // center, device px
+  // Backing-store cap (longer edge, px) for the block-copy feedback. Its cost is
+  // ~one drawImage per grid cell per frame, which scales with W*H, so at full
+  // Retina resolution a single step is thousands of block-copies (~12ms on an M4
+  // at native res -- slower than the 10000us default interval, which then
+  // death-spirals the lag-accumulator). Capping the longer backing edge cuts the
+  // count quadratically; the canvas CSS-upscales to fill (the C ships a
+  // commented-out ".lowrez: true" for kumppa). Tunable: raise for sharpness if
+  // the GPU keeps up, lower if still laggy. Infinity = full device resolution.
+  const MAX_EDGE = 2048;
+
+  let S = 1;               // effective backing px per CSS px (W / innerWidth)
+  let W, H;                // canvas size, backing px
+  let cx, cy;              // center, backing px
   let colors;              // hue ramp, ncolors entries
-  let scratch, sctx;       // scratch canvas for the self-feedback copy
-  let pscale;              // mark line width / box size in device px (Retina-aware)
+  let pscale;              // mark line width / box size (Retina-aware)
+  let scratch, sctx;       // double-buffer source for the block-copy feedback
+
+  // Faithful port of the C's feedback (make_rots / rotate / palaRotate). These
+  // mirror struct state: midx,midy === cx,cy (the center) and sizx,sizy === W,H
+  // (the C's names, kept so the transcription matches kumppa.c line-for-line).
+  let sizx, sizy, midx, midy;
+  let Xrotations, Yrotations;   // permutation of columns/rows into displacement order
+  let Xrottable, Yrottable;     // group boundaries within X/Yrotations
+  let rotateX, rotateY;         // per-frame strip breakpoints (the block grid)
+  let rotsizeX, rotsizeY;       // # groups == frames per full cycle ((int)(2/speed+1))
+  let stateX, stateY;           // which group this frame uses (cycles 0..rotsize-1)
+  let rx, ry;                   // current group sizes (half-grid radius this frame)
+  let builtSpeed = -1;          // speed make_rots() last built for (rebuild on change)
 
   // Per-oscillator accumulated phase (acosinus[8][3]) and the resulting line
   // endpoints (coords / ocoords hold this and last frame's, 8 ints = 4 points).
@@ -101,43 +130,224 @@ export function start(canvas) {
     }
   }
 
-  // The feedback transform per step, derived from the C (NOT tuned by feel).
-  // palaRotate (kumppa.c:138-139) copies each strip with a displacement of
-  // (du-dv, du+dv) in *index* units, which in pixel space is the similarity
-  // matrix [[1+1/w, -1/w],[1/w, 1+1/w]] (a rotation+scale about the center),
-  // where w is the strip width. make_rots (kumppa.c:211) sets rotsizeX =
-  // 2/speed+1, so there are ~midx*speed/2 strips across the half-width midx,
-  // i.e. strip width w ~ 2/speed and 1/w ~ speed/2. For that matrix both the
-  // rotation and (zoom-1) equal 1/w to first order, so theta ~ speed/2 and
-  // zoom ~ 1 + speed/2. z>1 marches content outward and off the edges (never an
-  // inward black-hole collapse); the central black stamp + fresh marks keep the
-  // core from baking solid.
-  function feedback() {
-    const speed = Math.min(0.2, Math.max(0.0001, config.speed));
-    // Faithful coefficients: rotation(rad) == zoom-1 == speed/2 (see above).
-    const theta = speed * 0.5;
-    const z = 1 + speed * 0.5;
+  // ---- Faithful feedback: make_rots / rotate / palaRotate (kumppa.c) ----------
 
-    // Copy the current frame to the scratch buffer, then paint it back through
-    // the rotate+scale-about-center transform. (drawImage can't read+write the
-    // same canvas through a transform safely, hence the scratch copy.)
-    sctx.setTransform(1, 0, 0, 1, 0, 0);
-    sctx.clearRect(0, 0, W, H);
+  // make_rots (kumppa.c:202-349): build the column/row dithering tables ONCE per
+  // speed+size. The midx columns are distributed into rotsizeX = (int)(2/speed+1)
+  // groups; within each group a void-and-cluster heuristic (the `om += ok` /
+  // `ok /= 1.5` / `om + 12*ok > m` neighbour score) repeatedly picks the most
+  // clustered free column, then inserts it into Xrotations keeping each group
+  // sorted ascending. Transcribed verbatim, integer arithmetic intact.
+  function makeRots(xspeed, yspeed) {
+    let a, b, c, f, g, j, k = 0, l;
+    let m, om, ok;
+    let d, ix, iy;
+    let maxi;
+
+    rotsizeX = Math.trunc(2 / xspeed + 1);
+    ix = (midx + 1) / rotsizeX;
+    rotsizeY = Math.trunc(2 / yspeed + 1);
+    iy = (midy + 1) / rotsizeY;
+
+    Xrotations = new Int32Array(midx + 2);
+    Xrottable = new Int32Array(rotsizeX + 1);
+    Yrotations = new Int32Array(midy + 2);
+    Yrottable = new Int32Array(rotsizeY + 1);
+    const chks = new Uint8Array((midx > midy) ? midx : midy);
+
+    maxi = 0;
+    c = 0;
+    d = 0;
+    g = 0;
+    for (a = 0; a < midx; a++) chks[a] = 1;
+    for (a = 0; a < rotsizeX; a++) {
+      Xrottable[a] = c;
+      f = Math.trunc(d + ix) - g;            // viivojen lkm. (number of lines)
+      g += f;
+      if (g > midx) {
+        f -= g - midx;
+        g = midx;
+      }
+      for (b = 0; b < f; b++) {
+        m = 0;
+        for (j = 0; j < midx; j++) {         // testi
+          if (chks[j]) {
+            om = 0;
+            ok = 1;
+            l = 0;
+            while (j + l < midx && om + 12 * ok > m) {
+              if (j - l >= 0) {
+                if (chks[j - l]) om += ok;
+              } else {
+                if (chks[l - j]) om += ok;
+              }
+              if (chks[j + l]) om += ok;
+              ok /= 1.5;
+              l++;
+            }
+            if (om >= m) {
+              k = j;
+              m = om;
+            }
+          }
+        }
+        chks[k] = 0;
+        l = c;
+        while (l >= Xrottable[a]) {
+          if (l != Xrottable[a]) Xrotations[l] = Xrotations[l - 1];
+          if (k > Xrotations[l] || l == Xrottable[a]) {
+            Xrotations[l] = k;
+            c++;
+            l = Xrottable[a];
+          }
+          l--;
+        }
+      }
+      d += ix;
+      if (maxi < c - Xrottable[a]) maxi = c - Xrottable[a];
+    }
+    Xrottable[a] = c;
+    rotateX = new Int32Array((maxi + 2) << 1);
+
+    maxi = 0;
+    c = 0;
+    d = 0;
+    g = 0;
+    for (a = 0; a < midy; a++) chks[a] = 1;
+    for (a = 0; a < rotsizeY; a++) {
+      Yrottable[a] = c;
+      f = Math.trunc(d + iy) - g;
+      g += f;
+      if (g > midy) {
+        f -= g - midy;
+        g = midy;
+      }
+      for (b = 0; b < f; b++) {
+        m = 0;
+        for (j = 0; j < midy; j++) {
+          if (chks[j]) {
+            om = 0;
+            ok = 1;
+            l = 0;
+            while (j + l < midy && om + 12 * ok > m) {
+              if (j - l >= 0) {
+                if (chks[j - l]) om += ok;
+              } else {
+                if (chks[l - j]) om += ok;
+              }
+              if (chks[j + l]) om += ok;
+              ok /= 1.5;
+              l++;
+            }
+            if (om >= m) {
+              k = j;
+              m = om;
+            }
+          }
+        }
+        chks[k] = 0;
+        l = c;
+        while (l >= Yrottable[a]) {
+          if (l != Yrottable[a]) Yrotations[l] = Yrotations[l - 1];
+          if (k > Yrotations[l] || l == Yrottable[a]) {
+            Yrotations[l] = k;
+            c++;
+            l = Yrottable[a];
+          }
+          l--;
+        }
+      }
+      d += iy;
+      if (maxi < c - Yrottable[a]) maxi = c - Yrottable[a];
+    }
+    Yrottable[a] = c;
+    rotateY = new Int32Array((maxi + 2) << 1);
+  }
+
+  // The C builds make_rots once (speed is fixed at init). Here speed is a live
+  // slider, so rebuild only when it actually changes (clamped to the C's valid
+  // 0.0001..0.2 range) and reset the cycle phase. The on-screen image is left
+  // intact -- only the spin rate changes.
+  function ensureRots() {
+    const speed = Math.min(0.2, Math.max(0.0001, config.speed));
+    if (speed !== builtSpeed) {
+      makeRots(speed, speed);
+      builtSpeed = speed;
+      stateX = 0;
+      stateY = 0;
+    }
+  }
+
+  // palaRotate (kumppa.c:130-154): copy ONE fixed-size block from the current
+  // frame to a destination sheared by (du-dv, du+dv) about the center, clipped to
+  // the screen. The C's XCopyArea is reproduced by copying from the per-step
+  // `scratch` snapshot (the C's useDBE double-buffer mode) with EQUAL src/dst
+  // size -- no scaling, so the block keeps its size and the lines stay thin, and
+  // no read+write of the same canvas (which would force a GPU sync per call).
+  // dcx/dcy are palaRotate's local cx/cy (the destination), renamed vs the center.
+  function palaRotate(x, y) {
+    let ax = rotateX[x];
+    let ay = rotateY[y];
+    let bx = rotateX[x + 1] + 2;
+    let by = rotateY[y + 1] + 2;
+    let dcx = rotateX[x] - (y - ry) + x - rx;
+    let dcy = rotateY[y] + (x - rx) + y - ry;
+    if (dcx < 0) { ax -= dcx; dcx = 0; }
+    if (dcy < 0) { ay -= dcy; dcy = 0; }
+    if (dcx + bx - ax > sizx) bx = ax - dcx + sizx;
+    if (dcy + by - ay > sizy) by = ay - dcy + sizy;
+    if (ax < bx && ay < by) {
+      const w = bx - ax;
+      const h = by - ay;
+      ctx.drawImage(scratch, ax, ay, w, h, dcx, dcy, w, h);
+    }
+  }
+
+  // rotate (kumppa.c:157-198): one feedback step. Using the current group
+  // (stateX/stateY) compute rx/ry and the rotateX[]/rotateY[] strip breakpoints,
+  // then palaRotate every block of the diamond-tiled grid. Verbatim.
+  function rotate() {
+    let x, y, dx, dy;
+
+    ctx.imageSmoothingEnabled = false;   // XCopyArea never interpolates
+
+    // Snapshot the frame (this step's marks + the prior spiral) into `scratch` so
+    // every block copies from a FROZEN source -- the C's useDBE double-buffer
+    // mode. Avoids the in-place self-copy that forces a GPU sync per drawImage.
     sctx.drawImage(canvas, 0, 0);
 
-    ctx.save();
-    // The C's palaRotate copies with XCopyArea -- a CRISP integer-pixel copy, no
-    // interpolation. drawImage defaults to bilinear smoothing, which compounds
-    // every frame and smears the spiralling lines into gray mush after ~20
-    // frames. Nearest-neighbor keeps the marks crisp all the way to the edge, so
-    // the colour ribbons read as the demo's spiralling fractals, not a blur.
-    ctx.imageSmoothingEnabled = false;
-    ctx.translate(cx, cy);
-    ctx.rotate(theta);
-    ctx.scale(z, z);
-    ctx.translate(-cx, -cy);
-    ctx.drawImage(scratch, 0, 0);
-    ctx.restore();
+    rx = Xrottable[stateX + 1] - Xrottable[stateX];
+    ry = Yrottable[stateY + 1] - Yrottable[stateY];
+
+    for (x = 0; x <= rx; x++)
+      rotateX[x] = x ? midx - 1 - Xrotations[Xrottable[stateX + 1] - x] : 0;
+    for (x = 0; x <= rx; x++)
+      rotateX[x + rx + 1] = (x == rx) ? sizx - 1 : midx + Xrotations[Xrottable[stateX] + x];
+    for (y = 0; y <= ry; y++)
+      rotateY[y] = y ? midy - 1 - Yrotations[Yrottable[stateY + 1] - y] : 0;
+    for (y = 0; y <= ry; y++)
+      rotateY[y + ry + 1] = (y == ry) ? sizy - 1 : midy + Yrotations[Yrottable[stateY] + y];
+
+    x = (rx > ry) ? rx : ry;
+    for (dy = 0; dy < ((x + 1) << 1); dy++)
+      for (dx = 0; dx < ((x + 1) << 1); dx++) {
+        y = (rx > ry) ? ry - rx : 0;
+        if (dy + y >= 0 && dy < ((ry + 1) << 1) && dx < ((rx + 1) << 1))
+          if (dy + y + dx <= ry + rx && dy + y - dx <= ry - rx) {
+            palaRotate((rx << 1) + 1 - dx, dy + y);
+            palaRotate(dx, (ry << 1) + 1 - dy - y);
+          }
+        y = (ry > rx) ? rx - ry : 0;
+        if (dy + y >= 0 && dx < ((ry + 1) << 1) && dy < ((rx + 1) << 1))
+          if (dy + y + dx <= ry + rx && dx - dy - y >= ry - rx) {
+            palaRotate(dy + y, dx);
+            palaRotate((rx << 1) + 1 - dy - y, (ry << 1) + 1 - dx);
+          }
+      }
+    stateX++;
+    if (stateX == rotsizeX) stateX = 0;
+    stateY++;
+    if (stateY == rotsizeY) stateY = 0;
   }
 
   // cosilines ON: advance the eight oscillators, rebuild the four line
@@ -200,15 +410,26 @@ export function start(canvas) {
     ctx.fillStyle = '#000';
     ctx.fillRect(cx - 2 * pscale, cy - 2 * pscale, k, k);
 
-    feedback();
+    // Feedback: copy the framebuffer onto itself as fixed-size sheared blocks
+    // (kumppa_draw calls rotate() last). Rebuild the tables first if speed moved.
+    ensureRots();
+    rotate();
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
+    S = W / Math.max(1, window.innerWidth);   // effective backing px per CSS px
     cx = W >> 1;
     cy = H >> 1;
+
+    // Double-buffer source for the feedback: snapshot the frame each step and
+    // copy FROM it, so block-copies never read+write the same canvas (an
+    // in-place self-drawImage forces a GPU sync per call -- the slow path).
+    if (!scratch) scratch = document.createElement('canvas');
+    scratch.width = W;
+    scratch.height = H;
+    sctx = scratch.getContext('2d');
 
     // The C bumps line width / box size on >2560px "Retina" displays; fold that
     // into the dpr scale so marks stay visible without dominating.
@@ -216,10 +437,17 @@ export function start(canvas) {
     if (W > 2560 || H > 2560) pscale *= 1.5;
     pscale = Math.round(pscale);
 
-    scratch = document.createElement('canvas');
-    scratch.width = W;
-    scratch.height = H;
-    sctx = scratch.getContext('2d');
+    // C names: screen == (sizx,sizy), center == (midx,midy). Build the feedback
+    // tables for the current speed (make_rots runs once per speed/size, like
+    // InitializeAll). ensureRots() does the build and zeroes stateX/stateY.
+    sizx = W;
+    sizy = H;
+    midx = cx;
+    midy = cy;
+    stateX = 0;
+    stateY = 0;
+    builtSpeed = -1;
+    ensureRots();
 
     acos = new Float32Array(24);
     coords = new Int32Array(8);
@@ -239,10 +467,14 @@ export function start(canvas) {
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(window.innerWidth * dpr);
-    canvas.height = Math.round(window.innerHeight * dpr);
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
+    const cssW = window.innerWidth, cssH = window.innerHeight;
+    // eff = dpr, unless MAX_EDGE caps the longer edge (MAX_EDGE=Infinity -> dpr,
+    // i.e. full device resolution).
+    const eff = Math.min(dpr, MAX_EDGE / Math.max(cssW, cssH));
+    canvas.width = Math.max(1, Math.round(cssW * eff));
+    canvas.height = Math.max(1, Math.round(cssH * eff));
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -251,8 +483,11 @@ export function start(canvas) {
 
   // Drive off requestAnimationFrame but keep the original pace: one step() per
   // config.delay, banking leftover time so the speed is the same at any refresh
-  // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
-  const MAX_CATCHUP_STEPS = 8;
+  // rate. Catch-up is capped LOW (kumppa's step is heavy): if a step ever costs
+  // more than the interval, a high cap would death-spiral into multi-step frames,
+  // so allow at most a couple of catch-up steps and just let the spin run a hair
+  // slow instead of locking up.
+  const MAX_CATCHUP_STEPS = 2;
   let lastTime = 0;
   let lag = 0;
   let rafId = 0;
