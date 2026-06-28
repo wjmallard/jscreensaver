@@ -18,7 +18,7 @@ export const title = 'ant';
 
 export const info = {
   author: 'David Bagley',
-  description: 'A cellular automaton that is really a two-dimensional Turing machine: as the heads ("ants") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 4.22.\n\nA cellular automaton that is really a two-dimensional Turing machine: as the heads ("ants") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced.\n\nhttps://en.wikipedia.org/wiki/Langton%27s_ant\nhttps://en.wikipedia.org/wiki/Turing_machine',
   year: 1997,
 };
 

@@ -29,7 +29,7 @@ export const title = 'popsquares';
 
 export const info = {
   author: 'Levi Burton',
-  description: 'A pop-art-ish grid of pulsing colors. Inspired by cheesy MTV commercials.',
+  description: 'A pop-art-ish looking grid of pulsing colors.',
   year: 2003,
 };
 

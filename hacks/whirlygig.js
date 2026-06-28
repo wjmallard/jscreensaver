@@ -23,7 +23,7 @@ export const title = 'whirlygig';
 
 export const info = {
   author: 'Ashton Trey Belew',
-  description: 'Zooming chains of sinusoidal spots.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nZooming chains of sinusoidal spots.',
   year: 2001,
 };
 

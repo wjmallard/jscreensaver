@@ -31,7 +31,7 @@ export const title = 'xflame';
 
 export const info = {
   author: 'Carsten Haitzler',
-  description: 'Pulsing fire.',
+  description: 'Pulsing fire. It can also take an arbitrary image and set it on fire too.',
   year: 1996,
 };
 

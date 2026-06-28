@@ -16,7 +16,7 @@ export const title = 'gimbalharmonics';
 
 export const info = {
   author: 'otaviogood',
-  description: 'Nested rotating discs whirl through spherical-harmonic patterns around a glowing core, lit like polished studio chrome.',
+  description: 'Disc-based visualization of different frequencies next to each other.\n\nhttps://www.shadertoy.com/view/llS3zd',
   year: 2015,
 };
 

@@ -26,7 +26,7 @@ export const title = 'interaggregate';
 
 export const info = {
   author: 'Casey Reas, William Ngan, Robert Hodgin, and Jamie Zawinski',
-  description: 'Pale pencil-like scribbles slowly fill the screen.',
+  description: "Pale pencil-like scribbles slowly fill the screen.\n\nA surface is filled with a hundred medium to small sized circles. Each circle has a different size and direction, but moves at the same slow rate. Displays the instantaneous intersections of the circles as well as the aggregate intersections of the circles.\n\nThough actually it doesn't look like circles at all!",
   year: 2004,
 };
 

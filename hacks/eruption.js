@@ -27,7 +27,7 @@ export const title = 'eruption';
 
 export const info = {
   author: 'W.P. van Paassen',
-  description: 'Exploding fireworks.',
+  description: 'Exploding fireworks.\n\nSee also the "Fireworkx", "XFlame" and "Pyro" screen savers.',
   year: 2003,
 };
 

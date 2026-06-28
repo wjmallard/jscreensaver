@@ -27,7 +27,7 @@ export const title = 'bestill';
 export const info = {
   heavy: true,
   author: 'Matt Vianueva (diatribes)',
-  description: 'A collection of six calm, still landscape and cloud scenes, from a moonlit "Night Cloud Dance" to a sunlit "Desert Duo".',
+  description: 'Various scenes of lights playing above the clouds.\n\nhttps://www.shadertoy.com/view/tfXcRn\nhttps://www.shadertoy.com/view/w32BDD\nhttps://www.shadertoy.com/view/3cjcWD\nhttps://www.shadertoy.com/view/wXXBRX\nhttps://www.shadertoy.com/view/3cXyzB\nhttps://www.shadertoy.com/view/tXjXDy',
   year: 2025,
 };
 

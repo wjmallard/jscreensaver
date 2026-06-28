@@ -22,7 +22,7 @@ export const title = 'stardome';
 
 export const info = {
   author: 'mrange',
-  description: 'A procedural night-sky dome: blackbody-tinted star layers, a tilted spiral galaxy and a lit crescent moon under a slowly turning camera.',
+  description: 'Stars and a galaxy under a dome on a moon.\n\nhttps://www.shadertoy.com/view/stBcW1',
   year: 2022,
 };
 

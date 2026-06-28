@@ -26,7 +26,7 @@ export const title = 'pedal';
 
 export const info = {
   author: 'Dale Moore',
-  description: 'The even-odd winding rule.',
+  description: 'The even-odd winding rule.\n\nhttps://en.wikipedia.org/wiki/Even-odd_rule\nhttps://en.wikipedia.org/wiki/Nonzero-rule',
   year: 1994,
 };
 

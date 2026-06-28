@@ -51,7 +51,7 @@ export const title = 'dangerball';
 export const info = {
   author: 'Jamie Zawinski',
   year: 2001,
-  description: 'A glossy sphere bristling with matte spikes that pulse outward and retract, re-aiming each cycle, as it tumbles and drifts through space and its colors slowly cycle.',
+  description: 'A spiky ball. Ouch!',
 };
 
 export function start(hostCanvas, opts = {}) {

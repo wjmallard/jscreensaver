@@ -26,7 +26,7 @@ export const title = 'fuzzyflakes';
 
 export const info = {
   author: 'Barry Dmytro',
-  description: 'Falling colored snowflake/flower shapes.',
+  description: 'Falling colored snowflake/flower shapes.\n\nhttps://en.wikipedia.org/wiki/Snowflake',
   year: 2004,
 };
 

@@ -7,7 +7,7 @@ export const title = 'loop';
 
 export const info = {
   author: 'David Bagley',
-  description: 'A cellular automaton that generates loop-shaped colonies that spawn, age, and eventually die.',
+  description: 'A cellular automaton that generates loop-shaped colonies that spawn, age, and eventually die.\n\nhttps://en.wikipedia.org/wiki/Langton%27s_loops',
   year: 1999,
 };
 

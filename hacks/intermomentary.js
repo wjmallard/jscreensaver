@@ -36,7 +36,7 @@ export const title = 'intermomentary';
 
 export const info = {
   author: 'Casey Reas, William Ngan, Robert Hodgin, and Jamie Zawinski',
-  description: 'Blinking dots interact with each other circularly.',
+  description: 'Blinking dots interact with each other circularly.\n\nA surface is filled with a hundred medium to small sized circles. Each circle has a different size and direction, but moves at the same slow rate. Displays the instantaneous intersections of the circles as well as the aggregate intersections of the circles.\n\nThe circles begin with a radius of 1 pixel and slowly increase to some arbitrary size. Circles are drawn with small moving points along the perimeter. The intersections are rendered as glowing orbs. Glowing orbs are rendered only when a perimeter point moves past the intersection point.',
   year: 2004,
 };
 

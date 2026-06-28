@@ -21,7 +21,7 @@ export const title = 'goldenapollian';
 
 export const info = {
   author: 'Martin Ranelius (mrange)',
-  description: 'A flight down a tunnel of stacked planes, each etched with a golden Apollonian-gasket fractal lit by drifting suns.',
+  description: 'Enter the golden fractal doorways.\n\nhttps://www.shadertoy.com/view/WlcfRS',
   year: 2021,
 };
 

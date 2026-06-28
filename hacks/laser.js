@@ -22,7 +22,7 @@ export const title = 'laser';
 
 export const info = {
   author: 'Pascal Pensa',
-  description: 'Moving radiating lines, that look vaguely like scanning laser beams.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nMoving radiating lines, that look vaguely like scanning laser beams. (Frankie say relax.)',
   year: 1995,
 };
 

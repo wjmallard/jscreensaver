@@ -26,7 +26,7 @@ export const title = 'rotor';
 
 export const info = {
   author: 'Tom Lawrence',
-  description: 'Draws a line segment moving along a complex spiraling curve.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws a line segment moving along a complex spiraling curve.',
   year: 1997,
 };
 

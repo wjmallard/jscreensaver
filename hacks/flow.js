@@ -22,7 +22,7 @@ export const title = 'flow';
 
 export const info = {
   author: 'Tim Auckland',
-  description: 'Strange attractors formed of flows in a 3D differential equation phase space.',
+  description: 'Strange attractors formed of flows in a 3D differential equation phase space. Features the popular attractors described by Lorentz, Roessler, Birkhoff and Duffing, and can discover entirely new attractors by itself.\n\nhttps://en.wikipedia.org/wiki/Attractor#Strange_attractor',
   year: 1996,
 };
 

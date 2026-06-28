@@ -28,7 +28,7 @@ export const title = 'strange';
 
 export const info = {
   author: 'Massimino Pascal',
-  description: 'Strange attractors: a swarm of dots swoops and twists around.',
+  description: 'Strange attractors: a swarm of dots swoops and twists around.\n\nhttps://en.wikipedia.org/wiki/Attractor#Strange_attractor',
   year: 1997,
 };
 

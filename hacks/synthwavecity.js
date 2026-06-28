@@ -22,7 +22,7 @@ export const title = 'synthwavecity';
 
 export const info = {
   author: '3w36zj6 (after Jan Mroz)',
-  description: 'A neon retro-80s skyline: a banded sun, a scrolling perspective grid, and magenta skyscrapers drifting through pink haze.',
+  description: 'Let the neon wash over you.\n\nhttps://www.shadertoy.com/view/7lKyDD',
   year: 2022,
 };
 

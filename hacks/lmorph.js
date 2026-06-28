@@ -23,7 +23,7 @@ export const title = 'lmorph';
 
 export const info = {
   author: 'Sverre H. Huseby and Glenn T. Lines',
-  description: 'This generates random spline-ish line drawings and morphs between them.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nThis generates random spline-ish line drawings and morphs between them.',
   year: 1995,
 };
 

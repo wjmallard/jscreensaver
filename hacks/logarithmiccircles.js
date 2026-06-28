@@ -22,7 +22,7 @@ export const title = 'logarithmiccircles';
 
 export const info = {
   author: 'mrange',
-  description: 'A black-and-white field of rings on a logarithmic radial grid, eight-fold mirrored and endlessly breathing as it counter-rotates.',
+  description: 'Zooming black and white circles.\n\nhttps://www.shadertoy.com/view/mljcWR',
   year: 2023,
 };
 

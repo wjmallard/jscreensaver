@@ -23,7 +23,7 @@ export const title = 'rigrekt';
 export const info = {
   heavy: true,
   author: 'Matt Vianueva (diatribes)',
-  description: 'A ray-marched flight down a folding tunnel of nested rotating boxes, lit by a glowing core and warped by layered sine turbulence.',
+  description: 'Exploring a flooded mega-structure.\n\nhttps://www.shadertoy.com/view/3XKfDV',
   year: 2026,
 };
 

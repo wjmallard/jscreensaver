@@ -25,7 +25,7 @@ export const title = 'lissie';
 
 export const info = {
   author: 'Alexander Jolk',
-  description: 'Another Lissajous figure. This one draws the progress of circular shapes along a path.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nLissajous loops. This one draws the progress of circular shapes along a path.\n\nhttps://en.wikipedia.org/wiki/Lissajous_curve',
   year: 1996,
 };
 

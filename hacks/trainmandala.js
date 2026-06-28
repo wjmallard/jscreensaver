@@ -21,7 +21,7 @@ export const title = 'trainmandala';
 
 export const info = {
   author: 'mrange',
-  description: 'A kaleidoscopic mandala of nested rings and radial spokes spiralling endlessly inward through shifting rainbow hues.',
+  description: 'Enter the flowing ring.\n\nhttps://www.shadertoy.com/view/mtjyz1',
   year: 2023,
 };
 

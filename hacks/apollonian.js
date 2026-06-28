@@ -29,7 +29,7 @@ export const title = 'apollonian';
 
 export const info = {
   author: 'Allan R. Wilks',
-  description: "A fractal packing of circles with smaller circles, demonstrating Descartes's theorem.",
+  description: "A fractal packing of circles with smaller circles, demonstrating Descartes's theorem.\n\nhttps://en.wikipedia.org/wiki/Apollonian_gasket\nhttps://en.wikipedia.org/wiki/Descartes%27_theorem",
   year: 2001,
 };
 

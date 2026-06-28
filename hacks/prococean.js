@@ -20,7 +20,7 @@ export const title = 'prococean';
 
 export const info = {
   author: 'afl_ext',
-  description: 'A fast procedural ocean ray-marched from summed sine-wave octaves, under a cheap analytic sky and a roaming sun.',
+  description: 'A very fast procedural ocean.\n\nhttps://www.shadertoy.com/view/MdXyzX',
   year: 2017,
 };
 

@@ -22,7 +22,7 @@ export const title = 'vines';
 
 export const info = {
   author: 'Tracy Camp and David Hansen',
-  description: 'Generates a continuous sequence of small, curvy geometric patterns.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nGenerates a continuous sequence of small, curvy geometric patterns.',
   year: 1997,
 };
 

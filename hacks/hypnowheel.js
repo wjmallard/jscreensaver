@@ -34,7 +34,7 @@ export const title = 'hypnowheel';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'Overlapping translucent spiral discs whose tightness winds in and out, additively blended into a hypnotic moire that spins and washes through color while the whole wheel slowly wanders.',
+  description: 'Overlapping, translucent spiral patterns. The tightness of their spirals fluctuates in and out.\n\nhttps://en.wikipedia.org/wiki/Moire_pattern',
   year: 2008,
 };
 

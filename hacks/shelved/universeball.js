@@ -21,7 +21,7 @@ export const title = 'universeball';
 export const info = {
   heavy: true,
   author: 'Matt Vianueva',
-  description: 'A ray-marched, palette-cycled glass orb suspended in a star-flecked void.',
+  description: 'A mysterious orb is surrounded by clouds.\n\nhttps://www.shadertoy.com/view/WcGcWV',
   year: 2025,
 };
 

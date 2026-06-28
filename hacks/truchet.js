@@ -24,7 +24,7 @@ export const title = 'truchet';
 
 export const info = {
   author: 'Adrian Likins',
-  description: 'Line- and arc-based truchet patterns that tile the screen.',
+  description: 'Line- and arc-based truchet patterns that tile the screen.\n\nhttps://en.wikipedia.org/wiki/Tessellation',
   year: 1998,
 };
 

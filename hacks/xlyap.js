@@ -42,7 +42,7 @@ export const title = 'xlyap';
 
 export const info = {
   author: 'Ron Record',
-  description: 'The Lyapunov exponent makes pretty fractal pictures.',
+  description: 'The Lyapunov exponent makes pretty fractal pictures.\n\nhttps://en.wikipedia.org/wiki/Lyapunov_exponent',
   year: 1991,
 };
 

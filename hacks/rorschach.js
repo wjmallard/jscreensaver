@@ -20,7 +20,7 @@ export const title = 'rorschach';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'Inkblot patterns via a reflected random walk.',
+  description: 'Inkblot patterns via a reflected random walk.\n\nhttps://en.wikipedia.org/wiki/Rorschach_inkblot_test\nhttps://en.wikipedia.org/wiki/Random_walk',
   year: 1992,
 };
 

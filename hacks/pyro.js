@@ -22,7 +22,7 @@ export const title = 'pyro';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'Exploding fireworks.',
+  description: 'Exploding fireworks.\n\nSee also the "Fireworkx", "Eruption", and "XFlame" screen savers.',
   year: 1992,
 };
 

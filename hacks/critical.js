@@ -20,7 +20,7 @@ export const title = 'critical';
 
 export const info = {
   author: 'Martin Pool',
-  description: 'Draws a system of self-organizing lines. It starts out as random squiggles, but after a few iterations, order begins to appear.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws a system of self-organizing lines. It starts out as random squiggles, but after a few iterations, order begins to appear.',
   year: 1999,
 };
 

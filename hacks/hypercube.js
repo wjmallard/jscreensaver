@@ -25,7 +25,7 @@ export const title = 'hypercube';
 
 export const info = {
   author: 'Joe Keane, Fritz Mueller, Jamie Zawinski',
-  description: '2D projection of a 4D object.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.10. It has been replaced by the more general "Polytopes" screen saver, which can display this object as well as others.\n\nThis displays 2D projections of the sequence of 3D objects which are the projections of the 4D analog to the cube: as a square is composed of four lines, each touching two others; and a cube is composed of six squares, each touching four others; a hypercube is composed of eight cubes, each touching six others. To make it easier to visualize the rotation, it uses a different color for the edges of each face. Don\'t think about it too long, or your brain will melt.\n\nhttps://en.wikipedia.org/wiki/Hypercube\nhttps://en.wikipedia.org/wiki/Tesseract\nhttps://en.wikipedia.org/wiki/Regular_polytope',
   year: 1992,
 };
 

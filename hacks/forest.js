@@ -23,7 +23,7 @@ export const title = 'forest';
 
 export const info = {
   author: 'Peter Baumung',
-  description: 'Draws a fractal forest.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nFractal trees.',
   year: 1999,
 };
 

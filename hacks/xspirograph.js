@@ -23,7 +23,7 @@ export const title = 'xspirograph';
 
 export const info = {
   author: 'Rohit Singh',
-  description: 'Simulates that pen-in-nested-plastic-gears toy from your childhood.',
+  description: 'Simulates that pen-in-nested-plastic-gears toy from your childhood.\n\nhttps://en.wikipedia.org/wiki/Spirograph',
   year: 2000,
 };
 

@@ -33,7 +33,7 @@ export const title = 'moire';
 
 export const info = {
   author: 'Jamie Zawinski and Michael Bayne',
-  description: "When the lines on the screen make more lines in between, that's a moir\u00E9!",
+  description: "When the lines on the screen\nMake more lines in between,\nThat's a moir\u00e9!\n\nhttps://en.wikipedia.org/wiki/Moire_pattern",
   year: 1997,
 };
 

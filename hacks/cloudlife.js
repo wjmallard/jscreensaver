@@ -7,7 +7,7 @@ export const title = 'cloudlife';
 
 export const info = {
   author: 'Don Marti',
-  description: "Cloud-like formations based on a variant of Conway's Life. The difference is that cells have a maximum age, after which they count as 3 for populating the next generation. This makes long-lived formations explode instead of just sitting there.",
+  description: "Cloud-like formations based on a variant of Conway's Life.\n\nThe difference is that cells have a maximum age, after which they count as 3 for populating the next generation. This makes long-lived formations explode instead of just sitting there.\n\nhttps://en.wikipedia.org/wiki/Conway%27s_Game_of_Life",
   year: 2003,
 };
 

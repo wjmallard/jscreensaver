@@ -26,7 +26,7 @@ export const title = 'anemotaxis';
 
 export const info = {
   author: 'Eugene Balkovski',
-  description: 'Searches for a source of odor in a turbulent atmosphere.',
+  description: 'Searches for a source of odor in a turbulent atmosphere. The searcher is able to sense the odor and determine local instantaneous wind direction. The goal is to find the source in the shortest mean time.\n\nhttps://en.wikipedia.org/wiki/Anemotaxis',
   year: 2004,
 };
 

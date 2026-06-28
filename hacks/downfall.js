@@ -21,7 +21,7 @@ export const title = 'downfall';
 
 export const info = {
   author: 'Matt Vianueva',
-  description: 'A tiny ray-march down a churning tunnel where sine-folded space streaks past as bright falling sheets.',
+  description: 'A close-up view of a grayscale waterfall.\n\nhttps://www.shadertoy.com/view/w3sBWl',
   year: 2025,
 };
 

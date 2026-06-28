@@ -28,7 +28,7 @@ export const title = 'sphere';
 
 export const info = {
   author: 'Tom Duff and Jamie Zawinski',
-  description: 'Draws shaded spheres in multiple colors.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws shaded spheres in multiple colors.',
   year: 1982,
 };
 

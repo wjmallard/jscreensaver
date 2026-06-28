@@ -27,7 +27,7 @@ export const title = 'bubbles';
 
 export const info = {
   author: 'James Macnicol',
-  description: 'A simulation of the bubble formation that happens when water boils: small bubbles appear and, as they get closer to each other, combine to form larger bubbles which eventually pop.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nThis simulates the kind of bubble formation that happens when water boils: small bubbles appear, and as they get closer to each other, they combine to form larger bubbles, which eventually pop.',
   year: 1996,
 };
 

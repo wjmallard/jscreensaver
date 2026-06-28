@@ -23,7 +23,7 @@ export const title = 'fluxcore';
 export const info = {
   heavy: true,
   author: 'otaviogood',
-  description: 'A ray-march through a glowing fractal reactor: carved cylinders spiral inward past rust-streaked struts toward a blazing core.',
+  description: 'Long range space-based energy transmission requires a flux core to amplify and concentrate energy.\n\nhttps://www.shadertoy.com/view/ltlSWf',
   year: 2015,
 };
 

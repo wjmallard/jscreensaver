@@ -20,7 +20,7 @@ export const title = 'qix';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'Bounces a series of line segments around the screen.',
+  description: 'Bounces a series of line segments around the screen with various presentations.\n\nhttps://en.wikipedia.org/wiki/Qix',
   year: 1992,
 };
 

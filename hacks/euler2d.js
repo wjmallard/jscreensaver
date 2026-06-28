@@ -25,7 +25,7 @@ export const title = 'euler2d';
 
 export const info = {
   author: 'Stephen Montgomery-Smith',
-  description: 'Simulates two dimensional incompressible inviscid fluid flow.',
+  description: 'Simulates two dimensional incompressible inviscid fluid flow.\n\nhttps://en.wikipedia.org/wiki/Euler_equations_%28fluid_dynamics%29\nhttps://en.wikipedia.org/wiki/Inviscid_flow',
   year: 2000,
 };
 

@@ -21,7 +21,7 @@ export const title = 'xanalogtv';
 export const info = {
   author: 'Trevor Blackwell',
   description:
-    'A dusty old television flips through the channels: SMPTE color bars with the station logo, test cards, and snow, losing sync and rolling when it changes channel, all through a real NTSC signal simulation.',
+    'An old TV set, including artifacts like snow, bloom, distortion, ghosting, and hash noise. It also simulates the TV warming up. It will cycle through 12 channels, some with images you give it, and some with color bars or nothing but static.',
   year: 2003,
 };
 

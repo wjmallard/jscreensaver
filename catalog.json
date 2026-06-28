@@ -23,7 +23,7 @@
       "heavy": true,
       "author": "otaviogood",
       "year": 2014,
-      "description": "A raymarched flight through an alien canyon of rust-colored rock and tailings water, circling a pulsing green beacon under a drifting sun."
+      "description": "Our investigation of the signal from the planet's surface brought us to what seems to be an alien beacon. Based on the rock formation around the beacon, it was probably left here millions of years ago.\n\nhttps://www.shadertoy.com/view/ld2SzK"
     },
     {
       "title": "anemone",
@@ -47,7 +47,7 @@
       ],
       "author": "Eugene Balkovski",
       "year": 2004,
-      "description": "Searches for a source of odor in a turbulent atmosphere."
+      "description": "Searches for a source of odor in a turbulent atmosphere. The searcher is able to sense the odor and determine local instantaneous wind direction. The goal is to find the source in the shortest mean time.\n\nhttps://en.wikipedia.org/wiki/Anemotaxis"
     },
     {
       "title": "ant",
@@ -58,8 +58,7 @@
       ],
       "author": "David Bagley",
       "year": 1997,
-      "description": "A cellular automaton that is really a two-dimensional Turing machine: as the heads (\"ants\") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced.",
-      "retired": "4.22"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 4.22.\n\nA cellular automaton that is really a two-dimensional Turing machine: as the heads (\"ants\") walk along the screen, they change pixel values in their path. Then, as they pass over changed pixels, their behavior is influenced.\n\nhttps://en.wikipedia.org/wiki/Langton%27s_ant\nhttps://en.wikipedia.org/wiki/Turing_machine"
     },
     {
       "title": "apollonian",
@@ -71,7 +70,7 @@
       ],
       "author": "Allan R. Wilks",
       "year": 2001,
-      "description": "A fractal packing of circles with smaller circles, demonstrating Descartes's theorem."
+      "description": "A fractal packing of circles with smaller circles, demonstrating Descartes's theorem.\n\nhttps://en.wikipedia.org/wiki/Apollonian_gasket\nhttps://en.wikipedia.org/wiki/Descartes%27_theorem"
     },
     {
       "title": "attraction",
@@ -94,7 +93,7 @@
       ],
       "author": "mrange",
       "year": 2020,
-      "description": "A single-pass ray-march over noised alien terrain beneath twin suns and a banded gas giant on the horizon."
+      "description": "An alien planet full of craters, with other celestial objects in the sky.\n\nhttps://www.shadertoy.com/view/wsjBD3"
     },
     {
       "title": "bestill",
@@ -107,7 +106,7 @@
       "heavy": true,
       "author": "Matt Vianueva (diatribes)",
       "year": 2025,
-      "description": "A collection of six calm, still landscape and cloud scenes, from a moonlit \"Night Cloud Dance\" to a sunlit \"Desert Duo\"."
+      "description": "Various scenes of lights playing above the clouds.\n\nhttps://www.shadertoy.com/view/tfXcRn\nhttps://www.shadertoy.com/view/w32BDD\nhttps://www.shadertoy.com/view/3cjcWD\nhttps://www.shadertoy.com/view/wXXBRX\nhttps://www.shadertoy.com/view/3cXyzB\nhttps://www.shadertoy.com/view/tXjXDy"
     },
     {
       "title": "binaryhorizon",
@@ -177,7 +176,7 @@
       "heavy": true,
       "author": "Matt Vianueva",
       "year": 2025,
-      "description": "A rising column of soft, color-banded blobs, ray-marched while cosine ripples wash tints across the churning field."
+      "description": "Traveling through a field of bubbles with cartoony colors.\n\nhttps://www.shadertoy.com/view/wcGXWR"
     },
     {
       "title": "bubbles",
@@ -189,8 +188,7 @@
       ],
       "author": "James Macnicol",
       "year": 1996,
-      "description": "A simulation of the bubble formation that happens when water boils: small bubbles appear and, as they get closer to each other, combine to form larger bubbles which eventually pop.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nThis simulates the kind of bubble formation that happens when water boils: small bubbles appear, and as they get closer to each other, they combine to form larger bubbles, which eventually pop."
     },
     {
       "title": "ccurve",
@@ -202,7 +200,7 @@
       ],
       "author": "Rick Campbell",
       "year": 1999,
-      "description": "Generates self-similar linear fractals, including the classic \"C Curve\"."
+      "description": "Generates self-similar linear fractals, including the classic \"C Curve\".\n\nhttps://en.wikipedia.org/wiki/Levy_C_curve"
     },
     {
       "title": "celtic",
@@ -214,7 +212,7 @@
       ],
       "author": "Max Froumentin",
       "year": 2006,
-      "description": "Repeatedly draws random Celtic cross-stitch patterns."
+      "description": "Repeatedly draws random Celtic cross-stitch patterns.\n\nhttps://en.wikipedia.org/wiki/Celtic_knot\nhttps://en.wikipedia.org/wiki/Knots_and_graphs"
     },
     {
       "title": "cloudlife",
@@ -225,7 +223,7 @@
       ],
       "author": "Don Marti",
       "year": 2003,
-      "description": "Cloud-like formations based on a variant of Conway's Life. The difference is that cells have a maximum age, after which they count as 3 for populating the next generation. This makes long-lived formations explode instead of just sitting there."
+      "description": "Cloud-like formations based on a variant of Conway's Life.\n\nThe difference is that cells have a maximum age, after which they count as 3 for populating the next generation. This makes long-lived formations explode instead of just sitting there.\n\nhttps://en.wikipedia.org/wiki/Conway%27s_Game_of_Life"
     },
     {
       "title": "compass",
@@ -258,8 +256,7 @@
       ],
       "author": "Martin Pool",
       "year": 1999,
-      "description": "Draws a system of self-organizing lines. It starts out as random squiggles, but after a few iterations, order begins to appear.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws a system of self-organizing lines. It starts out as random squiggles, but after a few iterations, order begins to appear."
     },
     {
       "title": "crystal",
@@ -270,7 +267,7 @@
       ],
       "author": "Jouk Jansen",
       "year": 1997,
-      "description": "Moving polygons, similar to a kaleidoscope."
+      "description": "Moving polygons, similar to a kaleidoscope.\n\nSee also the \"Kaleidescope\" and \"GLeidescope\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Kaleidoscope"
     },
     {
       "title": "cubicgrid",
@@ -281,7 +278,7 @@
       ],
       "author": "Vasek Potocek",
       "year": 2007,
-      "description": "A finite 3D lattice of dots, colored by position in the RGB cube, seen from within as it slowly tumbles — rows align and view-throughs open and evolve."
+      "description": "A rotating lattice of colored points."
     },
     {
       "title": "cwaves",
@@ -314,7 +311,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2001,
-      "description": "A glossy sphere bristling with matte spikes that pulse outward and retract, re-aiming each cycle, as it tumbles and drifts through space and its colors slowly cycle."
+      "description": "A spiky ball. Ouch!"
     },
     {
       "title": "darktransit",
@@ -325,7 +322,7 @@
       ],
       "author": "Matt Vianueva (diatribes)",
       "year": 2025,
-      "description": "A low-tech raymarched tunnel: a glowing orb drifts down a sinuous corridor framed by black cinema bars."
+      "description": "Flying through a generative cyber manifold.\n\nhttps://www.shadertoy.com/view/WcdczB"
     },
     {
       "title": "deco",
@@ -336,7 +333,7 @@
       ],
       "author": "Jamie Zawinski, Michael D. Bayne, Lars Huttar",
       "year": 1997,
-      "description": "Subdivides and colors rectangles randomly, for a Mondrian-esque effect."
+      "description": "Subdivides and colors rectangles randomly, for a Mondrian-esque effect.\n\nhttps://en.wikipedia.org/wiki/Piet_Mondrian#Paris_1919.E2.80.931938"
     },
     {
       "title": "deluxe",
@@ -359,7 +356,7 @@
       ],
       "author": "David Bagley",
       "year": 1999,
-      "description": "A cellular automaton that starts with a random field, and organizes it into stripes and spirals."
+      "description": "A cellular automaton that starts with a random field, and organizes it into stripes and spirals.\n\nhttps://en.wikipedia.org/wiki/Maxwell%27s_demon"
     },
     {
       "title": "discrete",
@@ -382,7 +379,7 @@
       ],
       "author": "Matt Vianueva",
       "year": 2025,
-      "description": "A tiny ray-march down a churning tunnel where sine-folded space streaks past as bright falling sheets."
+      "description": "A close-up view of a grayscale waterfall.\n\nhttps://www.shadertoy.com/view/w3sBWl"
     },
     {
       "title": "drift",
@@ -405,7 +402,7 @@
       ],
       "author": "drift",
       "year": 2016,
-      "description": "Layered fractal-noise clouds drifting across a soft blue sky gradient."
+      "description": "Clouds. Little fluffy clouds.\n\nhttps://www.shadertoy.com/view/4tdSWr"
     },
     {
       "title": "elementalring",
@@ -416,7 +413,7 @@
       ],
       "author": "Otavio Good",
       "year": 2016,
-      "description": "A single-pass ray-march of three glowing braids twisting around a torus ring, lit like molten elemental energy."
+      "description": "A rotating ring knots and un-knots itself.\n\nhttps://www.shadertoy.com/view/MsVXDt"
     },
     {
       "title": "epicycle",
@@ -427,7 +424,7 @@
       ],
       "author": "James Youngman",
       "year": 1998,
-      "description": "A pre-heliocentric model of planetary motion."
+      "description": "A pre-heliocentric model of planetary motion.\n\nThis draws the path traced out by a point on the edge of a circle. That circle rotates around a point on the rim of another circle, and so on, several times.\n\nThe geometry of epicycles was perfected by Hipparchus of Rhodes at some time around 125 B.C., 185 years after the birth of Aristarchus of Samos, the inventor of the heliocentric universe model. Hipparchus applied epicycles to the Sun and the Moon. Ptolemy of Alexandria went on to apply them to what was then the known universe, at around 150 A.D. Copernicus went on to apply them to the heliocentric model at the beginning of the sixteenth century. Johannes Kepler discovered that the planets actually move in elliptical orbits in about 1602. The inverse-square law of gravity was suggested by Boulliau in 1645. Isaac Newton's Principia Mathematica was published in 1687, and proved that Kepler's laws derived from Newtonian gravitation.\n\nhttps://en.wikipedia.org/wiki/Deferent_and_epicycle"
     },
     {
       "title": "eruption",
@@ -438,7 +435,7 @@
       ],
       "author": "W.P. van Paassen",
       "year": 2003,
-      "description": "Exploding fireworks."
+      "description": "Exploding fireworks.\n\nSee also the \"Fireworkx\", \"XFlame\" and \"Pyro\" screen savers."
     },
     {
       "title": "euler2d",
@@ -449,7 +446,7 @@
       ],
       "author": "Stephen Montgomery-Smith",
       "year": 2000,
-      "description": "Simulates two dimensional incompressible inviscid fluid flow."
+      "description": "Simulates two dimensional incompressible inviscid fluid flow.\n\nhttps://en.wikipedia.org/wiki/Euler_equations_%28fluid_dynamics%29\nhttps://en.wikipedia.org/wiki/Inviscid_flow"
     },
     {
       "title": "fadeplot",
@@ -483,7 +480,7 @@
       ],
       "author": "Rony B Chandran",
       "year": 2004,
-      "description": "Exploding fireworks."
+      "description": "Exploding fireworks.\n\nSee also the \"Eruption\", \"XFlame\" and \"Pyro\" screen savers."
     },
     {
       "title": "flame",
@@ -507,7 +504,7 @@
       ],
       "author": "Tim Auckland",
       "year": 1996,
-      "description": "Strange attractors formed of flows in a 3D differential equation phase space."
+      "description": "Strange attractors formed of flows in a 3D differential equation phase space. Features the popular attractors described by Lorentz, Roessler, Birkhoff and Duffing, and can discover entirely new attractors by itself.\n\nhttps://en.wikipedia.org/wiki/Attractor#Strange_attractor"
     },
     {
       "title": "fluidballs",
@@ -531,7 +528,7 @@
       "heavy": true,
       "author": "otaviogood",
       "year": 2015,
-      "description": "A ray-march through a glowing fractal reactor: carved cylinders spiral inward past rust-streaked struts toward a blazing core."
+      "description": "Long range space-based energy transmission requires a flux core to amplify and concentrate energy.\n\nhttps://www.shadertoy.com/view/ltlSWf"
     },
     {
       "title": "forest",
@@ -543,8 +540,7 @@
       ],
       "author": "Peter Baumung",
       "year": 1999,
-      "description": "Draws a fractal forest.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nFractal trees."
     },
     {
       "title": "fuzzyflakes",
@@ -555,7 +551,7 @@
       ],
       "author": "Barry Dmytro",
       "year": 2004,
-      "description": "Falling colored snowflake/flower shapes."
+      "description": "Falling colored snowflake/flower shapes.\n\nhttps://en.wikipedia.org/wiki/Snowflake"
     },
     {
       "title": "galaxy",
@@ -578,7 +574,7 @@
       ],
       "author": "otaviogood",
       "year": 2015,
-      "description": "Nested rotating discs whirl through spherical-harmonic patterns around a glowing core, lit like polished studio chrome."
+      "description": "Disc-based visualization of different frequencies next to each other.\n\nhttps://www.shadertoy.com/view/llS3zd"
     },
     {
       "title": "goldenapollian",
@@ -590,7 +586,7 @@
       ],
       "author": "Martin Ranelius (mrange)",
       "year": 2021,
-      "description": "A flight down a tunnel of stacked planes, each etched with a golden Apollonian-gasket fractal lit by drifting suns."
+      "description": "Enter the golden fractal doorways.\n\nhttps://www.shadertoy.com/view/WlcfRS"
     },
     {
       "title": "goop",
@@ -637,7 +633,7 @@
       ],
       "author": "Peter Jaric",
       "year": 2002,
-      "description": "A halftone dot pattern in motion. Draws the gravity force in each point on the screen seen through a halftone dot pattern."
+      "description": "A halftone dot pattern in motion.\n\nDraws the gravity force in each point on the screen seen through a halftone dot pattern. The gravity force is calculated from a set of moving mass points. View it from a distance for best effect.\n\nhttps://en.wikipedia.org/wiki/Halftone"
     },
     {
       "title": "halo",
@@ -648,7 +644,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 1993,
-      "description": "Circular interference patterns."
+      "description": "Circular interference patterns.\n\nhttps://en.wikipedia.org/wiki/Moire_pattern"
     },
     {
       "title": "helix",
@@ -671,7 +667,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2013,
-      "description": "A grid of hexagons or other shapes, with tiles dropping out."
+      "description": "A grid of hexagons or other shapes, with tiles dropping out.\n\nhttps://en.wikipedia.org/wiki/Tiling_by_regular_polygons"
     },
     {
       "title": "hexplasma",
@@ -682,7 +678,7 @@
       ],
       "author": "Nemerix",
       "year": 2025,
-      "description": "A flowing plasma warped through a hexagonal distance field and folded by a sin/rotate feedback loop, glowing teal to white."
+      "description": "A hexagon in a plasma field.\n\nhttps://www.shadertoy.com/view/WfS3Dd"
     },
     {
       "title": "hopalong",
@@ -694,7 +690,7 @@
       ],
       "author": "Patrick Naughton",
       "year": 1992,
-      "description": "Lacy fractal patterns based on iteration in the imaginary plane, from a 1986 Scientific American article."
+      "description": "Lacy fractal patterns based on iteration in the imaginary plane, from a 1986 Scientific American article.\n\nSee also the \"Discrete\" screen saver."
     },
     {
       "title": "hyperball",
@@ -705,8 +701,7 @@
       ],
       "author": "Joe Keane",
       "year": 2000,
-      "description": "A wireframe projection of a hyperball, rotating around any or all of its four axes.",
-      "retired": "5.10"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.10. It has been replaced by the more general \"Polytopes\" screen saver, which can display this object as well as others. The Polytopes \"120-cell\" object corresponds to this one.\n\nHyperball is to hypercube as dodecahedron is to cube: this displays a 2D projection of the sequence of 3D objects which are the projections of the 4D analog to the dodecahedron. Technically, it is a \"120 cell polytope\".\n\nhttps://en.wikipedia.org/wiki/Hypercube\nhttps://en.wikipedia.org/wiki/Regular_polytope"
     },
     {
       "title": "hypercube",
@@ -717,8 +712,7 @@
       ],
       "author": "Joe Keane, Fritz Mueller, Jamie Zawinski",
       "year": 1992,
-      "description": "2D projection of a 4D object.",
-      "retired": "5.10"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.10. It has been replaced by the more general \"Polytopes\" screen saver, which can display this object as well as others.\n\nThis displays 2D projections of the sequence of 3D objects which are the projections of the 4D analog to the cube: as a square is composed of four lines, each touching two others; and a cube is composed of six squares, each touching four others; a hypercube is composed of eight cubes, each touching six others. To make it easier to visualize the rotation, it uses a different color for the edges of each face. Don't think about it too long, or your brain will melt.\n\nhttps://en.wikipedia.org/wiki/Hypercube\nhttps://en.wikipedia.org/wiki/Tesseract\nhttps://en.wikipedia.org/wiki/Regular_polytope"
     },
     {
       "title": "hypnowheel",
@@ -730,7 +724,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2008,
-      "description": "Overlapping translucent spiral discs whose tightness winds in and out, additively blended into a hypnotic moire that spins and washes through color while the whole wheel slowly wanders."
+      "description": "Overlapping, translucent spiral patterns. The tightness of their spirals fluctuates in and out.\n\nhttps://en.wikipedia.org/wiki/Moire_pattern"
     },
     {
       "title": "ifs",
@@ -741,7 +735,7 @@
       ],
       "author": "Chris Le Sueur and Robby Griffin",
       "year": 1997,
-      "description": "Clouds of iterated function systems spin and collide."
+      "description": "Clouds of iterated function systems spin and collide.\n\nNote that the \"Detail\" parameter is exponential. Number of points drawn is functions^detail.\n\nhttps://en.wikipedia.org/wiki/Iterated_function_system"
     },
     {
       "title": "imsmap",
@@ -765,7 +759,7 @@
       ],
       "author": "Casey Reas, William Ngan, Robert Hodgin, and Jamie Zawinski",
       "year": 2004,
-      "description": "Pale pencil-like scribbles slowly fill the screen."
+      "description": "Pale pencil-like scribbles slowly fill the screen.\n\nA surface is filled with a hundred medium to small sized circles. Each circle has a different size and direction, but moves at the same slow rate. Displays the instantaneous intersections of the circles as well as the aggregate intersections of the circles.\n\nThough actually it doesn't look like circles at all!"
     },
     {
       "title": "interference",
@@ -788,7 +782,7 @@
       ],
       "author": "Casey Reas, William Ngan, Robert Hodgin, and Jamie Zawinski",
       "year": 2004,
-      "description": "Blinking dots interact with each other circularly."
+      "description": "Blinking dots interact with each other circularly.\n\nA surface is filled with a hundred medium to small sized circles. Each circle has a different size and direction, but moves at the same slow rate. Displays the instantaneous intersections of the circles as well as the aggregate intersections of the circles.\n\nThe circles begin with a radius of 1 pixel and slowly increase to some arbitrary size. Circles are drawn with small moving points along the perimeter. The intersections are rendered as glowing orbs. Glowing orbs are rendered only when a perimeter point moves past the intersection point."
     },
     {
       "title": "kumppa",
@@ -810,8 +804,7 @@
       ],
       "author": "Pascal Pensa",
       "year": 1995,
-      "description": "Moving radiating lines, that look vaguely like scanning laser beams.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nMoving radiating lines, that look vaguely like scanning laser beams. (Frankie say relax.)"
     },
     {
       "title": "lightning",
@@ -823,8 +816,7 @@
       ],
       "author": "Keith Romberg",
       "year": 1996,
-      "description": "Crackling fractal lightning bolts.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nCrackling fractal lightning bolts."
     },
     {
       "title": "lisa",
@@ -835,8 +827,7 @@
       ],
       "author": "Caleb Cullen",
       "year": 1997,
-      "description": "Draws animated full-loop lissajous figures.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nLissajous loops.\n\nhttps://en.wikipedia.org/wiki/Lissajous_curve"
     },
     {
       "title": "lissie",
@@ -847,8 +838,7 @@
       ],
       "author": "Alexander Jolk",
       "year": 1996,
-      "description": "Another Lissajous figure. This one draws the progress of circular shapes along a path.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nLissajous loops. This one draws the progress of circular shapes along a path.\n\nhttps://en.wikipedia.org/wiki/Lissajous_curve"
     },
     {
       "title": "lmorph",
@@ -859,8 +849,7 @@
       ],
       "author": "Sverre H. Huseby and Glenn T. Lines",
       "year": 1995,
-      "description": "This generates random spline-ish line drawings and morphs between them.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nThis generates random spline-ish line drawings and morphs between them."
     },
     {
       "title": "logarithmiccircles",
@@ -872,7 +861,7 @@
       ],
       "author": "mrange",
       "year": 2023,
-      "description": "A black-and-white field of rings on a logarithmic radial grid, eight-fold mirrored and endlessly breathing as it counter-rotates."
+      "description": "Zooming black and white circles.\n\nhttps://www.shadertoy.com/view/mljcWR"
     },
     {
       "title": "loop",
@@ -883,7 +872,7 @@
       ],
       "author": "David Bagley",
       "year": 1999,
-      "description": "A cellular automaton that generates loop-shaped colonies that spawn, age, and eventually die."
+      "description": "A cellular automaton that generates loop-shaped colonies that spawn, age, and eventually die.\n\nhttps://en.wikipedia.org/wiki/Langton%27s_loops"
     },
     {
       "title": "metaballs",
@@ -895,7 +884,7 @@
       ],
       "author": "W.P. van Paassen",
       "year": 2003,
-      "description": "2D meta-balls: overlapping and merging balls with fuzzy edges."
+      "description": "2D meta-balls: overlapping and merging balls with fuzzy edges.\n\nhttps://en.wikipedia.org/wiki/Metaballs"
     },
     {
       "title": "moire",
@@ -906,7 +895,7 @@
       ],
       "author": "Jamie Zawinski and Michael Bayne",
       "year": 1997,
-      "description": "When the lines on the screen make more lines in between, that's a moiré!"
+      "description": "When the lines on the screen\nMake more lines in between,\nThat's a moir\u00e9!\n\nhttps://en.wikipedia.org/wiki/Moire_pattern"
     },
     {
       "title": "moire2",
@@ -917,7 +906,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 1998,
-      "description": "Generates fields of concentric circles or ovals, and combines the planes with various operations. The planes are moving independently of one another, causing the interference lines to spray."
+      "description": "Generates fields of concentric circles or ovals, and combines the planes with various operations. The planes are moving independently of one another, causing the interference lines to spray.\n\nhttps://en.wikipedia.org/wiki/Moire_pattern"
     },
     {
       "title": "mountain",
@@ -941,7 +930,7 @@
       ],
       "author": "Tim Showalter, Jamie Zawinski and Steven Hazel",
       "year": 1997,
-      "description": "DATAI 2 / ADDB 1,2 / ROTC 2,-22 / XOR 1,2 / JRST .-4 -- the classic PDP-1 munching squares of HAKMEM (1972), and a creatively broken \"mismunch\" variant."
+      "description": "DATAI 2\nADDB 1,2\nROTC 2,-22\nXOR 1,2\nJRST .-4\n\nAs reported by HAKMEM (MIT AI Memo 239, 1972), Jackson Wright wrote the above PDP-1 code in 1962. That code still lives on here, 60+ years later.\n\nIn \"mismunch\" mode, it displays a creatively broken misimplementation of the classic munching squares algorithm instead.\n\nhttps://en.wikipedia.org/wiki/HAKMEM\nhttps://en.wikipedia.org/wiki/Munching_square"
     },
     {
       "title": "neongravity",
@@ -952,7 +941,7 @@
       ],
       "author": "mrange",
       "year": 2024,
-      "description": "An abstract gravitational well: neon filaments swirl and fall into a dark core, smoothed by a second antialiasing pass."
+      "description": "The stylish interior of a torus.\n\nhttps://www.shadertoy.com/view/43G3Wc"
     },
     {
       "title": "neontriangulator",
@@ -963,7 +952,7 @@
       ],
       "author": "mrange",
       "year": 2025,
-      "description": "A synthwave ray-march down an endless neon corridor of triangulated, reflecting prisms toward a setting sun."
+      "description": "Neon triangles zoom.\n\nhttps://www.shadertoy.com/view/tXGGRD"
     },
     {
       "title": "nerverot",
@@ -985,7 +974,7 @@
       ],
       "author": "Matt Vianueva",
       "year": 2025,
-      "description": "A per-pixel ray-march down a pulsing, twisting tunnel of noise that reads as living flame rushing past."
+      "description": "I fell in to a burning ring of fire; I went down, down, down and the flames went higher.\n\nhttps://www.shadertoy.com/view/wfG3Dz"
     },
     {
       "title": "pedal",
@@ -996,7 +985,7 @@
       ],
       "author": "Dale Moore",
       "year": 1994,
-      "description": "The even-odd winding rule."
+      "description": "The even-odd winding rule.\n\nhttps://en.wikipedia.org/wiki/Even-odd_rule\nhttps://en.wikipedia.org/wiki/Nonzero-rule"
     },
     {
       "title": "penrose",
@@ -1007,7 +996,7 @@
       ],
       "author": "Timo Korvola",
       "year": 1996,
-      "description": "Quasiperiodic tilings; Penrose's nonrepeating rhombus pattern."
+      "description": "Quasiperiodic tilings.\n\nIn April 1997, Sir Roger Penrose, a British math professor who has worked with Stephen Hawking on such topics as relativity, black holes, and whether time has a beginning, filed a copyright-infringement lawsuit against the Kimberly-Clark Corporation, which Penrose said copied a pattern he created (a pattern demonstrating that \"a nonrepeating pattern could exist in nature\") for its Kleenex quilted toilet paper. Penrose said he doesn't like litigation but, \"When it comes to the population of Great Britain being invited by a multinational to wipe their bottoms on what appears to be the work of a Knight of the Realm, then a last stand must be taken.\"\n\nAs reported by News of the Weird #491, 4-Jul-1997.\n\nhttps://en.wikipedia.org/wiki/Penrose_tiling\nhttps://en.wikipedia.org/wiki/Tessellation"
     },
     {
       "title": "petri",
@@ -1030,7 +1019,7 @@
       ],
       "author": "Geoffrey Irving",
       "year": 2003,
-      "description": "Lots of moving circles intersecting in interesting ways."
+      "description": "Moving circles switch from visibility to invisibility at intersection points."
     },
     {
       "title": "polyominoes",
@@ -1041,7 +1030,7 @@
       ],
       "author": "Stephen Montgomery-Smith",
       "year": 2000,
-      "description": "Repeatedly attempts to completely fill a rectangle with irregularly-shaped puzzle pieces."
+      "description": "Repeatedly attempts to completely fill a rectangle with irregularly-shaped puzzle pieces.\n\nhttps://en.wikipedia.org/wiki/Polyomino"
     },
     {
       "title": "popsquares",
@@ -1053,7 +1042,7 @@
       ],
       "author": "Levi Burton",
       "year": 2003,
-      "description": "A pop-art-ish grid of pulsing colors. Inspired by cheesy MTV commercials."
+      "description": "A pop-art-ish looking grid of pulsing colors."
     },
     {
       "title": "prococean",
@@ -1065,7 +1054,7 @@
       ],
       "author": "afl_ext",
       "year": 2017,
-      "description": "A fast procedural ocean ray-marched from summed sine-wave octaves, under a cheap analytic sky and a roaming sun."
+      "description": "A very fast procedural ocean.\n\nhttps://www.shadertoy.com/view/MdXyzX"
     },
     {
       "title": "protophore",
@@ -1076,7 +1065,7 @@
       ],
       "author": "otaviogood",
       "year": 2015,
-      "description": "A recursive fractal sphere bristling with teeth that pulse and unfold, lit like a chrome sports car under a giant softbox."
+      "description": "A reflective metal fractal.\n\nhttps://www.shadertoy.com/view/XljGDz"
     },
     {
       "title": "pyro",
@@ -1087,7 +1076,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 1992,
-      "description": "Exploding fireworks."
+      "description": "Exploding fireworks.\n\nSee also the \"Fireworkx\", \"Eruption\", and \"XFlame\" screen savers."
     },
     {
       "title": "qix",
@@ -1098,7 +1087,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 1992,
-      "description": "Bounces a series of line segments around the screen."
+      "description": "Bounces a series of line segments around the screen with various presentations.\n\nhttps://en.wikipedia.org/wiki/Qix"
     },
     {
       "title": "quasicrystal",
@@ -1110,7 +1099,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2013,
-      "description": "Overlapping sine waves sum into an ordered-but-aperiodic plane tiling: a quasicrystal interference pattern that slowly spins, slides, breathes, and washes through color."
+      "description": "A quasicrystal is a structure that is ordered but aperiodic.\n\nTwo-dimensional quasicrystals can be generated by adding a set of planes where x is the sine of y. Different complex aperiodic plane tilings are produced depending on the period, position, and rotation of the component planes, and whether the rotation of the planes is evenly distributed around the circle (the \"symmetry\" option, above) or random.\n\nSee also the \"RD-Bomb\", \"CWaves\" and \"Penrose\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Quasicrystal"
     },
     {
       "title": "rdbomb",
@@ -1135,7 +1124,7 @@
       "heavy": true,
       "author": "Matt Vianueva (diatribes)",
       "year": 2026,
-      "description": "A ray-marched flight down a folding tunnel of nested rotating boxes, lit by a glowing core and warped by layered sine turbulence."
+      "description": "Exploring a flooded mega-structure.\n\nhttps://www.shadertoy.com/view/3XKfDV"
     },
     {
       "title": "rocks",
@@ -1157,7 +1146,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 1992,
-      "description": "Inkblot patterns via a reflected random walk."
+      "description": "Inkblot patterns via a reflected random walk.\n\nhttps://en.wikipedia.org/wiki/Rorschach_inkblot_test\nhttps://en.wikipedia.org/wiki/Random_walk"
     },
     {
       "title": "rotor",
@@ -1168,8 +1157,7 @@
       ],
       "author": "Tom Lawrence",
       "year": 1997,
-      "description": "Draws a line segment moving along a complex spiraling curve.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws a line segment moving along a complex spiraling curve."
     },
     {
       "title": "scooter",
@@ -1192,7 +1180,7 @@
       ],
       "author": "mrange",
       "year": 2024,
-      "description": "A Platonic solid with mirrored inner facets, ray-marched through a glass sphere so it reflects endlessly into itself."
+      "description": "Platonic solids with inner mirrors.\n\nhttps://www.shadertoy.com/view/XfyXRV"
     },
     {
       "title": "sierpinski",
@@ -1203,7 +1191,7 @@
       ],
       "author": "Desmond Daignault",
       "year": 1997,
-      "description": "The 2D Sierpinski triangle fractal."
+      "description": "The 2D Sierpinski triangle fractal.\n\nSee also the \"Sierpinski3D\" screen saver.\n\nhttps://en.wikipedia.org/wiki/Sierpinski_triangle"
     },
     {
       "title": "skyline",
@@ -1214,7 +1202,7 @@
       ],
       "author": "otaviogood",
       "year": 2015,
-      "description": "A procedural city flown at night: ray-marched towers, lit windows, and reflective cars gliding under a hazy skyline."
+      "description": "A procedurally-generated cityscape.\n\nhttps://www.shadertoy.com/view/XtsSWs"
     },
     {
       "title": "sphere",
@@ -1226,8 +1214,7 @@
       ],
       "author": "Tom Duff and Jamie Zawinski",
       "year": 1982,
-      "description": "Draws shaded spheres in multiple colors.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws shaded spheres in multiple colors."
     },
     {
       "title": "spiral",
@@ -1238,8 +1225,7 @@
       ],
       "author": "Peter Schmitzberger",
       "year": 1997,
-      "description": "Moving circular moiré patterns.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nMoving circular moir\u00e9 patterns."
     },
     {
       "title": "squiral",
@@ -1261,7 +1247,7 @@
       ],
       "author": "mrange",
       "year": 2022,
-      "description": "A procedural night-sky dome: blackbody-tinted star layers, a tilted spiral galaxy and a lit crescent moon under a slowly turning camera."
+      "description": "Stars and a galaxy under a dome on a moon.\n\nhttps://www.shadertoy.com/view/stBcW1"
     },
     {
       "title": "starfish",
@@ -1284,7 +1270,7 @@
       ],
       "author": "Pablo Roman Andrioli (Kali)",
       "year": 2013,
-      "description": "A volumetric ray-march through a folded Kaliset fractal: an endless drift through stars and nebulae."
+      "description": "A star field via 3D kaliset fractal and volumetric rendering.\n\nhttps://www.shadertoy.com/view/XlfGRj"
     },
     {
       "title": "strange",
@@ -1295,7 +1281,7 @@
       ],
       "author": "Massimino Pascal",
       "year": 1997,
-      "description": "Strange attractors: a swarm of dots swoops and twists around."
+      "description": "Strange attractors: a swarm of dots swoops and twists around.\n\nhttps://en.wikipedia.org/wiki/Attractor#Strange_attractor"
     },
     {
       "title": "stripeytorus",
@@ -1306,7 +1292,7 @@
       ],
       "author": "mrange",
       "year": 2021,
-      "description": "An analytic ray-traced torus wrapped in flowing black-and-white stripes, lit and self-shadowing as the bands twist around it."
+      "description": "The stylish interior of a torus.\n\nhttps://www.shadertoy.com/view/fd33zn"
     },
     {
       "title": "substrate",
@@ -1341,7 +1327,7 @@
       ],
       "author": "3w36zj6 (after Jan Mroz)",
       "year": 2022,
-      "description": "A neon retro-80s skyline: a banded sun, a scrolling perspective grid, and magenta skyscrapers drifting through pink haze."
+      "description": "Let the neon wash over you.\n\nhttps://www.shadertoy.com/view/7lKyDD"
     },
     {
       "title": "thornbird",
@@ -1352,8 +1338,7 @@
       ],
       "author": "Tim Auckland",
       "year": 2002,
-      "description": "This fractal is among those generated by \"Discrete\".",
-      "retired": "6.05"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 6.05. This fractal is among those generated by \"Discrete\"."
     },
     {
       "title": "topologica",
@@ -1364,7 +1349,7 @@
       ],
       "author": "Otavio Good",
       "year": 2014,
-      "description": "A volumetric ray-march through a 3D noise field ramped into 1/x pulses: a drifting tangle of glowing blue-violet filaments."
+      "description": "Pulsing lines of light.\n\nhttps://www.shadertoy.com/view/4djXzz"
     },
     {
       "title": "trainmandala",
@@ -1376,7 +1361,7 @@
       ],
       "author": "mrange",
       "year": 2023,
-      "description": "A kaleidoscopic mandala of nested rings and radial spokes spiralling endlessly inward through shifting rainbow hues."
+      "description": "Enter the flowing ring.\n\nhttps://www.shadertoy.com/view/mtjyz1"
     },
     {
       "title": "triangle",
@@ -1399,7 +1384,7 @@
       ],
       "author": "Matt Vianueva",
       "year": 2025,
-      "description": "A triangle-wave raymarcher: a fly through a neon corridor where folded arcsin-sine waves carve glowing lattices lit by plasma highlights."
+      "description": "Neon cyber circuit-board-like triangle waves.\n\nhttps://www.shadertoy.com/view/3fcBD8"
     },
     {
       "title": "truchet",
@@ -1410,7 +1395,7 @@
       ],
       "author": "Adrian Likins",
       "year": 1998,
-      "description": "Line- and arc-based truchet patterns that tile the screen."
+      "description": "Line- and arc-based truchet patterns that tile the screen.\n\nhttps://en.wikipedia.org/wiki/Tessellation"
     },
     {
       "title": "truchetzoom",
@@ -1421,7 +1406,7 @@
       ],
       "author": "mrange",
       "year": 2024,
-      "description": "An infinite golden-ratio truchet weave zooming forever down a boxed spiral while a conformal warp swirls the whole tiling into itself."
+      "description": "A looping, distorting truchet chain with scanlines.\n\nhttps://www.shadertoy.com/view/4cBcDy"
     },
     {
       "title": "universeball",
@@ -1433,7 +1418,7 @@
       "heavy": true,
       "author": "Matt Vianueva",
       "year": 2025,
-      "description": "A ray-marched, palette-cycled glass orb suspended in a star-flecked void."
+      "description": "A mysterious orb is surrounded by clouds.\n\nhttps://www.shadertoy.com/view/WcGcWV"
     },
     {
       "title": "vermiculate",
@@ -1445,7 +1430,7 @@
       ],
       "author": "Tyler Pierce",
       "year": 2001,
-      "description": "Draws squiggly worm-like paths."
+      "description": "Squiggly worm-like paths."
     },
     {
       "title": "vines",
@@ -1457,8 +1442,7 @@
       ],
       "author": "Tracy Camp and David Hansen",
       "year": 1997,
-      "description": "Generates a continuous sequence of small, curvy geometric patterns.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nGenerates a continuous sequence of small, curvy geometric patterns."
     },
     {
       "title": "wander",
@@ -1470,7 +1454,7 @@
       ],
       "author": "Rick Campbell",
       "year": 1999,
-      "description": "A colorful random-walk."
+      "description": "A colorful random-walk.\n\nhttps://en.wikipedia.org/wiki/Random_walk"
     },
     {
       "title": "whirlwindwarp",
@@ -1493,8 +1477,7 @@
       ],
       "author": "Ashton Trey Belew",
       "year": 2001,
-      "description": "Zooming chains of sinusoidal spots.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nZooming chains of sinusoidal spots."
     },
     {
       "title": "worm",
@@ -1506,8 +1489,7 @@
       ],
       "author": "Brad Taylor, Dave Lemke, Boris Putanec, and Henrik Theiling",
       "year": 1991,
-      "description": "Draws multicolored worms that crawl around the screen.",
-      "retired": "5.08"
+      "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws multicolored worms that crawl around the screen."
     },
     {
       "title": "wormhole",
@@ -1529,7 +1511,7 @@
       ],
       "author": "Trevor Blackwell",
       "year": 2003,
-      "description": "A dusty old television flips through the channels: SMPTE color bars with the station logo, test cards, and snow, losing sync and rolling when it changes channel, all through a real NTSC signal simulation."
+      "description": "An old TV set, including artifacts like snow, bloom, distortion, ghosting, and hash noise. It also simulates the TV warming up. It will cycle through 12 channels, some with images you give it, and some with color bars or nothing but static."
     },
     {
       "title": "xflame",
@@ -1540,7 +1522,7 @@
       ],
       "author": "Carsten Haitzler",
       "year": 1996,
-      "description": "Pulsing fire."
+      "description": "Pulsing fire. It can also take an arbitrary image and set it on fire too."
     },
     {
       "title": "xlyap",
@@ -1551,7 +1533,7 @@
       ],
       "author": "Ron Record",
       "year": 1991,
-      "description": "The Lyapunov exponent makes pretty fractal pictures."
+      "description": "The Lyapunov exponent makes pretty fractal pictures.\n\nhttps://en.wikipedia.org/wiki/Lyapunov_exponent"
     },
     {
       "title": "xrayswarm",
@@ -1573,7 +1555,7 @@
       ],
       "author": "Rohit Singh",
       "year": 2000,
-      "description": "Simulates that pen-in-nested-plastic-gears toy from your childhood."
+      "description": "Simulates that pen-in-nested-plastic-gears toy from your childhood.\n\nhttps://en.wikipedia.org/wiki/Spirograph"
     }
   ]
 }

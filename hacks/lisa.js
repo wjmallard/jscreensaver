@@ -29,7 +29,7 @@ export const title = 'lisa';
 
 export const info = {
   author: 'Caleb Cullen',
-  description: 'Draws animated full-loop lissajous figures.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nLissajous loops.\n\nhttps://en.wikipedia.org/wiki/Lissajous_curve',
   year: 1997,
 };
 

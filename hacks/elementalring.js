@@ -21,7 +21,7 @@ export const title = 'elementalring';
 
 export const info = {
   author: 'Otavio Good',
-  description: 'A single-pass ray-march of three glowing braids twisting around a torus ring, lit like molten elemental energy.',
+  description: 'A rotating ring knots and un-knots itself.\n\nhttps://www.shadertoy.com/view/MsVXDt',
   year: 2016,
 };
 

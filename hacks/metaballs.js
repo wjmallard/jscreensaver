@@ -23,7 +23,7 @@ export const title = 'metaballs';
 
 export const info = {
   author: 'W.P. van Paassen',
-  description: '2D meta-balls: overlapping and merging balls with fuzzy edges.',
+  description: '2D meta-balls: overlapping and merging balls with fuzzy edges.\n\nhttps://en.wikipedia.org/wiki/Metaballs',
   year: 2003,
 };
 

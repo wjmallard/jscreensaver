@@ -30,7 +30,7 @@ export const title = 'deco';
 
 export const info = {
   author: 'Jamie Zawinski, Michael D. Bayne, Lars Huttar',
-  description: 'Subdivides and colors rectangles randomly, for a Mondrian-esque effect.',
+  description: 'Subdivides and colors rectangles randomly, for a Mondrian-esque effect.\n\nhttps://en.wikipedia.org/wiki/Piet_Mondrian#Paris_1919.E2.80.931938',
   year: 1997,
 };
 

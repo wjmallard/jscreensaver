@@ -21,7 +21,7 @@ export const title = 'trizm';
 
 export const info = {
   author: 'Matt Vianueva',
-  description: 'A triangle-wave raymarcher: a fly through a neon corridor where folded arcsin-sine waves carve glowing lattices lit by plasma highlights.',
+  description: 'Neon cyber circuit-board-like triangle waves.\n\nhttps://www.shadertoy.com/view/3fcBD8',
   year: 2025,
 };
 

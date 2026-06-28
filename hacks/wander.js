@@ -19,7 +19,7 @@ export const title = 'wander';
 
 export const info = {
   author: 'Rick Campbell',
-  description: 'A colorful random-walk.',
+  description: 'A colorful random-walk.\n\nhttps://en.wikipedia.org/wiki/Random_walk',
   year: 1999,
 };
 

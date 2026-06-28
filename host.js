@@ -463,10 +463,11 @@ function closeAbout() { about.classList.remove('open'); }
 function openHelp() { closeConfig(); closeAbout(); closeInfo(); help.classList.add('open'); }
 function closeHelp() { help.classList.remove('open'); }
 
-// Info box: the running hack's author / year / description, read straight from
-// its manifest entry (no module load needed), shown read-only. Hacks that
-// xscreensaver retired upstream get a small italic "Retired from xscreensaver
-// X.YZ" footnote at the bottom.
+// Info box: the running hack's blurb (jwz's verbatim xml <_description>, baked
+// into the catalog) plus an em-dash author/year credit, read straight from its
+// catalog entry (no module load), shown read-only. The blurb carries blank-line
+// paragraph breaks plus, inside a paragraph, single newline breaks (preformatted
+// listings, split URLs) that white-space: pre-wrap renders.
 function openInfo() {
   closeConfig(); closeAbout(); closeHelp();
   const ttl = document.getElementById('info-title');
@@ -475,22 +476,16 @@ function openInfo() {
   ttl.textContent = currentName || 'info';
   body.textContent = '';
   if (meta) {
-    const desc = document.createElement('p');
-    desc.textContent = meta.description;
+    for (const para of meta.description.split(/\n{2,}/)) {
+      const p = document.createElement('p');
+      p.className = 'info-desc';
+      p.textContent = para;
+      body.appendChild(p);
+    }
     const credit = document.createElement('div');
     credit.className = 'info-credit';
     credit.textContent = `\u2014 ${meta.author}, ${meta.year}`;
-    body.appendChild(desc);
     body.appendChild(credit);
-
-    // Hacks xscreensaver retired upstream (we kept them): a small italic footnote
-    // at the bottom. Present only when meta.retired is set (derived from the xml).
-    if (meta.retired) {
-      const retired = document.createElement('div');
-      retired.className = 'info-retired';
-      retired.textContent = `Retired from xscreensaver ${meta.retired}`;
-      body.appendChild(retired);
-    }
   } else {
     body.textContent = 'No info for this hack.';
   }

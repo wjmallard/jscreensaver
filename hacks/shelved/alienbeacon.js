@@ -23,7 +23,7 @@ export const title = 'alienbeacon';
 export const info = {
   heavy: true,
   author: 'otaviogood',
-  description: 'A raymarched flight through an alien canyon of rust-colored rock and tailings water, circling a pulsing green beacon under a drifting sun.',
+  description: "Our investigation of the signal from the planet's surface brought us to what seems to be an alien beacon. Based on the rock formation around the beacon, it was probably left here millions of years ago.\n\nhttps://www.shadertoy.com/view/ld2SzK",
   year: 2014,
 };
 

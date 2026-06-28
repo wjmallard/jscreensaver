@@ -24,7 +24,7 @@ export const title = 'penrose';
 
 export const info = {
   author: 'Timo Korvola',
-  description: "Quasiperiodic tilings; Penrose's nonrepeating rhombus pattern.",
+  description: 'Quasiperiodic tilings.\n\nIn April 1997, Sir Roger Penrose, a British math professor who has worked with Stephen Hawking on such topics as relativity, black holes, and whether time has a beginning, filed a copyright-infringement lawsuit against the Kimberly-Clark Corporation, which Penrose said copied a pattern he created (a pattern demonstrating that "a nonrepeating pattern could exist in nature") for its Kleenex quilted toilet paper. Penrose said he doesn\'t like litigation but, "When it comes to the population of Great Britain being invited by a multinational to wipe their bottoms on what appears to be the work of a Knight of the Realm, then a last stand must be taken."\n\nAs reported by News of the Weird #491, 4-Jul-1997.\n\nhttps://en.wikipedia.org/wiki/Penrose_tiling\nhttps://en.wikipedia.org/wiki/Tessellation',
   year: 1996,
 };
 

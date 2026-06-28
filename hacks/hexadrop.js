@@ -26,7 +26,7 @@ export const title = 'hexadrop';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'A grid of hexagons or other shapes, with tiles dropping out.',
+  description: 'A grid of hexagons or other shapes, with tiles dropping out.\n\nhttps://en.wikipedia.org/wiki/Tiling_by_regular_polygons',
   year: 2013,
 };
 

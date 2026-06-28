@@ -22,7 +22,7 @@ export const title = 'selfreflect';
 
 export const info = {
   author: 'mrange',
-  description: "A Platonic solid with mirrored inner facets, ray-marched through a glass sphere so it reflects endlessly into itself.",
+  description: 'Platonic solids with inner mirrors.\n\nhttps://www.shadertoy.com/view/XfyXRV',
   year: 2024,
 };
 

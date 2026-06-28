@@ -35,7 +35,7 @@ export const title = 'moire2';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'Generates fields of concentric circles or ovals, and combines the planes with various operations. The planes are moving independently of one another, causing the interference lines to spray.',
+  description: 'Generates fields of concentric circles or ovals, and combines the planes with various operations. The planes are moving independently of one another, causing the interference lines to spray.\n\nhttps://en.wikipedia.org/wiki/Moire_pattern',
   year: 1998,
 };
 

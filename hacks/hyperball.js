@@ -27,7 +27,7 @@ export const title = 'hyperball';
 
 export const info = {
   author: 'Joe Keane',
-  description: 'A wireframe projection of a hyperball, rotating around any or all of its four axes.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.10. It has been replaced by the more general "Polytopes" screen saver, which can display this object as well as others. The Polytopes "120-cell" object corresponds to this one.\n\nHyperball is to hypercube as dodecahedron is to cube: this displays a 2D projection of the sequence of 3D objects which are the projections of the 4D analog to the dodecahedron. Technically, it is a "120 cell polytope".\n\nhttps://en.wikipedia.org/wiki/Hypercube\nhttps://en.wikipedia.org/wiki/Regular_polytope',
   year: 2000,
 };
 

@@ -20,7 +20,7 @@ export const title = 'starnest';
 
 export const info = {
   author: 'Pablo Roman Andrioli (Kali)',
-  description: 'A volumetric ray-march through a folded Kaliset fractal: an endless drift through stars and nebulae.',
+  description: 'A star field via 3D kaliset fractal and volumetric rendering.\n\nhttps://www.shadertoy.com/view/XlfGRj',
   year: 2013,
 };
 

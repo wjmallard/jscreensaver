@@ -26,7 +26,7 @@ export const title = 'spiral';
 
 export const info = {
   author: 'Peter Schmitzberger',
-  description: 'Moving circular moir\u00E9 patterns.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nMoving circular moir\u00e9 patterns.',
   year: 1997,
 };
 

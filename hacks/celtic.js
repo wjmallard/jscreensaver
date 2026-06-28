@@ -33,7 +33,7 @@ export const title = 'celtic';
 
 export const info = {
   author: 'Max Froumentin',
-  description: 'Repeatedly draws random Celtic cross-stitch patterns.',
+  description: 'Repeatedly draws random Celtic cross-stitch patterns.\n\nhttps://en.wikipedia.org/wiki/Celtic_knot\nhttps://en.wikipedia.org/wiki/Knots_and_graphs',
   year: 2006,
 };
 

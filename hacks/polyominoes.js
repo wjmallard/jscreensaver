@@ -22,7 +22,7 @@ export const title = 'polyominoes';
 
 export const info = {
   author: 'Stephen Montgomery-Smith',
-  description: 'Repeatedly attempts to completely fill a rectangle with irregularly-shaped puzzle pieces.',
+  description: 'Repeatedly attempts to completely fill a rectangle with irregularly-shaped puzzle pieces.\n\nhttps://en.wikipedia.org/wiki/Polyomino',
   year: 2000,
 };
 

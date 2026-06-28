@@ -20,7 +20,7 @@ export const title = 'hexplasma';
 
 export const info = {
   author: 'Nemerix',
-  description: 'A flowing plasma warped through a hexagonal distance field and folded by a sin/rotate feedback loop, glowing teal to white.',
+  description: 'A hexagon in a plasma field.\n\nhttps://www.shadertoy.com/view/WfS3Dd',
   year: 2025,
 };
 

@@ -16,7 +16,7 @@ export const title = 'worm';
 
 export const info = {
   author: 'Brad Taylor, Dave Lemke, Boris Putanec, and Henrik Theiling',
-  description: 'Draws multicolored worms that crawl around the screen.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws multicolored worms that crawl around the screen.',
   year: 1991,
 };
 

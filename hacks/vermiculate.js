@@ -33,7 +33,7 @@ export const title = 'vermiculate';
 
 export const info = {
   author: 'Tyler Pierce',
-  description: 'Draws squiggly worm-like paths.',
+  description: 'Squiggly worm-like paths.',
   year: 2001,
 };
 

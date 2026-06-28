@@ -20,7 +20,7 @@ export const title = 'hopalong';
 
 export const info = {
   author: 'Patrick Naughton',
-  description: 'Lacy fractal patterns based on iteration in the imaginary plane, from a 1986 Scientific American article.',
+  description: 'Lacy fractal patterns based on iteration in the imaginary plane, from a 1986 Scientific American article.\n\nSee also the "Discrete" screen saver.',
   year: 1992,
 };
 

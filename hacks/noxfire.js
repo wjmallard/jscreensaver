@@ -20,7 +20,7 @@ export const title = 'noxfire';
 
 export const info = {
   author: 'Matt Vianueva',
-  description: 'A per-pixel ray-march down a pulsing, twisting tunnel of noise that reads as living flame rushing past.',
+  description: 'I fell in to a burning ring of fire; I went down, down, down and the flames went higher.\n\nhttps://www.shadertoy.com/view/wfG3Dz',
   year: 2025,
 };
 

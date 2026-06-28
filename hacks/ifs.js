@@ -26,7 +26,7 @@ export const title = 'ifs';
 
 export const info = {
   author: 'Chris Le Sueur and Robby Griffin',
-  description: 'Clouds of iterated function systems spin and collide.',
+  description: 'Clouds of iterated function systems spin and collide.\n\nNote that the "Detail" parameter is exponential. Number of points drawn is functions^detail.\n\nhttps://en.wikipedia.org/wiki/Iterated_function_system',
   year: 1997,
 };
 

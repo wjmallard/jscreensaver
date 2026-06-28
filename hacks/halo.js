@@ -33,7 +33,7 @@ export const title = 'halo';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'Circular interference patterns.',
+  description: 'Circular interference patterns.\n\nhttps://en.wikipedia.org/wiki/Moire_pattern',
   year: 1993,
 };
 

@@ -16,7 +16,7 @@ export const title = 'protophore';
 
 export const info = {
   author: 'otaviogood',
-  description: 'A recursive fractal sphere bristling with teeth that pulse and unfold, lit like a chrome sports car under a giant softbox.',
+  description: 'A reflective metal fractal.\n\nhttps://www.shadertoy.com/view/XljGDz',
   year: 2015,
 };
 

@@ -23,7 +23,7 @@ export const title = 'ccurve';
 
 export const info = {
   author: 'Rick Campbell',
-  description: 'Generates self-similar linear fractals, including the classic "C Curve".',
+  description: 'Generates self-similar linear fractals, including the classic "C Curve".\n\nhttps://en.wikipedia.org/wiki/Levy_C_curve',
   year: 1999,
 };
 

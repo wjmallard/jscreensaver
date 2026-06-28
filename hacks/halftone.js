@@ -23,7 +23,7 @@ export const title = 'halftone';
 
 export const info = {
   author: 'Peter Jaric',
-  description: 'A halftone dot pattern in motion. Draws the gravity force in each point on the screen seen through a halftone dot pattern.',
+  description: 'A halftone dot pattern in motion.\n\nDraws the gravity force in each point on the screen seen through a halftone dot pattern. The gravity force is calculated from a set of moving mass points. View it from a distance for best effect.\n\nhttps://en.wikipedia.org/wiki/Halftone',
   year: 2002,
 };
 

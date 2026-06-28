@@ -21,7 +21,7 @@ export const title = 'topologica';
 
 export const info = {
   author: 'Otavio Good',
-  description: 'A volumetric ray-march through a 3D noise field ramped into 1/x pulses: a drifting tangle of glowing blue-violet filaments.',
+  description: 'Pulsing lines of light.\n\nhttps://www.shadertoy.com/view/4djXzz',
   year: 2014,
 };
 

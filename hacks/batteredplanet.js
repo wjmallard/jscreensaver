@@ -21,7 +21,7 @@ export const title = 'batteredplanet';
 
 export const info = {
   author: 'mrange',
-  description: 'A single-pass ray-march over noised alien terrain beneath twin suns and a banded gas giant on the horizon.',
+  description: 'An alien planet full of craters, with other celestial objects in the sky.\n\nhttps://www.shadertoy.com/view/wsjBD3',
   year: 2020,
 };
 

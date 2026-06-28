@@ -22,7 +22,7 @@ export const title = 'driftclouds';
 
 export const info = {
   author: 'drift',
-  description: 'Layered fractal-noise clouds drifting across a soft blue sky gradient.',
+  description: 'Clouds. Little fluffy clouds.\n\nhttps://www.shadertoy.com/view/4tdSWr',
   year: 2016,
 };
 

@@ -20,7 +20,7 @@ export const title = 'sierpinski';
 
 export const info = {
   author: 'Desmond Daignault',
-  description: 'The 2D Sierpinski triangle fractal.',
+  description: 'The 2D Sierpinski triangle fractal.\n\nSee also the "Sierpinski3D" screen saver.\n\nhttps://en.wikipedia.org/wiki/Sierpinski_triangle',
   year: 1997,
 };
 

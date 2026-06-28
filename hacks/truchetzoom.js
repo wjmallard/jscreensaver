@@ -21,7 +21,7 @@ export const title = 'truchetzoom';
 
 export const info = {
   author: 'mrange',
-  description: 'An infinite golden-ratio truchet weave zooming forever down a boxed spiral while a conformal warp swirls the whole tiling into itself.',
+  description: 'A looping, distorting truchet chain with scanlines.\n\nhttps://www.shadertoy.com/view/4cBcDy',
   year: 2024,
 };
 

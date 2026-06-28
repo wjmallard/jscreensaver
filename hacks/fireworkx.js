@@ -33,7 +33,7 @@ export const title = 'fireworkx';
 
 export const info = {
   author: 'Rony B Chandran',
-  description: 'Exploding fireworks.',
+  description: 'Exploding fireworks.\n\nSee also the "Eruption", "XFlame" and "Pyro" screen savers.',
   year: 2004,
 };
 

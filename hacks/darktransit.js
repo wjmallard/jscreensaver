@@ -21,7 +21,7 @@ export const title = 'darktransit';
 
 export const info = {
   author: 'Matt Vianueva (diatribes)',
-  description: 'A low-tech raymarched tunnel: a glowing orb drifts down a sinuous corridor framed by black cinema bars.',
+  description: 'Flying through a generative cyber manifold.\n\nhttps://www.shadertoy.com/view/WcdczB',
   year: 2025,
 };
 

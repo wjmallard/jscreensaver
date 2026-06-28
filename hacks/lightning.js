@@ -24,7 +24,7 @@ export const title = 'lightning';
 
 export const info = {
   author: 'Keith Romberg',
-  description: 'Crackling fractal lightning bolts.',
+  description: 'This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nCrackling fractal lightning bolts.',
   year: 1996,
 };
 

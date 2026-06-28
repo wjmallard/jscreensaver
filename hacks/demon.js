@@ -7,7 +7,7 @@ export const title = 'demon';
 
 export const info = {
   author: 'David Bagley',
-  description: 'A cellular automaton that starts with a random field, and organizes it into stripes and spirals.',
+  description: 'A cellular automaton that starts with a random field, and organizes it into stripes and spirals.\n\nhttps://en.wikipedia.org/wiki/Maxwell%27s_demon',
   year: 1999,
 };
 

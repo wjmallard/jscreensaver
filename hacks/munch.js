@@ -26,7 +26,7 @@ export const title = 'munch';
 
 export const info = {
   author: 'Tim Showalter, Jamie Zawinski and Steven Hazel',
-  description: 'DATAI 2 / ADDB 1,2 / ROTC 2,-22 / XOR 1,2 / JRST .-4 -- the classic PDP-1 munching squares of HAKMEM (1972), and a creatively broken "mismunch" variant.',
+  description: 'DATAI 2\nADDB 1,2\nROTC 2,-22\nXOR 1,2\nJRST .-4\n\nAs reported by HAKMEM (MIT AI Memo 239, 1972), Jackson Wright wrote the above PDP-1 code in 1962. That code still lives on here, 60+ years later.\n\nIn "mismunch" mode, it displays a creatively broken misimplementation of the classic munching squares algorithm instead.\n\nhttps://en.wikipedia.org/wiki/HAKMEM\nhttps://en.wikipedia.org/wiki/Munching_square',
   year: 1997,
 };
 

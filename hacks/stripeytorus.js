@@ -22,7 +22,7 @@ export const title = 'stripeytorus';
 
 export const info = {
   author: 'mrange',
-  description: 'An analytic ray-traced torus wrapped in flowing black-and-white stripes, lit and self-shadowing as the bands twist around it.',
+  description: 'The stylish interior of a torus.\n\nhttps://www.shadertoy.com/view/fd33zn',
   year: 2021,
 };
 

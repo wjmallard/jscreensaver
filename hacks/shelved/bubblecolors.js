@@ -22,7 +22,7 @@ export const title = 'bubblecolors';
 export const info = {
   heavy: true,
   author: 'Matt Vianueva',
-  description: 'A rising column of soft, color-banded blobs, ray-marched while cosine ripples wash tints across the churning field.',
+  description: 'Traveling through a field of bubbles with cartoony colors.\n\nhttps://www.shadertoy.com/view/wcGXWR',
   year: 2025,
 };
 

@@ -19,7 +19,7 @@ export const title = 'skyline';
 
 export const info = {
   author: 'otaviogood',
-  description: 'A procedural city flown at night: ray-marched towers, lit windows, and reflective cars gliding under a hazy skyline.',
+  description: 'A procedurally-generated cityscape.\n\nhttps://www.shadertoy.com/view/XtsSWs',
   year: 2015,
 };
 

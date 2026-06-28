@@ -25,7 +25,7 @@ export const title = 'piecewise';
 
 export const info = {
   author: 'Geoffrey Irving',
-  description: 'Lots of moving circles intersecting in interesting ways.',
+  description: 'Moving circles switch from visibility to invisibility at intersection points.',
   year: 2003,
 };
 

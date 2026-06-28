@@ -28,7 +28,7 @@ export const title = 'epicycle';
 
 export const info = {
   author: 'James Youngman',
-  description: 'A pre-heliocentric model of planetary motion.',
+  description: "A pre-heliocentric model of planetary motion.\n\nThis draws the path traced out by a point on the edge of a circle. That circle rotates around a point on the rim of another circle, and so on, several times.\n\nThe geometry of epicycles was perfected by Hipparchus of Rhodes at some time around 125 B.C., 185 years after the birth of Aristarchus of Samos, the inventor of the heliocentric universe model. Hipparchus applied epicycles to the Sun and the Moon. Ptolemy of Alexandria went on to apply them to what was then the known universe, at around 150 A.D. Copernicus went on to apply them to the heliocentric model at the beginning of the sixteenth century. Johannes Kepler discovered that the planets actually move in elliptical orbits in about 1602. The inverse-square law of gravity was suggested by Boulliau in 1645. Isaac Newton's Principia Mathematica was published in 1687, and proved that Kepler's laws derived from Newtonian gravitation.\n\nhttps://en.wikipedia.org/wiki/Deferent_and_epicycle",
   year: 1998,
 };
 

@@ -22,7 +22,7 @@ export const title = 'neontriangulator';
 
 export const info = {
   author: 'mrange',
-  description: 'A synthwave ray-march down an endless neon corridor of triangulated, reflecting prisms toward a setting sun.',
+  description: 'Neon triangles zoom.\n\nhttps://www.shadertoy.com/view/tXGGRD',
   year: 2025,
 };
 

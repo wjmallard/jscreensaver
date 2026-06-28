@@ -28,7 +28,7 @@ export const title = 'cubicgrid';
 
 export const info = {
   author: 'Vasek Potocek',
-  description: 'A finite 3D lattice of dots, colored by position in the RGB cube, seen from within as it slowly tumbles \u2014 rows align and view-throughs open and evolve.',
+  description: 'A rotating lattice of colored points.',
   year: 2007,
 };
 

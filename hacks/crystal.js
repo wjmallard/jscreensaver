@@ -25,7 +25,7 @@ export const title = 'crystal';
 
 export const info = {
   author: 'Jouk Jansen',
-  description: 'Moving polygons, similar to a kaleidoscope.',
+  description: 'Moving polygons, similar to a kaleidoscope.\n\nSee also the "Kaleidescope" and "GLeidescope" screen savers.\n\nhttps://en.wikipedia.org/wiki/Kaleidoscope',
   year: 1997,
 };
 

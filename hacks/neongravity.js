@@ -20,7 +20,7 @@ export const title = 'neongravity';
 
 export const info = {
   author: 'mrange',
-  description: 'An abstract gravitational well: neon filaments swirl and fall into a dark core, smoothed by a second antialiasing pass.',
+  description: 'The stylish interior of a torus.\n\nhttps://www.shadertoy.com/view/43G3Wc',
   year: 2024,
 };
 
