@@ -566,6 +566,17 @@
       "description": "Spinning galaxies collide."
     },
     {
+      "title": "gears",
+      "module": "./hacks/gears.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2007,
+      "description": "Interlocking gears."
+    },
+    {
       "title": "gimbalharmonics",
       "module": "./hacks/gimbalharmonics.js",
       "dim": "3d",

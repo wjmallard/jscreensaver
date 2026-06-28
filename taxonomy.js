@@ -177,6 +177,7 @@ export const HACK_TAXONOMY = {
   driftclouds: { dimension: '3d', categories: ['fluids'] },
   elementalring: { dimension: '3d', categories: ['geometry'] },
   fluxcore: { dimension: '3d', categories: ['worlds'] },
+  gears: { dimension: '3d', categories: ['geometry'] },
   gimbalharmonics: { dimension: '3d', categories: ['geometry'] },
   goldenapollian: { dimension: '3d', categories: ['fractals', 'geometry'] },
   hexplasma: { dimension: '3d', categories: ['plasma'] },
