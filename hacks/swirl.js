@@ -7,20 +7,34 @@
 // Swirl scatters a handful of "knots" (spiral centres) across the screen, each
 // with a random mass (+ or -) and a random spiral TYPE — orbit, wheel, ray, or
 // hook. Every pixel's value is the signed sum of each knot's contribution at
-// that point (an atan2/distance term per knot), wrapped modulo the colour count.
-// That integer field is mapped through a closed-loop colourmap, and the WHOLE
-// look is animated NOT by recomputing the field but by ROTATING the colourmap a
-// few steps per frame (the classic palette-cycling "swirly colour-cycling"
-// effect). After a while the swirl is regenerated: fresh knots + a fresh palette
-// paint a brand-new pattern.
+// that point (an atan2/distance term per knot), folded modulo the colour count.
+// That integer field is mapped through a make_smooth_colormap palette.
 //
-// Rendering: the per-pixel field is a dense, expensive thing (a sqrt + atan2 per
-// knot per pixel), so this uses the BLIT path AND the retina-downscale idiom —
-// the field is computed at LOGICAL (CSS-pixel) resolution into a small offscreen
-// canvas and ctx.drawImage upscales it to the device-px canvas (see [[metaballs]]
-// / [[marbling]]). The heavy recompute happens only when a new swirl is born,
-// and even then it is spread across a few frames (a centre-out reveal); the
-// per-frame cost is just the colourmap rotation + blit. See swirl.md.
+// The field is REVEALED, not cycled. swirl.c paints it with a centre-out SQUARE
+// SPIRAL at decreasing block sizes (draw_swirl): `resolution` starts coarse and
+// decrements down to `max_resolution`; for each resolution it paints BATCH_DRAW
+// r x r blocks per frame (r = 1 << (resolution-1)) in a growing square-spiral
+// from the centre (next_point), so the picture FADES IN coarse -> fine (like the
+// imsmap port). When the finest resolution finishes it HOLDS the static image
+// for RESTART frames, then re-seeds (fresh knots + a fresh make_smooth_colormap)
+// and reveals a brand-new pattern.
+//
+// NO COLOUR CYCLING. swirl.c only rotates its colourmap `if (mi->writable_p)` —
+// i.e. on a PseudoColor (writable-colourmap) X visual. A browser canvas is
+// TrueColor (writable_p false), so the C does NOT cycle there: the revealed
+// image is fully STATIC until the next regeneration (confirmed against the live
+// binary: static + coarse->fine). An earlier port animated a continuous
+// colourmap rotation the C never performs on TrueColor; it has been removed.
+//
+// Rendering: the per-pixel field is dense (a sqrt + atan2 per knot per pixel), so
+// this uses the BLIT path AND the retina-downscale idiom — the field is drawn at
+// LOGICAL (CSS-pixel) resolution into a small offscreen canvas and ctx.drawImage
+// upscales it to the device-px canvas (see [[metaballs]] / [[marbling]]). do_point
+// is evaluated lazily, only at the spiral's block corners (exactly as the C's
+// draw_point calls do_point), so the heavy field cost is spread naturally across
+// the reveal frames — no upfront hitch. See swirl.md.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'swirl';
 
@@ -33,22 +47,20 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/swirl.xml so the config box maps 1:1 to
-  // the original. delay is microseconds (xml units). cyclespeed/duration are
-  // added for parity with the other ports (the C derives the cycle shift from
-  // ncolors and hardcodes RESTART = 2500 frames between swirls).
+  // Defaults/ranges mirror hacks/swirl.xml so the config box maps 1:1 to the
+  // original: delay (µs/frame, "Frame rate", inverted), count (knot count),
+  // ncolors (palette size). swirl.xml exposes nothing else animatable (showfps
+  // is a framework control). There is deliberately NO cycle-speed/duration
+  // control: the C does not cycle on TrueColor, and the hold is the hardcoded
+  // RESTART, not a user resource.
   const config = {
-    delay: 25000,       // µs between frames (--delay; xml 10000, eased a touch)
+    delay: 10000,       // µs between frames (--delay; xml default 10000)
     count: 5,           // base knot count (--count); n_knots = rand(count/2)+count+1
-    ncolors: 200,       // size of the cycling closed-loop colourmap (--ncolors)
-    cyclespeed: 3,      // palette rotation per frame (the C's `shift`)
-    duration: 1200,     // frames of cycling before a new swirl (the C's RESTART)
+    ncolors: 200,       // size of the make_smooth_colormap palette (--ncolors)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'cyclespeed', label: 'Cycle speed', type: 'range', min: 0, max: 12, step: 1, default: 3, lowLabel: 'still', highLabel: 'fast', live: true },
-    { key: 'duration', label: 'Duration', type: 'range', min: 200, max: 5000, step: 50, default: 1200, lowLabel: 'short', highLabel: 'long', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Count', type: 'range', min: 0, max: 20, step: 1, default: 5, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
   ];
@@ -65,16 +77,23 @@ export function start(canvas) {
   const PICASSO = 4;
   const TYPES_ALL = [ORBIT, WHEEL, RAY, HOOK];
 
-  const MASS = 4;                 // maximum |mass| of a knot (C's MASS)
-  const TWO_PLANE_PCNT = 30;      // probability (%) of two-plane interleave mode
+  // Spiral directions, in the C's DIR_T enum order (drives next_point's walk).
+  const DRAW_RIGHT = 0;
+  const DRAW_DOWN = 1;
+  const DRAW_LEFT = 2;
+  const DRAW_UP = 3;
 
-  // Cap the internal field so the per-pixel recompute (and the per-frame remap)
-  // stay bounded on huge / retina displays; the grid upscales with bilinear
-  // smoothing, which suits swirl's soft flowing look. See swirl.md.
+  const MASS = 4;                 // maximum |mass| of a knot (C's MASS)
+  const MIN_RES = 7;              // resolution starts at MIN_RES+1 (C's MIN_RES)
+  const MAX_RES = 1;             // finest resolution (C's MAX_RES; 2 in two-plane mode)
+  const TWO_PLANE_PCNT = 30;      // probability (%) of two-plane interleave mode
+  const BATCH_DRAW = 100;         // spiral points painted per frame (C's BATCH_DRAW)
+  const RESTART = 2500;           // frames the finished image holds before regen (C's RESTART)
+
+  // Cap the internal field so the per-pixel do_point work (spread over the reveal)
+  // and the per-frame blit stay bounded on huge / retina displays; the grid
+  // upscales with bilinear smoothing, which suits swirl's soft flowing look.
   const MAX_CELLS = 360000;
-  // Spread a new swirl's heavy compute over this many frames (a centre-out
-  // reveal), so generating one never causes a single multi-hundred-ms hitch.
-  const BUILD_FRAMES = 24;
 
   let S = 1;                      // devicePixelRatio
   let W, H;                       // canvas size, device px
@@ -82,8 +101,7 @@ export function start(canvas) {
   let imageData, pixels;          // Uint32 view over ImageData (grid-sized)
   let scratch, sctx;              // offscreen grid canvas, upscaled to main
 
-  let idx;                        // Uint8Array(gw*gh): per-pixel colour INDEX
-  let palette;                    // Uint32Array(ncolors): the closed-loop map
+  let palette;                    // Uint32Array(ncolors): the colourmap
   let ncolors;                    // captured colour count (2..255)
   let qcolours;                   // ncolors / 4 (the C's qcolours)
   let radsConst;                  // ncolors / (2*PI) (the C's rads)
@@ -95,12 +113,16 @@ export function start(canvas) {
   let kt, kT;                     // knot type in plane 1 / plane 2 (Uint8)
   let twoPlane;                   // interleave two type-sets this swirl?
 
-  // Reveal/lifecycle state.
-  let building;                   // computing the field (centre-out)?
-  let loRow, hiRow;              // computed rows are [loRow, hiRow) (half-open)
-  let rowsPerFrame;              // rows to compute per build frame
-  let offset;                    // current colourmap rotation
-  let dwell;                     // frames spent cycling since the field finished
+  // Reveal/lifecycle state (the C's swirl_data spiral + restart fields).
+  let resolution;                 // current block resolution (coarse -> fine)
+  let maxResolution;             // finest resolution this swirl (1, or 2 two-plane)
+  let sr;                         // pixel step = 1 << (resolution - 1)
+  let sx, sy;                     // current spiral point (grid coords)
+  let direction;                  // current spiral direction (DRAW_*)
+  let dirTodo, dirDone;          // square-spiral arm length bookkeeping
+  let offScreen;                  // previous arm fell off-grid (termination flag)
+  let drawing;                    // mid-reveal at the current resolution?
+  let startAgain;                 // RESTART hold counter (-1 = not holding yet)
 
   function clamp(v, lo, hi) {
     return v < lo ? lo : v > hi ? hi : v;
@@ -111,76 +133,23 @@ export function start(canvas) {
     return Math.floor((n + 1) * Math.random());
   }
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255. Used to pick vivid base colours.
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = x; }
-    else if (seg === 1) { r = x; g = c; }
-    else if (seg === 2) { g = c; b = x; }
-    else if (seg === 3) { g = x; b = c; }
-    else if (seg === 4) { r = x; b = c; }
-    else { r = c; b = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
-  }
-
-  function rgbDist(a, b) {
-    const dr = a[0] - b[0];
-    const dg = a[1] - b[1];
-    const db = a[2] - b[2];
-    return Math.sqrt(dr * dr + dg * dg + db * db);
-  }
-
-  // Write `count` colours from a -> b (excluding b, so the next leg starts at b
-  // and the loop is seamless) into palette starting at p; returns the next p.
-  function fillLeg(p, a, b, count) {
-    for (let i = 0; i < count; i++) {
-      const t = i / count;
-      const r = Math.round(a[0] + (b[0] - a[0]) * t);
-      const g = Math.round(a[1] + (b[1] - a[1]) * t);
-      const bl = Math.round(a[2] + (b[2] - a[2]) * t);
-      palette[p++] = ((0xff << 24) | (bl << 16) | (g << 8) | r) >>> 0;
-    }
-    return p;
-  }
-
-  // Build a CLOSED-LOOP colourmap from 3 distinct vivid colours (mirrors the C's
-  // basic_map: three random base colours interpolated round a triangle so the
-  // map wraps, which is what makes the rotation seamless). We draw the three
-  // base colours from a saturated HSL wheel instead of the C's muted fixed
-  // table (the porter brief prefers vivid palettes); fresh hues each swirl mean
-  // successive swirls differ in colour. Leg lengths are proportional to RGB
-  // distance, as in the C.
+  // Build a fresh colourmap via make_smooth_colormap (the exact utils/colors.c
+  // routine, ported in colormap.js): 2-5 random HSV anchors with min-separation
+  // + min-avg-saturation/value retries. This is what the STANDALONE C uses --
+  // the framework's color_scheme_smooth (#define SMOOTH_COLORS) builds it at
+  // startup, and draw_swirl re-runs make_smooth_colormap on every RESTART -- so
+  // successive swirls get a fresh, frequently muted/pastel map, NOT a fixed vivid
+  // rainbow. (basic_map / the basic_colours table the old port mimicked live
+  // under #ifndef STANDALONE and are dead in this build.) Pack each [r,g,b]
+  // (0..255) into the little-endian 0xAABBGGRR Uint32 the blit path expects.
   function buildPalette() {
     const n = ncolors;
     palette = new Uint32Array(n);
-    // Three hues spread ~120 degrees apart (a colour triangle, as in the C),
-    // with a little jitter; the wide spread keeps them distinct even when a leg
-    // gets very few entries at tiny ncolors.
-    const h0 = Math.random();
-    const h1 = (h0 + 1 / 3 + (Math.random() - 0.5) * 0.15 + 1) % 1;
-    const h2 = (h0 + 2 / 3 + (Math.random() - 0.5) * 0.15 + 1) % 1;
-    const c0 = hslToRgb(h0, 1, 0.5);
-    const c1 = hslToRgb(h1, 1, 0.5);
-    const c2 = hslToRgb(h2, 1, 0.5);
-    const l1 = rgbDist(c0, c1);
-    const l2 = rgbDist(c1, c2);
-    const l3 = rgbDist(c2, c0);
-    const l = l1 + l2 + l3 || 1;
-    const n0 = Math.floor((n * l1) / l);
-    const n1 = Math.floor((n * l2) / l);
-    const n2 = n - n0 - n1;        // remainder -> always sums to exactly n
-    let p = 0;
-    p = fillLeg(p, c0, c1, n0);
-    p = fillLeg(p, c1, c2, n1);
-    p = fillLeg(p, c2, c0, n2);
+    const map = makeSmoothColormapRGB(n);
+    for (let i = 0; i < n; i++) {
+      const [r, g, b] = map[i];
+      palette[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
+    }
   }
 
   // Seed a fresh set of knots (positions, masses, spiral types) and decide
@@ -225,132 +194,213 @@ export function start(canvas) {
   // Compute the colour INDEX for one grid pixel (the C's do_point): sum each
   // knot's spiral contribution, then fold the signed total into [0, ncolors).
   // `plane` selects which type-set to use in two-plane mode (a per-pixel
-  // checkerboard, vs. the C's block interleave — see swirl.md).
-  function computeRow(gy) {
+  // checkerboard, vs. the C's block interleave — see swirl.md). The field math is
+  // a verbatim transcription of do_point and is what draw_point samples lazily at
+  // each spiral block corner.
+  function doPoint(gx, gy) {
     const n = ncolors;
     const qn = qcolours;
     const rads = radsConst;
-    const tp = twoPlane;
-    const rowBase = gy * gw;
-    for (let gx = 0; gx < gw; gx++) {
-      const plane = tp ? ((gx + gy) & 1) : 0;
-      let value = 0;
-      for (let k = 0; k < nKnots; k++) {
-        const dx = gx - kx[k];
-        const dy = gy - ky[k];
-        const m = km[k];
-        const type = plane ? kT[k] : kt[k];
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        let add = 0;
-        // Skip the singular cell (dist <= 0.1): keeps every term finite and
-        // dodges atan2(0,0). Matches the C's `if (dist > 0.1)` guard.
-        if (dist > 0.1) {
-          switch (type) {
-            case ORBIT:
-              add = n / (1.0 + 0.01 * Math.abs(m) * dist);
-              break;
-            case WHEEL: {
-              const theta = (Math.atan2(dy, dx) + Math.PI) / Math.PI;
-              const s = Math.sin(0.1 * m * dist) * qn * Math.exp(-0.01 * dist);
-              add = (theta < 1.0)
-                ? (n * theta + s)
-                : (n * (theta - 1.0) + s);
-              break;
-            }
-            case PICASSO:
-              add = n * Math.abs(Math.cos(0.002 * m * dist));
-              break;
-            case RAY:
-              add = n * Math.abs(Math.sin(2.0 * Math.atan2(dy, dx)));
-              break;
-            case HOOK:
-              add = rads * Math.atan2(dy, dx) + 0.05 * (Math.abs(m) - 1) * dist;
-              break;
+    const plane = twoPlane ? ((gx + gy) & 1) : 0;
+    let value = 0;
+    for (let k = 0; k < nKnots; k++) {
+      const dx = gx - kx[k];
+      const dy = gy - ky[k];
+      const m = km[k];
+      const type = plane ? kT[k] : kt[k];
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      let add = 0;
+      // Skip the singular cell (dist <= 0.1): keeps every term finite and dodges
+      // atan2(0,0). Matches the C's `if (dist > 0.1)` guard.
+      if (dist > 0.1) {
+        switch (type) {
+          case ORBIT:
+            add = n / (1.0 + 0.01 * Math.abs(m) * dist);
+            break;
+          case WHEEL: {
+            const theta = (Math.atan2(dy, dx) + Math.PI) / Math.PI;
+            const s = Math.sin(0.1 * m * dist) * qn * Math.exp(-0.01 * dist);
+            add = (theta < 1.0)
+              ? (n * theta + s)
+              : (n * (theta - 1.0) + s);
+            break;
           }
-          add = Math.trunc(add);     // the C casts (int): truncate toward zero
+          case PICASSO:
+            add = n * Math.abs(Math.cos(0.002 * m * dist));
+            break;
+          case RAY:
+            add = n * Math.abs(Math.sin(2.0 * Math.atan2(dy, dx)));
+            break;
+          case HOOK:
+            add = rads * Math.atan2(dy, dx) + 0.05 * (Math.abs(m) - 1) * dist;
+            break;
         }
-        value += m > 0 ? add : -add;
+        add = Math.trunc(add);     // the C casts (int): truncate toward zero
       }
+      value += m > 0 ? add : -add;
+    }
 
-      // Fold into range exactly as the C does (the asymmetric +2 / mod-(n-1)
-      // handling of negatives shapes the banding; with palette cycling the
-      // absolute offset is cosmetic but we keep it faithful). n >= 2 so the
-      // `% (n - 1)` divisor is never zero.
-      let v;
-      if (value >= 0) v = (value % n) + 2;
-      else v = n - (Math.abs(value) % (n - 1));
-      v = ((v % n) + n) % n;
-      idx[rowBase + gx] = v;
+    // Fold into range exactly as the C does (the asymmetric +2 / mod-(n-1)
+    // handling of negatives shapes the banding). n >= 2 so the `% (n - 1)`
+    // divisor is never zero.
+    let v;
+    if (value >= 0) v = (value % n) + 2;
+    else v = n - (Math.abs(value) % (n - 1));
+    return ((v % n) + n) % n;
+  }
+
+  // Paint an s x s block of palette[colorIdx] into the grid pixel buffer (the C's
+  // draw_block). Clipped to the grid defensively; draw_point's bounds guard
+  // already keeps full blocks on-grid.
+  function drawBlock(bx, by, s, colorIdx) {
+    const c = palette[colorIdx];
+    const xe = Math.min(gw, bx + s);
+    const ye = Math.min(gh, by + s);
+    for (let yy = by < 0 ? 0 : by; yy < ye; yy++) {
+      const rowBase = yy * gw;
+      for (let xx = bx < 0 ? 0 : bx; xx < xe; xx++) {
+        pixels[rowBase + xx] = c;
+      }
     }
   }
 
-  // Compute the next centre-out band of rows for the in-progress swirl. The
-  // revealed region is the contiguous band [loRow, hiRow); each call grows it
-  // by ~rowsPerFrame rows, alternating down/up from the centre.
-  function computeBand() {
-    let budget = rowsPerFrame;
-    while (budget > 0 && (loRow > 0 || hiRow < gh)) {
-      if (hiRow < gh) {
-        computeRow(hiRow);
-        hiRow++;
-        budget--;
-      }
-      if (budget > 0 && loRow > 0) {
-        loRow--;
-        computeRow(loRow);
-        budget--;
-      }
+  // Draw the current spiral point (the C's draw_point): an r x r block of the
+  // field's colour at that cell, sampled lazily via do_point — or, in two-plane
+  // mode, four r/2 sub-blocks each with their own do_point. Returns whether the
+  // block was on-grid (and therefore painted).
+  function drawPoint() {
+    const x = sx, y = sy, r = sr;
+    // bounds check (the C's draw_point guard): the whole block must fit on-grid
+    if (x < 0 || x > gw - r || y < 0 || y > gh - r) return false;
+    if (twoPlane) {
+      const r2 = r >> 1;
+      drawBlock(x, y, r2, doPoint(x, y));
+      drawBlock(x + r2, y, r2, doPoint(x + r2, y));
+      drawBlock(x + r2, y + r2, r2, doPoint(x + r2, y + r2));
+      drawBlock(x, y + r2, r2, doPoint(x, y + r2));
+    } else {
+      drawBlock(x, y, r, doPoint(x, y));
     }
-    if (loRow <= 0 && hiRow >= gh) building = false;
+    return true;
   }
 
-  // Map the computed band of the index field through the (rotated) palette into
-  // the pixel buffer, then blit + upscale. Rows outside [loRow, hiRow) stay
-  // black (pre-filled), giving the centre-out reveal.
+  // Advance the centre-out square spiral by one step (the C's next_point,
+  // verbatim): grow the current arm, or turn and lengthen it (arm length +1 every
+  // half-turn). When the spiral has fallen fully off-grid on consecutive arms,
+  // stop drawing this resolution.
+  function nextPoint() {
+    if (dirDone < dirTodo) {
+      switch (direction) {
+        case DRAW_RIGHT: sx += sr; break;
+        case DRAW_DOWN: sy += sr; break;
+        case DRAW_LEFT: sx -= sr; break;
+        case DRAW_UP: sy -= sr; break;
+      }
+      dirDone++;
+    } else {
+      dirDone = 0;
+      switch (direction) {
+        case DRAW_RIGHT:
+          direction = DRAW_DOWN;
+          if (sx > gw - sr) {
+            dirDone = dirTodo;
+            sy += dirTodo * sr;
+            if (offScreen) drawing = false;
+            offScreen = true;
+          } else offScreen = false;
+          break;
+        case DRAW_DOWN:
+          direction = DRAW_LEFT;
+          dirTodo++;
+          if (sy > gh - sr) {
+            dirDone = dirTodo;
+            sx -= dirTodo * sr;
+            if (offScreen) drawing = false;
+            offScreen = true;
+          } else offScreen = false;
+          break;
+        case DRAW_LEFT:
+          direction = DRAW_UP;
+          if (sx < 0) {
+            dirDone = dirTodo;
+            sy -= dirTodo * sr;
+            if (offScreen) drawing = false;
+            offScreen = true;
+          } else offScreen = false;
+          break;
+        case DRAW_UP:
+          direction = DRAW_RIGHT;
+          dirTodo++;
+          if (sy < 0) {
+            dirDone = dirTodo;
+            sx += dirTodo * sr;
+            if (offScreen) drawing = false;
+            offScreen = true;
+          } else offScreen = false;
+          break;
+      }
+    }
+  }
+
+  // Blit the grid buffer to the visible canvas (bilinear upscale).
   function render() {
-    const n = ncolors;
-    const off = offset;
-    const start = loRow * gw;
-    const end = hiRow * gw;
-    for (let p = start; p < end; p++) {
-      let i = idx[p] + off;        // off < n, idx < n -> sum < 2n
-      if (i >= n) i -= n;
-      pixels[p] = palette[i];
-    }
     sctx.putImageData(imageData, 0, 0);
     ctx.drawImage(scratch, 0, 0, gw, gh, 0, 0, W, H);
   }
 
-  // Begin a brand-new swirl: fresh knots, fresh palette, a clean canvas, and the
-  // centre-out reveal restarted. The colour offset keeps running so cycling is
-  // continuous across swirls.
+  // Begin a brand-new swirl (the C's init_swirl restart path): fresh knots, a
+  // fresh make_smooth_colormap, a clean black canvas, and the coarse->fine reveal
+  // restarted from the coarsest resolution. (two-plane mode caps the finest
+  // resolution at 2, exactly as the C's init_swirl sets max_resolution.)
   function newSwirl() {
     seedKnots();
     buildPalette();
+    maxResolution = twoPlane ? 2 : MAX_RES;
+    resolution = MIN_RES + 1;
+    sr = 1 << (resolution - 1);
+    drawing = false;
+    startAgain = -1;
+    // NB: offScreen is NOT reset here. The C only ever writes off_screen in
+    // next_point; init_swirl/initialise_swirl never touch it, so it carries
+    // across resolutions and swirls (zero-initialised once). See init().
     pixels.fill(BLACK);
-    const center = gh >> 1;
-    loRow = center;
-    hiRow = center;
-    building = true;
-    dwell = 0;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
   }
 
-  // One frame: build (if still revealing) or count down to the next swirl, then
-  // rotate the colourmap and paint.
+  // One frame (the C's draw_swirl): paint a batch of spiral points if mid-reveal;
+  // otherwise drop to a finer resolution and restart the spiral, or — once the
+  // finest resolution is done — hold the static image for RESTART frames and then
+  // regenerate. Returns whether anything was painted (so the loop can skip the
+  // blit during the static hold). NO colour rotation: the C only cycles on a
+  // writable (PseudoColor) colourmap, which a canvas is not.
   function step() {
-    if (building) {
-      computeBand();
-    } else {
-      dwell++;
-      if (dwell >= config.duration) {
-        newSwirl();
+    let painted = false;
+    if (drawing) {
+      let batch = BATCH_DRAW;
+      while (batch > 0 && drawing) {
+        if (drawPoint()) painted = true;
+        nextPoint();
+        batch--;
       }
+    } else if (resolution > maxResolution) {
+      // move to a higher (finer) resolution and restart the spiral at the centre
+      resolution--;
+      sr = 1 << (resolution - 1);
+      drawing = true;
+      sx = Math.trunc((gw - sr) / 2);   // (width - r) / 2, C int division
+      sy = Math.trunc((gh - sr) / 2);
+      direction = DRAW_RIGHT;
+      dirTodo = 1;
+      dirDone = 0;
+      // (the C's draw_swirl does NOT reset off_screen at a resolution change)
+    } else {
+      // finest resolution done: hold static for RESTART frames, then regenerate
+      if (startAgain === -1) startAgain = RESTART;
+      else if (startAgain === 0) { startAgain = -1; newSwirl(); }
+      else startAgain--;
     }
-    const cs = clamp(Math.round(config.cyclespeed), 0, 64);
-    offset = (offset + cs) % ncolors;
-    render();
+    return painted;
   }
 
   function init() {
@@ -370,13 +420,11 @@ export function start(canvas) {
     gw = lw;
     gh = lh;
 
-    // Clamp ncolors to >= 2: the field-folding step divides by (ncolors - 1),
-    // and a 1-colour map can't cycle. (xml allows low = 1.)
+    // Clamp ncolors to >= 2: the field-folding step divides by (ncolors - 1).
+    // (xml allows low = 1.)
     ncolors = clamp(Math.round(config.ncolors), 2, 255);
     qcolours = Math.floor(ncolors / 4);
     radsConst = ncolors / (2.0 * Math.PI);
-
-    idx = new Uint8Array(gw * gh);
 
     scratch = document.createElement('canvas');
     scratch.width = gw;
@@ -384,16 +432,14 @@ export function start(canvas) {
     sctx = scratch.getContext('2d');
     imageData = sctx.createImageData(gw, gh);
     pixels = new Uint32Array(imageData.data.buffer);
-    pixels.fill(BLACK);
-
-    rowsPerFrame = Math.max(1, Math.ceil(gh / BUILD_FRAMES));
-    offset = 0;
 
     ctx.imageSmoothingEnabled = true;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
 
-    newSwirl();
+    // The C zero-initialises off_screen once (static struct) and thereafter only
+    // next_point writes it; mirror that single initialisation here.
+    offScreen = false;
+
+    newSwirl();   // seeds the first swirl + clears the buffer/canvas to black
   }
 
   function resize() {
@@ -407,8 +453,9 @@ export function start(canvas) {
 
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the pace is identical at any refresh rate. The cap
-  // is low because a build frame can be heavy; a slow frame should fall behind,
-  // not stack a burst.
+  // is low because a reveal frame paints a batch; a slow frame should fall
+  // behind, not stack a burst. One blit per frame, only if something was painted
+  // (so the static hold does no work and stays byte-identical).
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -422,13 +469,15 @@ export function start(canvas) {
     const delayMs = config.delay / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
+    let painted = false;
     let steps = 0;
     while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
-      step();
+      if (step()) painted = true;
       lag -= delayMs;
       steps++;
     }
 
+    if (painted) render();
     rafId = requestAnimationFrame(frame);
   }
 

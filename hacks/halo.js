@@ -243,11 +243,8 @@ export function start(canvas) {
     const oddIter = (iterations & 1) !== 0;
 
     if (seussMode) {
-      // Erase the depth-1 pixmap to black, then draw this step's union of disks.
-      pixmapCtx.globalCompositeOperation = 'source-over';
-      pixmapCtx.fillStyle = '#000';
-      pixmapCtx.fillRect(0, 0, W, H);
-      pixmapCtx.fillStyle = '#fff';
+      // Erase the depth-1 pixmap, then scan-convert this step's disk union below.
+      frameBits.fill(0);
     } else {
       // ramp: GXcopy over-paint straight onto the visible canvas in the cycling
       // colour (one foreground for the whole step, like merge_gc).
@@ -278,11 +275,16 @@ export function start(canvas) {
       }
 
       // Draw this disk when drawing every breath (seuss) or on the way back in.
+      // seuss: pixel-exact scan-fill into the 1-bit plane (no AA, exact XOR);
+      // ramp: opaque GXcopy disk straight onto the visible canvas.
       if (radius > 0 && (seussMode || circles[0].increment < 0)) {
-        const target = seussMode ? pixmapCtx : ctx;
-        target.beginPath();
-        target.arc(c.x, c.y, radius, 0, Math.PI * 2);
-        target.fill();
+        if (seussMode) {
+          fillDiskBits(frameBits, c.x, c.y, radius);
+        } else {
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       c.radius += inc;
@@ -328,22 +330,10 @@ export function start(canvas) {
     }
 
     if (seussMode) {
-      // The C's XOR plane is depth-1: every pixel is exactly 0 or 1, so XOR
-      // cancels perfectly. Canvas arc().fill() is ANTI-ALIASED, so each disk's
-      // rim carries intermediate grays; XORing those via 'difference' never
-      // cancels cleanly and leaves a pencil-thin residual line as rings are
-      // removed. Threshold the pixmap to pure black/white first, making it a
-      // true 1-bit plane like the C, so 'difference' is an exact XOR.
-      const pd = pixmapCtx.getImageData(0, 0, W, H);
-      const p32 = new Uint32Array(pd.data.buffer);
-      for (let i = 0; i < p32.length; i++) {
-        p32[i] = (p32[i] & 0xff) >= 128 ? 0xFFFFFFFF : 0xFF000000;
-      }
-      pixmapCtx.putImageData(pd, 0, 0);
-
-      // XOR this step's disk union into the persistent buffer (GXxor / merge_gc).
-      bufferCtx.globalCompositeOperation = 'difference';
-      bufferCtx.drawImage(pixmapCanvas, 0, 0);
+      // XOR this step's disk union into the persistent plane (GXxor / merge_gc).
+      // Both planes are exactly 0 or 255, so this is a true 1-bit XOR
+      // (255^255=0, 255^0=255): overlaps cancel with no residual outline.
+      for (let i = 0; i < bufBits.length; i++) bufBits[i] ^= frameBits[i];
     } else {
       // ramp: advance the foreground colour each step (the C's merge_gc shift);
       // inhibit the sleep on the out-breath (nothing is drawn then).
@@ -360,11 +350,7 @@ export function start(canvas) {
       const blit = animateNow ? (done || (!doneOnce && oddIter)) : oddIter;
       if (blit) {
         colorize();
-        if (animateNow && done) {
-          bufferCtx.globalCompositeOperation = 'source-over';
-          bufferCtx.fillStyle = '#000';
-          bufferCtx.fillRect(0, 0, W, H);
-        }
+        if (animateNow && done) bufBits.fill(0);   // reset the plane for the next slide
       }
     }
 
@@ -379,11 +365,7 @@ export function start(canvas) {
         ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, H);
-        if (seussMode) {
-          bufferCtx.globalCompositeOperation = 'source-over';
-          bufferCtx.fillStyle = '#000';
-          bufferCtx.fillRect(0, 0, W, H);
-        }
+        if (seussMode) bufBits.fill(0);
       }
     }
 

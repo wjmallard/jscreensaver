@@ -70,6 +70,18 @@ function readHackMeta(file) {
   return { title: tm[2], info };
 }
 
+// A hack xscreensaver retired upstream carries, in its xml <_description>,
+// "removed from the XScreenSaver distribution as of version X.YZ". We kept the
+// hack; the Info box footnotes the retirement. Returns the version or null, read
+// from the tracked per-hack xml copy (whitespace-normalized — the sentence wraps).
+function retiredVersion(slug) {
+  const p = resolve(ROOT, `hacks/${slug}.xml`);
+  if (!existsSync(p)) return null;
+  const text = readFileSync(p, 'utf8').replace(/\s+/g, ' ');
+  const m = text.match(/removed from the XScreenSaver distribution as of version (\d+(?:\.\d+)+)/);
+  return m ? m[1] : null;
+}
+
 // --- load taxonomy (pure data) via a data: URL so node treats it as ESM -------
 const taxSrc = readFileSync(resolve(ROOT, 'taxonomy.js'), 'utf8');
 const { HACK_TAXONOMY } = await import('data:text/javascript,' + encodeURIComponent(taxSrc));
@@ -95,15 +107,18 @@ for (const [slug, t] of Object.entries(HACK_TAXONOMY)) {
   if (!description) problems.push(`${slug}: info.description missing`);
   if (year == null) console.warn(`build-catalog: ${slug} has no info.year -> "${YEAR_UNKNOWN}"`);
   // Field order mirrors the .js source: identity, classification, then credits.
-  // Only `heavy` is conditional (emitted when true); author / description are
-  // required (validated above). `year` is a number (e.g. 2004); it falls back to
-  // YEAR_UNKNOWN if a hack omits it, so the field is always present and the credit
-  // line needs no ternary.
+  // `heavy` and `retired` are conditional (emitted only when set); author /
+  // description are required (validated above). `year` is a number (e.g. 2004); it
+  // falls back to YEAR_UNKNOWN if a hack omits it, so the field is always present
+  // and the credit line needs no ternary. `retired` = the xscreensaver version
+  // that dropped the hack upstream (we kept it); derived from the xml.
   const entry = { title: slug, module, dim: t.dimension, categories: t.categories };
   if (heavy) entry.heavy = true;
   entry.author = author;
   entry.year = year ?? YEAR_UNKNOWN;
   entry.description = description;
+  const retired = retiredVersion(slug);
+  if (retired) entry.retired = retired;
   entries.push(entry);
 }
 entries.sort((a, b) => a.title.localeCompare(b.title));

@@ -20,6 +20,8 @@
 // trail of older rings persists). The C's expose-driven `redrawing` repaint path
 // is dropped — a canvas needs no manual expose repair.
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'spiral';
 
 export const info = {
@@ -36,7 +38,7 @@ export function start(canvas) {
     delay: 50000,   // µs between steps (--delay)
     count: 40,      // dots per ring (--count)
     cycles: 350,    // trail length: how many rings stay on screen (--cycles)
-    ncolors: 64,    // size of the rainbow palette (--ncolors)
+    ncolors: 64,    // size of the smooth-colormap palette (--ncolors)
   };
 
   const params = [
@@ -56,7 +58,7 @@ export function start(canvas) {
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
   let worldRight;     // world width = aspect * 10000
-  let palette;        // ncolors rainbow CSS strings
+  let palette;        // ncolors smooth-colormap CSS strings
 
   // The wandering ring's live state (the C's spiralstruct scalars).
   let cx, cy;         // ring centre, world coords
@@ -80,10 +82,14 @@ export function start(canvas) {
     return Math.floor(Math.random() * 2);   // 0 or 1, like (LRAND() & 1)
   }
 
+  // SMOOTH_COLORS: the C builds its palette ONCE per run via make_smooth_colormap
+  // (a random 2-5 anchor HSV smooth loop, frequently muted/pastel, re-rolled each
+  // run) -- not a fixed rainbow. Faithful port via colormap.js; the per-frame
+  // cycling through this palette (colorPos -> MI_PIXEL) is unchanged.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 55%)`;
+    const map = makeSmoothColormapRGB(n);
+    palette = map.map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // World (x,y) -> device-pixel screen (x,y). The C maps x by /right*width and
