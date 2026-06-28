@@ -24,11 +24,13 @@
 // Uint32-over-ImageData blit idiom, [[imsmap]] for the smooth closed colormap,
 // and the style reference [[squiral]].
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'cwaves';
 
 export const info = {
   author: 'Jamie Zawinski',
-  description: 'A field of sinusoidal colors languidly scrolls. It\u2019s relaxing.',
+  description: "A field of sinusoidal colors languidly scrolls. It's relaxing.",
   year: 2007,
 };
 
@@ -68,65 +70,24 @@ export function start(canvas) {
   let fctx;                   // its 2d context
   let fImage, fPixels;        // ImageData + Uint32 view, one packed colour per column
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255 (matches imsmap.js / the gallery).
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = x; }
-    else if (seg === 1) { r = x; g = c; }
-    else if (seg === 2) { g = c; b = x; }
-    else if (seg === 3) { g = x; b = c; }
-    else if (seg === 4) { r = x; b = c; }
-    else { r = c; b = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
-  }
-
   // Pack r,g,b (0-255) as 0xFFBBGGRR for ImageData's little-endian layout.
   function packRGB(r, g, b) {
     return (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
   }
 
-  // Build a smooth, CLOSED colormap of `ncolors` entries — the brief's vivid
-  // rainbow standing in for the C's muted make_smooth_colormap(..., True, 0,
-  // False), which walks a smooth random path through colour space and loops
-  // back to its start. We do a smooth random walk through HSL across a handful
-  // of knots, with the first knot repeated at the end so the map wraps
-  // seamlessly (the colour field is continuous, so adjacent bands blend).
+  // Build the smooth, CLOSED colormap of `ncolors` entries with the faithful
+  // make_smooth_colormap port (colormap.js): a random 2-5 anchor HSV loop that
+  // is frequently muted/pastel and wraps back to its start, so the continuous
+  // colour field has no seam. The C calls make_smooth_colormap(..., True, 0,
+  // False) exactly ONCE in cwaves_init; we likewise build it once per init().
+  // makeSmoothColormapRGB returns [r,g,b] 0..255 triplets; pack each into the
+  // Uint32 view render() blits.
   function buildPalette() {
     ncolors = Math.max(2, Math.round(config.ncolors));
     palette = new Uint32Array(ncolors);
-
-    // A knot every ~24 colours, even count so the loop is well shaped.
-    const segs = Math.max(2, Math.round(ncolors / 24) * 2);
-    const knots = [];
-    for (let k = 0; k < segs; k++) {
-      knots.push([
-        Math.random(),                 // hue 0..1
-        0.6 + Math.random() * 0.4,     // saturation 0.6..1
-        0.35 + Math.random() * 0.4,    // lightness 0.35..0.75
-      ]);
-    }
-    knots.push(knots[0]);   // close the loop for a seamless wrap
-
+    const map = makeSmoothColormapRGB(ncolors);
     for (let i = 0; i < ncolors; i++) {
-      const f = (i / ncolors) * segs;
-      const a = Math.floor(f) % segs;
-      const t = f - Math.floor(f);
-      const [ha, sa, va] = knots[a];
-      const [hb, sb, vb] = knots[a + 1];
-      // Interpolate hue the short way around the colour wheel.
-      let dh = hb - ha;
-      if (dh > 0.5) dh -= 1;
-      else if (dh < -0.5) dh += 1;
-      const h = ((ha + dh * t) % 1 + 1) % 1;
-      const [r, g, b] = hslToRgb(h, sa + (sb - sa) * t, va + (vb - va) * t);
+      const [r, g, b] = map[i];
       palette[i] = packRGB(r, g, b);
     }
   }
@@ -181,7 +142,7 @@ export function start(canvas) {
   }
 
   // One frame's colour field: for each column sum every wave's cosine at that
-  // column's x (in device px), average to [-1, 1], remap to [0, 1) and index the
+  // column's x (in CSS px), average to [-1, 1], remap to [0, 1) and index the
   // colormap. The C indexes with j = ncolors * (v/2 + 0.5) and abort()s if j is
   // out of range; v can only reach +/-1 if every cosine aligns, so we clamp the
   // index instead of aborting (keeps a degenerate frame safe). The waves'
@@ -191,6 +152,10 @@ export function start(canvas) {
     const nc = ncolors;
     const pal = palette;
     const px = fPixels;
+    // The cosine FREQUENCY must use CSS-px x (config.scale step), not device px,
+    // so band density is dpr-independent and matches the 1x C. The strip drawing
+    // width (device px) is unchanged; only the frequency the cosine sees is.
+    const xStep = config.scale;
 
     // Snapshot per-wave scale/offset so the inner loop reads locals.
     const sc = new Float64Array(n);
@@ -201,7 +166,7 @@ export function start(canvas) {
     }
 
     for (let c = 0; c < cols; c++) {
-      const x = c * strip;   // device-px x at the left edge of this strip
+      const x = c * xStep;   // CSS-px x at this strip's left edge (dpr-independent)
       let v = 0;
       for (let i = 0; i < n; i++) {
         v += Math.cos(x * sc[i] - off[i]);

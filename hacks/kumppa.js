@@ -126,6 +126,12 @@ export function start(canvas) {
     sctx.drawImage(canvas, 0, 0);
 
     ctx.save();
+    // The C's palaRotate copies with XCopyArea -- a CRISP integer-pixel copy, no
+    // interpolation. drawImage defaults to bilinear smoothing, which compounds
+    // every frame and smears the spiralling lines into gray mush after ~20
+    // frames. Nearest-neighbor keeps the marks crisp all the way to the edge, so
+    // the colour ribbons read as the demo's spiralling fractals, not a blur.
+    ctx.imageSmoothingEnabled = false;
     ctx.translate(cx, cy);
     ctx.rotate(theta);
     ctx.scale(z, z);

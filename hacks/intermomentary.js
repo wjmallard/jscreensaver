@@ -30,6 +30,8 @@
 // for the intersection math and [[binaryring]] for the per-pixel-blend BLIT
 // idiom this follows.
 
+import { makeColorRampRGB } from './colormap.js';
+
 export const title = 'intermomentary';
 
 export const info = {
@@ -74,24 +76,32 @@ export function start(canvas) {
   let imageData, pixels; // Uint32 ImageData we colour-map into once per frame
   let ramp;              // 256 packed-ABGR values: brightness -> black..yellow
 
-  // Build the black -> yellow brightness ramp (the C make_color_ramp from the
-  // background HSV to the foreground HSV: bg=black v=0, fg=yellow h=60 s=1 v=1).
-  // Full-sat yellow at value v is rgb (v,v,0); index = brightness 0..255.
+  // Build the black -> yellow brightness ramp via the exact C call in
+  // intermomentary_init: make_color_ramp(bg -> fg, closed_p=False) with bg=black
+  // (h0=0 s0=0 v0=0) and fg=yellow (h1=60 s1=1 v1=1). HSV-interpolated, so the
+  // midtones are amber/gold (index 128 -> [127,95,63]), NOT a flat rgb(v,v,0)
+  // lemon ramp. Deterministic (no RNG); built once per init like the C, and
+  // identical on every rebuild. index = brightness 0..255.
   function buildRamp() {
     ramp = new Uint32Array(256);
+    const cmap = makeColorRampRGB(0, 0, 0, 60, 1, 1, 256, false);
     for (let i = 0; i < 256; i++) {
-      const v = i;                 // 0..255
-      // 0xAABBGGRR (little-endian ImageData layout): r=g=v, b=0, a=255.
-      ramp[i] = ((0xff << 24) | (0 << 16) | (v << 8) | v) >>> 0;
+      const [r, g, b] = cmap[i];
+      // 0xAABBGGRR (little-endian ImageData layout): a=255.
+      ramp[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
     }
   }
 
   // Synthesis of the C's make_disc + PxRider::PxRider. `r` is the destination
-  // radius; the disc starts at frand(r)/3 and creeps up to it. numr riders are
-  // allocated (capped at maxRiders), each at a random perimeter angle.
+  // radius, already S-scaled (devicePixelRatio); the disc starts at frand(r)/3
+  // and creeps up to it. numr riders are allocated (capped at maxRiders), each
+  // at a random perimeter angle. The C derives numr from the UNSCALED radius
+  // (its r is unscaled), so divide S back out here -- otherwise retina (S>1)
+  // roughly doubles the perimeter-dot count. Radius/velocity stay S-scaled; only
+  // the COUNT must not.
   function makeDisc(id, x, y, vx, vy, r) {
     const maxrider = Math.max(1, Math.round(config.maxRiders));
-    let numr = Math.floor(frand(r) / 2.62);
+    let numr = Math.floor(frand(r / S) / 2.62);
     if (numr > maxrider) numr = maxrider;
 
     const riders = new Array(numr);

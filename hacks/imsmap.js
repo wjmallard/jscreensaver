@@ -57,7 +57,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay2', label: 'Paint speed', type: 'range', min: 2000, max: 80000, step: 1000, default: 20000, unit: ' µs', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay2', label: 'Paint speed', type: 'range', min: 2000, max: 80000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'delay', label: 'Hold', type: 'range', min: 1, max: 30, step: 1, default: 5, unit: ' s', lowLabel: 'brief', highLabel: 'long', live: true },
     { key: 'iterations', label: 'Detail', type: 'range', min: 1, max: 7, step: 1, default: 7, lowLabel: 'coarse', highLabel: 'fine', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 3, max: 255, step: 1, default: 50, lowLabel: 'few', highLabel: 'many', live: false },

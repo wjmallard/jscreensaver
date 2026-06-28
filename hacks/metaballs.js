@@ -79,39 +79,25 @@ export function start(canvas) {
     return (frand(n) + frand(n) + frand(n)) / 3;
   }
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255. Used to pick a vivid random base
-  // colour for the density ramp each cycle.
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = x; }
-    else if (seg === 1) { r = x; g = c; }
-    else if (seg === 2) { g = c; b = x; }
-    else if (seg === 3) { g = x; b = c; }
-    else if (seg === 4) { r = x; b = c; }
-    else { r = c; b = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
+  // randInt(n) -> integer in [0, n). Used to pick the palette base colour as
+  // three independent random channels, matching the C's random() % 0xFFFF per
+  // channel (here at 8-bit-per-channel resolution).
+  function randInt(n) {
+    return Math.floor(Math.random() * n);
   }
 
-  // Build the ncolors-entry palette exactly as the C's SetPalette: a vivid
-  // random base colour, with index 0..ncolors/2 ramping black -> base and
-  // ncolors/2..ncolors ramping base -> white. Index 0 is always black so the
-  // background (zero-density pixels) stays unlit. Packed little-endian ABGR.
-  // Build the ncolors-entry palette exactly as the C's SetPalette: a vivid
-  // random base colour, with index 0..ncolors/2 ramping black -> base and
-  // ncolors/2..ncolors ramping base -> white. The whole field reads as one hue
-  // per run (density = brightness); the base colour is re-rolled every `cycles`
-  // frames, so the colour changes across successive runs (faithful to the C —
-  // NOT multi-hue within a run). Packed little-endian ABGR.
+  // Build the ncolors-entry palette exactly as the C's SetPalette: pick a random
+  // base colour as three independent random bytes (the C picks each channel as
+  // random() % 0xFFFF, an independent uniform-random channel — so the base is
+  // often muted/dark/pastel, not always a fully-saturated vivid hue), then index
+  // 0..ncolors/2 ramps black -> base and ncolors/2..ncolors ramps base -> white.
+  // Index 0 is forced to black so the background (zero-density pixels) stays
+  // unlit. The whole field reads as one hue per run (density = brightness); the
+  // base is re-rolled every `cycles` frames, so the colour changes across
+  // successive runs (faithful to the C — NOT multi-hue within a run). Packed
+  // little-endian ABGR.
   function buildPalette() {
-    const [br, bg, bb] = hslToRgb(Math.random(), 1, 0.5);
+    const [br, bg, bb] = [randInt(256), randInt(256), randInt(256)];
     palette = new Uint32Array(ncolors);
     const half = ncolors / 2;
     for (let i = 0; i < ncolors; i++) {

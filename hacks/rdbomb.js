@@ -15,13 +15,15 @@
 // random square blob of activator dropped in the centre ("bombed"), and the
 // reaction/diffusion variant + palette re-rolled.
 //
-// Rendering: this is a dense per-pixel field, so it uses the BLIT path — the
-// field is computed on a small offscreen canvas at a CAPPED logical resolution
-// (NOT device pixels) into a Uint32 ImageData, then ctx.drawImage upscales it to
-// the device-res canvas. The C itself computes a small grid (typ. 64..576 px)
-// and tiles/scales it to fill the screen, so a capped grid is faithful as well
-// as fast. See [[metaballs]] / [[marbling]] for the offscreen-field + upscale
-// idiom and [[squiral]] for the shared skeleton.
+// Rendering: this is a dense per-pixel field. Faithful to the C, the field is
+// computed on a SMALL toroidal tile (the C's ~64..575 px, capped to MAX_CELLS
+// for perf) into a Uint32 ImageData, then TILED 1:1 across the device-res canvas
+// (ctx.drawImage at native size, imageSmoothingEnabled = false). The toroidal
+// wrap makes the tile seamless, so the default look is a crisp REPEATING
+// wallpaper of the RD motif — exactly the C's tiling loop, not one stretched
+// blob. See [[squiral]] for the shared skeleton.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'rdbomb';
 
@@ -39,8 +41,10 @@ export function start(canvas) {
   // sub-steps, exactly like the C's frame counter (eased from the xml's 40000 to
   // a livelier 10000 so a re-bomb is seen in a minute or two — see rdbomb.md).
   // `reaction`/`diffusion`/`radius` use -1 = "Auto" (re-rolled each epoch), as
-  // the C does. The xml's tile-size / wander knobs (width, height, size, speed)
-  // are omitted — the field always fills the screen (see rdbomb.md).
+  // the C does. The xml's explicit tile-size / wander knobs (width, height,
+  // size, speed) are omitted — the tile size is rolled like the C and repeated
+  // across the screen (size=1.0 / speed=0.0 defaults: full screen, no wander;
+  // see rdbomb.md).
   const config = {
     delay: 30000,     // µs between frames (--delay)
     epoch: 10000,     // reaction sub-steps before re-seeding the field (--epoch)
@@ -86,61 +90,53 @@ export function start(canvas) {
   const BLACK = 0xFF000000;       // opaque black, little-endian 0xAABBGGRR
   const MX = (1 << 16) - 1;       // 65535 — the C's `mx`, the field's max value
 
-  // Cap the internal grid so the per-frame field work is bounded on ANY display
-  // (3 reaction sub-steps over this many cells per frame). The grid upscales to
-  // the device-res canvas, so retina never multiplies the compute cost. The C's
-  // own grid is small (typ. 64..576 px) and tiled, so this is faithful too.
+  // Cap the RD tile so the per-frame field work is bounded on ANY display (3
+  // reaction sub-steps over this many cells). The C's own tile is small
+  // (~64..575 px) and repeated across the screen; we do the same, capping the
+  // upper end of its size distribution for perf. This is <= the old single-grid
+  // compute, so the tiling change is free.
   const MAX_CELLS = 65000;
   const SUBSTEPS = 3;             // reaction sub-steps per displayed frame (C: chunk=3)
 
-  let S;                          // devicePixelRatio
-  let gw, gh;                     // interior grid size (logical px, capped)
+  let gw, gh;                     // RD tile size (device px, capped) — tiled across the screen
   let w2;                         // padded row stride (gw + 2)
   let a1, a2;                     // current (read) chemical fields, padded, Uint16
   let b1, b2;                     // next (write) chemical fields, padded, Uint16
   let frame;                      // reaction-step counter (drives the epoch re-bomb)
   let reaction, diffusion;        // active variants (re-rolled each epoch when Auto)
 
-  let scratch, sctx;              // offscreen grid canvas, upscaled to the main canvas
-  let imageData, pixels;          // Uint32 view over the grid-sized ImageData
+  let scratch, sctx;              // offscreen tile canvas, tiled across the main canvas
+  let imageData, pixels;          // Uint32 view over the tile-sized ImageData
   let ncolors;                    // captured colour count (2..255)
   let palette;                    // Uint32Array(ncolors) cycling colourmap
+  let mc;                         // dither LUT: 16-bit field value -> 8-bit colour index
 
   // The C's `R` macro: a 30-bit non-negative random int.
   function R() {
     return (Math.random() * 0x40000000) | 0;
   }
 
-  // HSL (h in degrees, s/l in [0,1]) packed into a little-endian RGBA uint.
-  function hslToUint(h, s, l) {
-    h = ((h % 360) + 360) % 360;
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h / 60;
-    const x = c * (1 - Math.abs(hp % 2 - 1));
-    let rr = 0, gg = 0, bb = 0;
-    if (hp < 1)      { rr = c; gg = x; }
-    else if (hp < 2) { rr = x; gg = c; }
-    else if (hp < 3) { gg = c; bb = x; }
-    else if (hp < 4) { gg = x; bb = c; }
-    else if (hp < 5) { rr = x; bb = c; }
-    else             { rr = c; bb = x; }
-    const m = l - c / 2;
-    const r = Math.round((rr + m) * 255);
-    const g = Math.round((gg + m) * 255);
-    const b = Math.round((bb + m) * 255);
-    return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
+  // The C's BELLRAND(x): average of three uniform draws -> a bell curve in [0,x).
+  function bellrand(x) {
+    return (((R() % x) + (R() % x) + (R() % x)) / 3) | 0;
   }
 
-  // The C calls make_smooth_colormap each epoch (a muted random gradient). Per
-  // the project's house style we use a vivid smooth rainbow instead, re-rolled
-  // with a random hue offset and direction each epoch so the texture changes
-  // colour every time it re-bombs.
+  // Pack r,g,b (0-255) as 0xFFBBGGRR for ImageData's little-endian RGBA layout.
+  function packRGB(r, g, b) {
+    return (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
+  }
+
+  // The C calls make_smooth_colormap (a random, frequently muted/pastel HSV loop)
+  // via random_colors() inside the epoch branch — i.e. RE-ROLLED on every re-bomb.
+  // We match that cadence (buildPalette is called from rebomb()) using the
+  // faithful makeSmoothColormapRGB port (colormap.js). It returns [r,g,b] 0..255
+  // triplets; pack each into the Uint32 view update() blits.
   function buildPalette() {
     palette = new Uint32Array(ncolors);
-    const off = Math.random() * 360;
-    const dir = Math.random() < 0.5 ? 1 : -1;
+    const map = makeSmoothColormapRGB(ncolors);
     for (let i = 0; i < ncolors; i++) {
-      palette[i] = hslToUint(off + dir * (i * 360 / ncolors), 1, 0.5);
+      const [r, g, b] = map[i];
+      palette[i] = packRGB(r, g, b);
     }
   }
 
@@ -199,7 +195,8 @@ export function start(canvas) {
   // so the Laplacian reads a coherent previous state), then swap. The arithmetic
   // is the C's verbatim — every intermediate stays under 2^31, so the bit-shifts
   // match the C exactly (see rdbomb.md, "Correctness self-review"). On the final
-  // sub-step of a frame, also map r1 through the palette into the pixel buffer.
+  // sub-step of a frame, also map r1 through the dither LUT + palette into the
+  // pixel buffer (the C's default truecolor path: colors[mc[r1] % ncolors]).
   function update(writePixels) {
     for (let i = 0; i < gh; i++) {
       const base = w2 * (i + 1) + 1;          // index of (interior row i, col 0)
@@ -248,7 +245,7 @@ export function start(canvas) {
         b1[idx] = r1;
         b2[idx] = r2;
 
-        if (writePixels) pixels[prow + j] = palette[(r1 >> 8) % ncolors];
+        if (writePixels) pixels[prow + j] = palette[mc[r1] % ncolors];
       }
     }
 
@@ -258,7 +255,7 @@ export function start(canvas) {
 
   // One displayed frame: SUBSTEPS reaction sub-steps (re-bombing at each epoch
   // boundary, exactly as the C tests frame % epoch == 0 at the top of each
-  // sub-step), then blit the small field upscaled onto the device-res canvas.
+  // sub-step), then tile the small field across the device-res canvas.
   function step() {
     const epoch = Math.max(1, Math.round(config.epoch));
     for (let sub = 0; sub < SUBSTEPS; sub++) {
@@ -268,23 +265,41 @@ export function start(canvas) {
       frame++;
     }
     sctx.putImageData(imageData, 0, 0);
-    ctx.drawImage(scratch, 0, 0, gw, gh, 0, 0, canvas.width, canvas.height);
+    // Tile the small RD field across the screen at 1:1 native pixels — the C's
+    // tiling loop (for i += width, for j += height). The toroidal field is
+    // seamless, so this is a crisp repeating wallpaper, never a stretched blob.
+    for (let ty = 0; ty < canvas.height; ty += gh) {
+      for (let tx = 0; tx < canvas.width; tx += gw) {
+        ctx.drawImage(scratch, tx, ty);
+      }
+    }
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
-
-    // Field grid at LOGICAL resolution (canvas px / dpr), then capped to
-    // MAX_CELLS preserving aspect, so the per-frame work is bounded everywhere.
-    let lw = Math.max(10, Math.round(canvas.width / S));
-    let lh = Math.max(10, Math.round(canvas.height / S));
-    if (lw * lh > MAX_CELLS) {
-      const f = Math.sqrt((lw * lh) / MAX_CELLS);
-      lw = Math.max(10, Math.floor(lw / f));
-      lh = Math.max(10, Math.floor(lh / f));
+    // RD tile size, exactly the C's pixack_init: the width/height resources
+    // default to 0, so with 50% probability the tile is square
+    // (gw = gh = 64 + BELLRAND(512)), else each side is rolled independently —
+    // range ~64..575 px. Clamp to the screen, then cap to MAX_CELLS for perf.
+    // Worked in DEVICE pixels because we tile 1:1 native pixels. Rolled once per
+    // init (the C rolls it once in rd_init); the toroidal field makes the tile
+    // seamless when repeated.
+    const screenW = canvas.width;
+    const screenH = canvas.height;
+    let tw = 0, th = 0;
+    if (tw <= 0 && th <= 0 && (R() & 1)) tw = th = 64 + bellrand(512);
+    if (tw <= 0) tw = 64 + bellrand(512);
+    if (th <= 0) th = 64 + bellrand(512);
+    if (tw > screenW) tw = screenW;
+    if (th > screenH) th = screenH;
+    if (tw < 10) tw = 10;
+    if (th < 10) th = 10;
+    if (tw * th > MAX_CELLS) {
+      const f = Math.sqrt((tw * th) / MAX_CELLS);
+      tw = Math.max(10, Math.floor(tw / f));
+      th = Math.max(10, Math.floor(th / f));
     }
-    gw = lw;
-    gh = lh;
+    gw = tw;
+    gh = th;
     w2 = gw + 2;
 
     const npix = w2 * (gh + 2);
@@ -295,6 +310,17 @@ export function start(canvas) {
 
     ncolors = Math.max(2, Math.min(255, Math.round(config.ncolors)));
 
+    // The C's dither LUT (mc), built once in rd_init: maps a 16-bit field value
+    // to an 8-bit colour index with a per-value random offset, so colour-band
+    // boundaries are dithered rather than hard-stepped. The default truecolor
+    // path indexes through this (dither_when_mapped = 1 in the C), so we do too.
+    mc = new Uint8Array(1 << 16);
+    for (let i = 0; i < (1 << 16); i++) {
+      let di = (i + (R() & 255)) >> 8;
+      if (di > 255) di = 255;
+      mc[i] = di;
+    }
+
     scratch = document.createElement('canvas');
     scratch.width = gw;
     scratch.height = gh;
@@ -302,6 +328,11 @@ export function start(canvas) {
     imageData = sctx.createImageData(gw, gh);
     pixels = new Uint32Array(imageData.data.buffer);
     pixels.fill(BLACK);
+
+    // 1:1 native-pixel tiling: in step() the tile is drawn at its native size
+    // (source size == dest size), so there is no interpolation; disable smoothing
+    // defensively too (setting canvas.width in resize() resets it to true).
+    ctx.imageSmoothingEnabled = false;
 
     // frame 0 -> the first sub-step of the first step() re-bombs (which fills the
     // fields + builds the palette), so the screen seeds itself on frame one.
