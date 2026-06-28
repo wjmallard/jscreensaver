@@ -35,6 +35,11 @@ canvas { display: block; touch-action: none; }
 #config, #about, #help, #info { z-index: 100001; }   /* one of these is open at a time */
 #selector.open, #config.open, #about.open, #help.open, #info.open { display: flex; }
 
+/* The Info box dims the screen less than the other panels: with it open you can
+   still cycle hacks (left/right), so it doubles as a preview -- keep the running
+   hack clearly visible behind it. The box's own opaque bg keeps the text legible. */
+#info { background: rgba(0, 0, 0, 0.2); }
+
 .sel-box, .config-box, .about-box, .help-box {
   background: var(--phosphor-bg); color: var(--phosphor);
   border: 1px solid var(--phosphor-border); border-radius: 4px;

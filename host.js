@@ -98,14 +98,14 @@ function cancelFade() {
 // The corner hack-name (#hackname) is a transient label: it flashes on each
 // mount / return-to-view, holds briefly, then fades out so the running hack is
 // unobstructed. It's a pure label (not clickable — info lives in the footer and
-// the touch control bar), and stays hidden while the picker is open. flashTitle
-// is a no-op when nothing's running or the picker is up; closeSelector re-arms
+// the touch control bar), and stays hidden while the picker or Info box is open.
+// flashTitle is a no-op when nothing's running or either is up; closeSelector re-arms
 // it on the way back to view.
 const TITLE_HOLD_MS = 2000, TITLE_FADE_MS = 1000;
 let titleTimer = 0;
 function flashTitle() {
   if (titleTimer) { clearTimeout(titleTimer); titleTimer = 0; }
-  if (!currentName || selector.classList.contains('open')) { hideTitle(); return; }
+  if (!currentName || selector.classList.contains('open') || infoBox.classList.contains('open')) { hideTitle(); return; }
   hackName.hidden = false;
   hackName.style.transition = 'none';
   hackName.style.opacity = '1';
@@ -689,7 +689,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (infoBox.classList.contains('open')) {
-    if (e.key === 'Escape' || e.key === 'i') { e.preventDefault(); closeInfo(); }
+    // Left/right still cycle hacks (same pool as view mode) with Info open,
+    // refreshing the box to the newly-mounted hack so you can browse with it up.
+    if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); cycle(1); openInfo(); }
+    else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); cycle(-1); openInfo(); }
+    else if (e.key === 'Escape' || e.key === 'i') { e.preventDefault(); closeInfo(); }
+    else if (e.key === 'q') { e.preventDefault(); goHome(); }   // Clear: stop hack, drop to picker (goHome closes Info)
     return;
   }
 
