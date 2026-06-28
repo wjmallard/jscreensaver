@@ -1,29 +1,37 @@
-// imsmap.js — imsmap packaged as a mountable module.
+// imsmap.js -- imsmap packaged as a mountable module.
 // start(canvas) returns { stop, pause, resume, reinit, config, params }.
 //
 // Port of xscreensaver's imsmap.c (Juergen Nickelsen & Jamie Zawinski, 1992;
 // derived from code by Markus Schirmer, TU Berlin).
 // https://www.jwz.org/xscreensaver/
 //
-// Recursive cloud-like fractal patterns. A height-field is grown by midpoint
-// subdivision (the plasma / diamond-square fractal): start with the four
-// corners of the screen, then repeatedly split every cell, setting each new
-// midpoint to the average of its neighbours plus a random offset whose
-// amplitude halves at every level. The finished field is a smooth cloud of
-// integer "heights" which is displayed through a colour map.
+// Recursive cloud-like fractal patterns by midpoint subdivision (the plasma /
+// diamond-square fractal). This is a FAITHFUL transcription of imsmap.c's
+// draw model (rebuilt 2026-06-27 after a fidelity audit; the previous port
+// generated the field instantly and then CYCLED the colormap over it -- both
+// were deviations the C does not do):
 //
-// In the original C the field generation IS the visible drawing: cells are
-// painted as they are set, a chunk per frame, then the picture lingers for a
-// few seconds before a fresh field is generated. Here we instead generate the
-// whole field ONCE into a typed array, then animate by slowly CYCLING the
-// colour map through it each frame (the smooth-colormap rotation is the
-// motion — exactly the kind of plasma the smooth palette was built for), and
-// regenerate a new field on the C's linger interval. See imsmap.md.
+//   * The generation IS the animation. Starting from the screen corners, the
+//     field is subdivided level by level; each level sets the edge/centre
+//     midpoints of every cell to the average of its corners plus a random
+//     offset that halves each level (set()/HEIGHT_TO_PIXEL). Each set point is
+//     painted as a block whose size shrinks per level, so the picture FADES IN
+//     from coarse blocks to full resolution. A chunk of columns is painted per
+//     frame (col_chunk = iteration*2+1).
+//   * When the finest level is reached the cloud sits PERFECTLY STILL for
+//     `delay` SECONDS (imsmap_draw's this_delay = delay*1e6), then init_map
+//     regenerates a fresh field + a fresh colormap. There is NO colour cycling.
 //
-// Rendering: the field touches every pixel, so this uses the BLIT path — a
-// Uint32 view over one ImageData, written by mapping each cell's height through
-// the cycling palette, putImageData once per frame. (Same idiom as
-// thornbird.js / binaryring.js.) Nothing is ever read back.
+// Colour: the C's make_smooth_colormap (a random 2-5 anchor HSV loop, often
+// muted), ported faithfully in colormap.js, rebuilt on every regeneration. The
+// xml exposes a `mode` resource but imsmap.c never reads it (the colormap is
+// always make_smooth_colormap), so it is a dead control and not surfaced here.
+//
+// Rendering: blocks are painted into a persistent Uint32 display buffer (the C
+// draws straight to the window and only repaints changed blocks); one
+// putImageData per frame. Field math runs at device resolution like the C.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'imsmap';
 
@@ -36,128 +44,58 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges/labels mirror hacks/config/imsmap.xml so the config box
-  // maps 1:1 to the original. `delay2` is the per-frame pacing (the palette
-  // cycle here); `delay` is the linger in SECONDS before a new field is grown;
-  // `iterations` is how many subdivision levels (density); `ncolors` is the
-  // palette size; `mode` chooses the colour-map flavour (random / h / s / v).
+  // Defaults/ranges mirror the REAL imsmap.xml resources: delay2 (the per-chunk
+  // paint interval, us), delay (the hold in SECONDS once a cloud is complete),
+  // iterations (subdivision depth / detail), ncolors. The stock `mode` resource
+  // is omitted because imsmap.c declares but never reads it (dead control), and
+  // there is deliberately no colour-cycle control because the C does not cycle.
   const config = {
-    delay2: 25000,     // µs between palette-cycle frames (--delay2, "Frame rate")
-    delay: 5,          // seconds a finished field lingers (--delay, "Linger")
-    iterations: 7,     // subdivision levels, 1..7 (--iterations, "Density")
-    ncolors: 50,       // size of the colour map (--ncolors)
-    mode: 'random',    // 'random' | 'h' | 's' | 'v' colour-map flavour (--mode)
-    cycleSpeed: 0.5,   // palette steps advanced per frame (the visible motion)
+    delay2: 20000,     // microseconds between paint chunks (--delay2)
+    delay: 5,          // seconds a finished cloud holds before regenerating (--delay)
+    iterations: 7,     // subdivision levels / detail, 1..7 (--iterations)
+    ncolors: 50,       // colour-map size (--ncolors)
   };
 
-  // live: true  -> the loop reads config every frame (applies instantly).
-  // live: false -> the value sizes the field/palette, so a change re-runs
-  //                init() via reinit() (which also clears + regrows).
   const params = [
-    { key: 'delay2', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'delay', label: 'Linger', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
-    { key: 'cycleSpeed', label: 'Cycle speed', type: 'range', min: 0, max: 3, step: 0.05, default: 0.5, lowLabel: 'still', highLabel: 'fast', live: true },
-    { key: 'iterations', label: 'Density', type: 'range', min: 1, max: 7, step: 1, default: 7, lowLabel: 'sparse', highLabel: 'dense', live: false },
-    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 3, max: 255, step: 1, default: 50, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'mode', label: 'Coloration', type: 'select', default: 'random', live: false, options: [
-        { value: 'random', label: 'Random coloration' },
-        { value: 'h', label: 'Hue gradients' },
-        { value: 's', label: 'Saturation gradients' },
-        { value: 'v', label: 'Brightness gradients' },
-      ] },
+    { key: 'delay2', label: 'Paint speed', type: 'range', min: 2000, max: 80000, step: 1000, default: 20000, unit: ' µs', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Hold', type: 'range', min: 1, max: 30, step: 1, default: 5, unit: ' s', lowLabel: 'brief', highLabel: 'long', live: true },
+    { key: 'iterations', label: 'Detail', type: 'range', min: 1, max: 7, step: 1, default: 7, lowLabel: 'coarse', highLabel: 'fine', live: false },
+    { key: 'ncolors', label: 'Colors', type: 'range', min: 3, max: 255, step: 1, default: 50, lowLabel: 'few', highLabel: 'many', live: false },
   ];
 
   // The C's NSTEPS: the coarsest subdivision step is 2^NSTEPS pixels, and the
   // per-level random amplitude is 1 << (NSTEPS - level). 7 -> step 128.
   const NSTEPS = 7;
   const COUNT = 1 << NSTEPS;   // 128
-  const BLACK = 0xFF000000;
 
   let W, H, S;                 // canvas size (device px) and devicePixelRatio
-  let imageData, pixels;       // the one ImageData + its Uint32 view
-  let heights;                 // Uint16 height-field, one cell per canvas pixel
+  let imageData, displayBuf;   // persistent display buffer (Uint32 view) + ImageData
+  let cell;                    // height/colour-index field (Uint16), xmax*ymax
   let palette;                 // ncolors packed-ABGR colour-map values
   let ncolors;                 // palette length actually used (>= 1)
-  let cycleOffset;             // float cursor rotated through the palette
+  let extraKrinkly;            // C's extra_krinkly_p: wrap (not saturate) heights
+  let flipX, flipXy;           // C's flip_x / flip_xy: mirror / transpose the cloud
+  let xmax, ymax;              // field dims (swapped under flip_xy)
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255. (Same helper as thornbird.js.)
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = x; }
-    else if (seg === 1) { r = x; g = c; }
-    else if (seg === 2) { g = c; b = x; }
-    else if (seg === 3) { g = x; b = c; }
-    else if (seg === 4) { r = x; b = c; }
-    else { r = c; b = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
-  }
+  // Subdivision state machine (the C's imsmap_draw persistent state).
+  let cx, xstep, ystep, xnext, ynext, iteration, iterationsCfg, complete;
 
+  // Pack r,g,b (0-255) as 0xFFBBGGRR for ImageData's little-endian layout.
   function packRGB(r, g, b) {
     return (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
   }
 
-  // Build a CYCLIC, smooth colour map of `ncolors` entries. `mode` picks the
-  // flavour (mirrors imsmap.xml's --mode); every map wraps end-to-end so the
-  // per-frame rotation is seamless, the way the C's make_smooth_colormap does.
+  // Build the colour map for one cloud: the faithful make_smooth_colormap
+  // (colormap.js) -- a random 2-5 anchor HSV loop, frequently muted/pastel.
+  // The C calls make_smooth_colormap in init_map (per regeneration), so this is
+  // rebuilt on every regeneration too.
   function buildPalette() {
     ncolors = Math.max(1, Math.round(config.ncolors));
     palette = new Uint32Array(ncolors);
-
-    if (config.mode === 'h') {
-      // Hue gradient: a full rainbow sweep, fixed S/V.
-      for (let i = 0; i < ncolors; i++) {
-        const [r, g, b] = hslToRgb(i / ncolors, 1, 0.5);
-        palette[i] = packRGB(r, g, b);
-      }
-    } else if (config.mode === 's') {
-      // Saturation gradient at one random hue: grey -> vivid -> grey (cyclic).
-      const hue = Math.random();
-      for (let i = 0; i < ncolors; i++) {
-        const t = i / ncolors;
-        const sat = 0.5 - 0.5 * Math.cos(t * 2 * Math.PI);   // 0..1..0
-        const [r, g, b] = hslToRgb(hue, sat, 0.5);
-        palette[i] = packRGB(r, g, b);
-      }
-    } else if (config.mode === 'v') {
-      // Brightness gradient at one random hue: dark -> light -> dark (cyclic).
-      const hue = Math.random();
-      for (let i = 0; i < ncolors; i++) {
-        const t = i / ncolors;
-        const val = 0.5 - 0.45 * Math.cos(t * 2 * Math.PI);   // 0.05..0.95..0.05
-        const [r, g, b] = hslToRgb(hue, 0.8, val);
-        palette[i] = packRGB(r, g, b);
-      }
-    } else {
-      // Random coloration: a smooth random walk through HSL that returns to its
-      // start, so it stays cyclic. (The C's make_smooth_colormap, "random".)
-      const segs = Math.max(2, Math.round(ncolors / 24) * 2);  // even # of knots
-      const knots = [];
-      for (let k = 0; k < segs; k++) {
-        knots.push([Math.random(), 0.6 + Math.random() * 0.4, 0.35 + Math.random() * 0.4]);
-      }
-      knots.push(knots[0]);   // close the loop for a seamless wrap
-      for (let i = 0; i < ncolors; i++) {
-        const f = (i / ncolors) * segs;
-        const a = Math.floor(f) % segs;
-        const t = f - Math.floor(f);
-        const [ha, sa, va] = knots[a];
-        const [hb, sb, vb] = knots[a + 1];
-        // Interpolate hue the short way around the colour wheel.
-        let dh = hb - ha;
-        if (dh > 0.5) dh -= 1;
-        else if (dh < -0.5) dh += 1;
-        const h = ((ha + dh * t) % 1 + 1) % 1;
-        const [r, g, b] = hslToRgb(h, sa + (sb - sa) * t, va + (vb - va) * t);
-        palette[i] = packRGB(r, g, b);
-      }
+    const map = makeSmoothColormapRGB(ncolors);
+    for (let i = 0; i < ncolors; i++) {
+      const [r, g, b] = map[i];
+      palette[i] = packRGB(r, g, b);
     }
   }
 
@@ -166,131 +104,114 @@ export function start(canvas) {
     return Math.floor(Math.random() * n);
   }
 
-  // Clamp a raw height to a valid palette index, matching the C's
-  // HEIGHT_TO_PIXEL with extra_krinkly_p = false (the common path): heights
-  // below 0 saturate to 0, heights >= ncolors saturate to ncolors-1.
+  // The C's HEIGHT_TO_PIXEL macro. Common path saturates (h<0 -> 0; h>=ncolors
+  // -> ncolors-1). On the ~1-in-5 regenerations where extraKrinkly is set,
+  // out-of-range heights WRAP through the colormap (the "extra krinkly" banding).
   function heightToPixel(h) {
-    if (h < 0) return 0;
-    if (h >= ncolors) return ncolors - 1;
+    if (h < 0) return extraKrinkly ? ncolors - 1 - ((-h) % ncolors) : 0;
+    if (h >= ncolors) return extraKrinkly ? h % ncolors : ncolors - 1;
     return h;
   }
 
-  // Paint a grid_size x grid_size block of the height-field at (x, y) — the C's
-  // draw() with XFillRectangle, which is how each level's midpoints tile the
-  // screen (coarse levels paint big blocks, fine levels small ones, so the
-  // whole field ends up covered). Clipped to the canvas.
-  function fillBlock(x, y, gridSize, h) {
-    const x1 = Math.min(W, x + gridSize);
-    const y1 = Math.min(H, y + gridSize);
-    for (let yy = (y < 0 ? 0 : y); yy < y1; yy++) {
+  // The C's wrap of a neighbour index: <0 -> max-1, >=max -> 0 (toroidal-ish).
+  const wrap = (v, max) => (v < 0 ? max - 1 : (v >= max ? 0 : v));
+
+  // The C's set(): displace the average by a per-level random amount, clamp to a
+  // palette index, store it in the field, and return the packed colour.
+  function setCell(x, y, size, h) {
+    const rang = 1 << (NSTEPS - size);
+    h = h + nrand(rang) - (rang >> 1);
+    h = heightToPixel(h);
+    cell[x + y * xmax] = h;
+    return palette[h];
+  }
+
+  // The C's draw(): map field coords to display coords via flip_x / flip_xy,
+  // then paint a gridSize x gridSize block of `color` into the display buffer.
+  function draw(x, y, color, gridSize) {
+    if (flipX) x = xmax - x;
+    if (flipXy) { const t = x; x = y; y = t; }
+    if (gridSize < 1) return;             // degenerate final level: nothing to paint
+    const xe = Math.min(W, x + gridSize);
+    const ye = Math.min(H, y + gridSize);
+    for (let yy = (y < 0 ? 0 : y); yy < ye; yy++) {
       const base = yy * W;
-      for (let xx = (x < 0 ? 0 : x); xx < x1; xx++) {
-        heights[base + xx] = h;
-      }
+      for (let xx = (x < 0 ? 0 : x); xx < xe; xx++) displayBuf[base + xx] = color;
     }
   }
 
-  // Grow the entire height-field by midpoint subdivision — a faithful port of
-  // imsmap.c's init_map() seed + imsmap_draw() subdivision loop, run to
-  // completion in one go (the C spreads it over many frames; we do it once and
-  // then animate the palette over it). The four screen corners start at 0; each
-  // level sets the edge- and centre-midpoints of every cell to the average of
-  // the neighbouring corners plus a random offset that halves each level. Every
-  // set point is painted as a block (fillBlock) so the field stays gap-free.
-  function generateField() {
-    heights.fill(0);
+  // init_map: new colormap + flips + krinkly, clear the field, fill the display
+  // with the background colour (the C fills the window with colors[1]), reset the
+  // subdivision state to the coarsest step.
+  function regenerate() {
+    buildPalette();
+    extraKrinkly = nrand(5) === 0;
+    flipX = nrand(2) === 1;
+    flipXy = nrand(2) === 1;
+    if (flipXy) { xmax = H; ymax = W; } else { xmax = W; ymax = H; }
+    iterationsCfg = Math.max(1, Math.min(7, Math.round(config.iterations)));
+    cell.fill(0);
+    displayBuf.fill(palette[1 % ncolors]);
+    cx = 0; xstep = COUNT; ystep = COUNT; iteration = 0; complete = false;
+  }
 
-    // The C swaps x/y under flip_xy and mirrors under flip_x; cosmetically that
-    // just reorients the same cloud, so we fold it into a random reflection of
-    // the whole field at the end (cheaper than per-access flips). Seed corner.
-    let xstep = COUNT;
-    let ystep = COUNT;
+  // One imsmap_draw call: paint col_chunk columns of the current subdivision
+  // level, advancing the state. Returns the milliseconds until the next call
+  // (delay2 normally; the `delay`-second hold once the cloud is complete).
+  function drawChunk() {
+    if (complete) regenerate();   // the hold just ended -> grow a fresh cloud
 
-    // The map is "done" after `iterations` halvings; clamp like the C (0..7).
-    const iterations = Math.max(0, Math.min(7, Math.round(config.iterations)));
+    if (cx === 0) {
+      xnext = xstep >> 1;
+      ynext = ystep >> 1;
+      if (xnext < 1 && ynext < 1) {   // can't subdivide further: cloud complete
+        complete = true;
+        return Math.max(1, config.delay) * 1000;
+      }
+    }
 
-    for (let iteration = 0; iteration <= iterations; iteration++) {
-      const xnext = xstep >> 1;
-      const ynext = ystep >> 1;
-      if (xnext < 1 && ynext < 1) break;   // can't subdivide below 1px
+    const colChunk = iteration * 2 + 1;
+    for (let i = 0; i < colChunk; i++) {
+      const x = cx;
+      const x1 = wrap(x + xnext, xmax);
+      const x2 = wrap(x + xstep, xmax);
+      for (let y = 0; y < ymax; y += ystep) {
+        const y1 = wrap(y + ynext, ymax);
+        const y2 = wrap(y + ystep, ymax);
 
-      // Per-level random amplitude (the C's set(): rang = 1 << (NSTEPS-size)).
-      const rang = 1 << Math.max(0, NSTEPS - iteration);
-      const gridSize = Math.max(1, ynext);
+        const cTL = cell[x + y * xmax];
+        const cBL = cell[x + y2 * xmax];
+        const cTR = cell[x2 + y * xmax];
+        const cBR = cell[x2 + y2 * xmax];
+        // Corner colours (cells store already-clamped indices, so direct lookup).
+        const q0 = palette[cTL], q1 = palette[cBL], q2 = palette[cTR], q3 = palette[cBR];
 
-      // The block painted for this level's midpoints is `ynext`-sized, matching
-      // the C's draw(..., st->ynextStep). Sub-1 means we're done filling.
-      for (let x = 0; x < W; x += xstep) {
-        // Right neighbour column, clamped to the field (the C wraps to 0; on a
-        // non-toroidal canvas we clamp to the last column so edges stay smooth).
-        let x2 = x + xstep;
-        if (x2 >= W) x2 = W - 1;
-        const x1 = Math.min(W - 1, x + xnext);
+        let pix = setCell(x, y1, iteration, (cTL + cBL + 1) >> 1);          // left edge
+        if (pix !== q0 || pix !== q1 || pix !== q2 || pix !== q3) draw(x, y1, pix, ynext);
 
-        for (let y = 0; y < H; y += ystep) {
-          let y2 = y + ystep;
-          if (y2 >= H) y2 = H - 1;
-          const y1 = Math.min(H - 1, y + ynext);
+        pix = setCell(x1, y, iteration, (cTL + cTR + 1) >> 1);             // top edge
+        if (pix !== q0 || pix !== q1 || pix !== q2 || pix !== q3) draw(x1, y, pix, ynext);
 
-          const cTL = heights[y * W + x];
-          const cBL = heights[y2 * W + x];
-          const cTR = heights[y * W + x2];
-          const cBR = heights[y2 * W + x2];
-
-          // Left-edge midpoint = average of the two left corners + random.
-          let h = ((cTL + cBL + 1) >> 1) + nrand(rang) - (rang >> 1);
-          h = heightToPixel(h);
-          heights[y1 * W + x] = h;
-          fillBlock(x, y1, gridSize, h);
-
-          // Top-edge midpoint = average of the two top corners + random.
-          h = ((cTL + cTR + 1) >> 1) + nrand(rang) - (rang >> 1);
-          h = heightToPixel(h);
-          heights[y * W + x1] = h;
-          fillBlock(x1, y, gridSize, h);
-
-          // Centre midpoint = average of all four corners + random.
-          h = ((cTL + cBL + cTR + cBR + 2) >> 2) + nrand(rang) - (rang >> 1);
-          h = heightToPixel(h);
-          heights[y1 * W + x1] = h;
-          fillBlock(x1, y1, gridSize, h);
-        }
+        pix = setCell(x1, y1, iteration, (cTL + cBL + cTR + cBR + 2) >> 2); // centre
+        if (pix !== q0 || pix !== q1 || pix !== q2 || pix !== q3) draw(x1, y1, pix, ynext);
       }
 
+      cx += xstep;
+      if (cx >= xmax) break;
+    }
+
+    if (cx >= xmax) {
+      cx = 0;
       xstep = xnext;
       ystep = ynext;
+      iteration++;
+      if (iteration > iterationsCfg) {   // reached the chosen detail: hold, then regen
+        complete = true;
+        return Math.max(1, config.delay) * 1000;
+      }
     }
-  }
 
-  // Map the whole height-field through the palette at the current cycle offset
-  // and blit it. Each cell's colour is palette[(height + offset) mod ncolors],
-  // so advancing `cycleOffset` rotates the colour map through the cloud — the
-  // visible motion. ncolors <= 1 can't cycle, so it just shows palette[0].
-  function render() {
-    const off = ((Math.floor(cycleOffset) % ncolors) + ncolors) % ncolors;
-    // Precompute the rotated palette once per frame (ncolors entries) so the
-    // per-pixel inner loop is a single array read.
-    const rot = new Uint32Array(ncolors);
-    for (let i = 0; i < ncolors; i++) rot[i] = palette[(i + off) % ncolors];
-    const n = W * H;
-    for (let i = 0; i < n; i++) pixels[i] = rot[heights[i]];
-    ctx.putImageData(imageData, 0, 0);
-  }
-
-  // One step: advance the palette cycle and repaint. Every `delay` seconds of
-  // accumulated cycling, grow a fresh field (the C's linger-then-regenerate).
-  let sinceRegen = 0;   // ms of frame time accrued since the last regen
-  function step() {
-    cycleOffset += config.cycleSpeed;
-    render();
-
-    // delay is in seconds; delay2 is the per-frame µs budget. Count real frame
-    // budgets so the linger is honest regardless of cycle speed / frame rate.
-    sinceRegen += Math.max(1, config.delay2) / 1000;   // µs -> ms per frame
-    if (sinceRegen >= config.delay * 1000) {
-      sinceRegen = 0;
-      generateField();
-    }
+    return Math.max(1, config.delay2) / 1000;   // ms until the next paint chunk
   }
 
   function init() {
@@ -298,14 +219,11 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
     imageData = ctx.createImageData(W, H);
-    pixels = new Uint32Array(imageData.data.buffer);
-    pixels.fill(BLACK);
-    heights = new Uint16Array(W * H);
-    cycleOffset = 0;
-    sinceRegen = 0;
-    buildPalette();
-    generateField();
-    render();   // first frame already shows the cloud
+    displayBuf = new Uint32Array(imageData.data.buffer);
+    cell = new Uint16Array(W * H);
+    dueTime = 0;
+    regenerate();
+    ctx.putImageData(imageData, 0, 0);   // show the background fill immediately
   }
 
   function resize() {
@@ -317,36 +235,28 @@ export function start(canvas) {
     init();
   }
 
-  // Drive off requestAnimationFrame but keep a fixed pace: one step() per
-  // config.delay2, banking leftover time so the cycle speed is the same at any
-  // refresh rate. Cap catch-up so a backgrounded tab doesn't burst on refocus.
-  const MAX_CATCHUP_STEPS = 8;
-  let lastTime = 0;
-  let lag = 0;
+  // Variable-delay scheduler: each drawChunk() returns the ms until the next
+  // one (short while painting, a long `delay`-second wait during the hold). We
+  // advance a due-time cursor by that amount, banking leftover time so the pace
+  // is refresh-rate independent; a guard caps catch-up after a backgrounded tab.
+  let dueTime = 0;
   let rafId = 0;
 
   function frame(now) {
-    if (lastTime === 0) lastTime = now;
-    lag += now - lastTime;
-    lastTime = now;
-
-    // config.delay2 is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay2 / 1000;
-    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
-
-    // The step counter bounds the loop even when delayMs is 0 (max frame rate),
-    // which would otherwise spin forever since lag never drops below 0.
-    let steps = 0;
-    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
-      step();
-      lag -= delayMs;
-      steps++;
+    if (dueTime === 0) dueTime = now;
+    let painted = false;
+    let guard = 0;
+    while (now >= dueTime && guard < 64) {
+      const nextMs = drawChunk();
+      painted = true;
+      dueTime += nextMs;
+      guard++;
     }
-
+    if (painted) ctx.putImageData(imageData, 0, 0);
     rafId = requestAnimationFrame(frame);
   }
 
-  // Rebuild after a non-live config change (clears, rebuilds palette + field).
+  // Rebuild after a non-live config change (clears, regrows from a fresh field).
   function reinit() {
     init();
   }
@@ -361,8 +271,8 @@ export function start(canvas) {
       window.removeEventListener('resize', resize);
     },
     pause() { cancelAnimationFrame(rafId); rafId = 0; },
-    resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
-    reinit,   // fresh palette + field, keeping the current config
+    resume() { if (!rafId) { dueTime = 0; rafId = requestAnimationFrame(frame); } },
+    reinit,
     config,
     params,
   };

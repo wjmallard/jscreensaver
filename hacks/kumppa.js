@@ -43,18 +43,17 @@ export function start(canvas) {
   // random (the cosilines toggle). `ncolors` is added for parity with the other
   // ports; the C hardcodes a 32-entry blue->green->red->violet ramp.
   const config = {
-    delay: 80000,      // µs between steps (calm, slow spin). NB: ~12 steps/sec, so the
-                       // feedback motion is intentionally steppy at this default; for
-                       // slow-BUT-smooth, lower `speed` instead and keep delay ~16000.
-    speed: 0.16,       // per-step spin/zoom rate, 0.0001..0.2 (--speed / "Density")
-                       // (bumped from 0.1 so the slower step rate keeps the same spin/sec)
+    delay: 10000,      // µs between steps (the C/xml stock default: ~100 steps/sec,
+                       // the signature fast rush toward the screen).
+    speed: 0.10,       // per-step spin/zoom rate, 0.0001..0.2 (--speed / "Density");
+                       // the C/xml stock default. Drives both theta and zoom = speed/2.
     random: true,      // true = smooth cosi-lines, false = random splats (--random)
     ncolors: 32,       // size of the hue ramp the marks cycle through
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 80000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'speed', label: 'Density', type: 'range', min: 0.0001, max: 0.2, step: 0.0001, default: 0.16, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Density', type: 'range', min: 0.0001, max: 0.2, step: 0.0001, default: 0.10, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'random', label: 'Smooth lines', type: 'checkbox', default: true, live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 32, lowLabel: 'few', highLabel: 'many', live: false },
   ];
@@ -86,33 +85,38 @@ export function start(canvas) {
   let coords, ocoords;     // Int, 8 each
   let drawCount;           // color index walk, like st->draw_count
 
-  // The C ramp is a 32-step blue->cyan->green->yellow->red->magenta->violet
-  // loop. We rebuild it as a vivid HSL wheel of config.ncolors entries (the
-  // same spectral order, just smoother and resizable). hue 240->...->300.
+  // The C ramp (colors[96], kumppa.c:72-79) is a 32-step loop whose hue
+  // DECREASES from blue: 240->180->120->60->0->300->270->240
+  // (blue->cyan->green->yellow->red->magenta->violet->blue). We rebuild it as a
+  // resizable vivid HSL wheel of config.ncolors entries, sweeping hue downward
+  // from blue in that same direction. (kumppa builds its own RGB ramp, not
+  // make_smooth_colormap, so colormap.js is intentionally not used here.)
   function buildColors() {
     const n = Math.max(2, Math.round(config.ncolors));
     colors = new Array(n);
     for (let i = 0; i < n; i++) {
-      // Start at blue (240) and sweep a full turn so the ramp wraps cleanly.
-      const hue = (240 + (i * 360 / n)) % 360;
+      // Start at blue (240) and sweep a full turn DOWNWARD (matching the C).
+      const hue = ((240 - i * 360 / n) % 360 + 360) % 360;
       colors[i] = `hsl(${hue.toFixed(1)}, 100%, 50%)`;
     }
   }
 
-  // The feedback transform per step. The C parameterizes spin/zoom by `speed`
-  // (rotsizeX = 2/speed+1: how many steps to sweep the rotation across the half
-  // width). We map speed -> a small rotation `theta` and an outward zoom `z`
-  // about the center. z is kept just above 1 so content marches outward and off
-  // the edges (never collapsing inward to a black hole), but small enough that
-  // a pixel is resampled from a nearby source region, so nothing blows out to
-  // a flat white — the fresh center color is what keeps the core alive.
+  // The feedback transform per step, derived from the C (NOT tuned by feel).
+  // palaRotate (kumppa.c:138-139) copies each strip with a displacement of
+  // (du-dv, du+dv) in *index* units, which in pixel space is the similarity
+  // matrix [[1+1/w, -1/w],[1/w, 1+1/w]] (a rotation+scale about the center),
+  // where w is the strip width. make_rots (kumppa.c:211) sets rotsizeX =
+  // 2/speed+1, so there are ~midx*speed/2 strips across the half-width midx,
+  // i.e. strip width w ~ 2/speed and 1/w ~ speed/2. For that matrix both the
+  // rotation and (zoom-1) equal 1/w to first order, so theta ~ speed/2 and
+  // zoom ~ 1 + speed/2. z>1 marches content outward and off the edges (never an
+  // inward black-hole collapse); the central black stamp + fresh marks keep the
+  // core from baking solid.
   function feedback() {
     const speed = Math.min(0.2, Math.max(0.0001, config.speed));
-    // theta ~ speed radians/step (at speed 0.1 -> ~5.7 deg/step, a lively spin
-    // that still reads as a spiral rather than a blur). z grows with speed so
-    // faster = streaks rush out faster; +1 keeps it strictly expanding.
-    const theta = speed * 0.6;
-    const z = 1 + speed * 0.16;
+    // Faithful coefficients: rotation(rad) == zoom-1 == speed/2 (see above).
+    const theta = speed * 0.5;
+    const z = 1 + speed * 0.5;
 
     // Copy the current frame to the scratch buffer, then paint it back through
     // the rotate+scale-about-center transform. (drawImage can't read+write the
