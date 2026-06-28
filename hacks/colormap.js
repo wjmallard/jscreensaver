@@ -69,10 +69,10 @@ function reduceNcolors(n) {
 
 // make_color_ramp with closed_p = true: a smooth ramp h1,s1,v1 -> h2,s2,v2,
 // then mirrored back to form a closed loop. Fills colors[0 .. total-1] in place.
-function makeColorRamp(h1, s1, v1, h2, s2, v2, colors, total) {
+function makeColorRamp(h1, s1, v1, h2, s2, v2, colors, total, closedP = true) {
   let ncolors = total;
   for (let i = 0; i < total; i++) colors[i] = { r: 0, g: 0, b: 0 };  // memset 0
-  ncolors = Math.trunc(ncolors / 2) + 1;   // closed_p
+  if (closedP) ncolors = Math.trunc(ncolors / 2) + 1;   // closed_p
 
   const dh = (h2 - h1) / ncolors;
   const ds = (s2 - s1) / ncolors;
@@ -82,8 +82,9 @@ function makeColorRamp(h1, s1, v1, h2, s2, v2, colors, total) {
     colors[i] = hsvToRgb(Math.trunc(h1 + (i * dh)), s1 + (i * ds), v1 + (i * dv));
 
   // closed_p: mirror the ramp back around the loop.
-  for (let i = ncolors; i < total; i++)
-    colors[i] = { ...colors[total - i] };
+  if (closedP)
+    for (let i = ncolors; i < total; i++)
+      colors[i] = { ...colors[total - i] };
 }
 
 // make_color_path (colors.c). Spaces `total` colors evenly around the polygon
@@ -232,6 +233,42 @@ export function makeSmoothColormap(rng, ncolors = 128) {
   for (let i = 0; i < ncolors; i++) colors[i] = { r: 0, g: 0, b: 0 };
   makeColorPath(npoints, h, s, v, colors, ncolors);
   return colors;
+}
+
+// ---------------------------------------------------------------------------
+// Canvas-friendly helpers (0..255), for the 2D hacks.
+//
+// These let a plain Math.random()-based hack get the SAME palette structure the
+// C produces. make_smooth_colormap is re-rolled every run, so Math.random's
+// sequence is fine here -- only the DISTRIBUTION (npoints weights, HSV ranges,
+// min-separation / min-avg-s/v retries) must match, which makeSmoothColormap
+// already enforces.
+
+// Drop-in rng matching the surface makeSmoothColormap uses (random() -> a large
+// non-negative int like C's random(); frand(x) -> [0, x)).
+const mathRng = {
+  random: () => Math.floor(Math.random() * 0x100000000),
+  frand: (x) => x * Math.random(),
+};
+
+// 16-bit-quantized [0,1) channel -> 8-bit, matching the X server's red>>8
+// downsample of hsv_to_rgb's trunc(C*65535) (i.e. floor(c * 256), capped).
+function to255(c) {
+  return c <= 0 ? 0 : c >= 1 ? 255 : Math.floor(c * 256);
+}
+
+// make_smooth_colormap as `ncolors` [r,g,b] triplets in 0..255.
+export function makeSmoothColormapRGB(ncolors = 128, rng = mathRng) {
+  return makeSmoothColormap(rng, ncolors).map((c) => [to255(c.r), to255(c.g), to255(c.b)]);
+}
+
+// make_color_ramp (h1,s1,v1 -> h2,s2,v2) as `ncolors` [r,g,b] in 0..255.
+// closedP mirrors the ramp into a loop (the C's closed_p); pass false for a
+// plain one-way ramp (e.g. intermomentary's black->yellow heat ramp).
+export function makeColorRampRGB(h1, s1, v1, h2, s2, v2, ncolors, closedP = false) {
+  const tmp = new Array(ncolors);
+  makeColorRamp(h1, s1, v1, h2, s2, v2, tmp, ncolors, closedP);
+  return tmp.map((c) => [to255(c.r), to255(c.g), to255(c.b)]);
 }
 
 export default makeSmoothColormap;
