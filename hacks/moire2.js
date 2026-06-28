@@ -55,7 +55,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'colorShift', label: 'Re-roll rate', type: 'range', min: 1, max: 30, step: 1, default: 5, lowLabel: 'fast', highLabel: 'slow', invert: true, live: true },
     { key: 'thickness', label: 'Ring spacing (0 = auto)', type: 'range', min: 0, max: 40, step: 1, default: 0, lowLabel: 'fine', highLabel: 'coarse', live: false },
     { key: 'sources', label: 'Ring-fields (0 = auto)', type: 'range', min: 0, max: 3, step: 1, default: 0, lowLabel: 'auto', highLabel: 'three', live: false },
