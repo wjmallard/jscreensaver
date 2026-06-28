@@ -14,15 +14,17 @@
 // Occasionally a family restarts from the inside, and every so often the buffer
 // is wiped for a fresh start.
 //
-// Rendering (faithful to the C's two-pixmap pipeline): the XOR runs in a DEPTH-1
-// (pure black/white) plane, so cancellation is EXACT. Each step the union of
-// this step's FILLED disks is drawn white-on-black into an offscreen `pixmap`,
-// then XORed into a persistent offscreen `buffer` (canvas 'difference', which on
-// {0,255} is bit-identical to GXxor). The buffer is COLOURISED at blit time
-// exactly like the C's copy_gc: 1-bits -> colors[fgIndex], 0-bits ->
+// Rendering (faithful to the C's two-pixmap pipeline): the XOR runs in a
+// PIXEL-EXACT depth-1 plane held as a typed array, so cancellation is EXACT with
+// zero antialiasing (canvas arc().fill() rounds ~1px differently as the radius
+// grows, leaving a faint residual outline that never fully cancels). Each step
+// this step's union of FILLED disks is scan-converted into `frameBits` using
+// X11's center-inside-radius fill rule, then XORed into the persistent `bufBits`
+// plane (255^255=0, 255^0=255 -- exact). The plane is COLOURISED at blit time
+// exactly like the C's copy_gc: set bits -> colors[fgIndex], clear bits ->
 // colors[bgIndex], the cursors advancing per re-pick. The palette is the C's own
 // make_uniform_colormap / make_smooth_colormap (via colormap.js), chosen once at
-// init. "ramp" mode skips the buffer and over-paints filled disks straight onto
+// init. "ramp" mode skips the plane and over-paints filled disks straight onto
 // the canvas (the C's GXcopy path) in the cycling colour, only while breathing in.
 
 import { makeColorRampRGB, makeSmoothColormapRGB } from './colormap.js';
@@ -81,10 +83,10 @@ export function start(canvas) {
   let seussMode;        // true: draw every breath into the XOR buffer; false (ramp)
   let animateNow;       // animate after ramp may have forced it off
 
-  // The C's depth-1 pixmap (this step's union of disks) and persistent depth-1
-  // buffer (the XOR accumulation), both pure black/white. Used in seuss only.
-  let pixmapCanvas, pixmapCtx;
-  let bufferCanvas, bufferCtx;
+  // The C's depth-1 pixmap (this step's disk union) and persistent depth-1 buffer
+  // (the XOR accumulation), held as pixel-exact 0/255 typed arrays. Seuss only.
+  let frameBits;              // this step's disk union (W*H, 0 or 255)
+  let bufBits;               // persistent XOR plane (W*H, 0 or 255)
   let visImageData, visU32;   // reusable RGBA target for the colourised blit
 
   // halo_init's colormap step: make_uniform_colormap (a one-way hue ramp 0->359
@@ -174,25 +176,16 @@ export function start(canvas) {
 
     initCircles();
 
-    // The C's depth-1 pixmap + buffer (seuss only). Pure black/white so the XOR
-    // ('difference') cancels exactly; the buffer is colourised at blit time.
+    // The C's depth-1 pixmap + buffer (seuss only), as pixel-exact 0/255 planes
+    // so the XOR cancels exactly; the buffer is colourised at blit time. bufBits
+    // starts all-0 (the C's erase_gc-filled buffer).
     if (seussMode) {
-      pixmapCanvas = document.createElement('canvas');
-      pixmapCanvas.width = W;
-      pixmapCanvas.height = H;
-      pixmapCtx = pixmapCanvas.getContext('2d');
-
-      bufferCanvas = document.createElement('canvas');
-      bufferCanvas.width = W;
-      bufferCanvas.height = H;
-      bufferCtx = bufferCanvas.getContext('2d');
-      bufferCtx.fillStyle = '#000';
-      bufferCtx.fillRect(0, 0, W, H);
-
+      frameBits = new Uint8Array(W * H);
+      bufBits = new Uint8Array(W * H);
       visImageData = ctx.createImageData(W, H);
       visU32 = new Uint32Array(visImageData.data.buffer);
     } else {
-      pixmapCanvas = pixmapCtx = bufferCanvas = bufferCtx = null;
+      frameBits = bufBits = null;
       visImageData = visU32 = null;
     }
 
@@ -202,21 +195,41 @@ export function start(canvas) {
     ctx.fillRect(0, 0, W, H);
   }
 
-  // Colourise the depth-1 buffer onto the visible canvas the way XCopyPlane with
-  // copy_gc does: 1-bits (white) -> colors[fgIndex], 0-bits (black) ->
-  // colors[bgIndex]. Reads the white/black buffer pixels and writes colour out;
-  // colour is NEVER mixed into the XOR plane (that would break cancellation).
+  // Scan-convert a filled disk into a 0/255 plane using X11's exact fill rule:
+  // a pixel (x,y) is set iff (x-cx)^2 + (y-cy)^2 <= r^2 (its sample point is
+  // inside the circle). No antialiasing, integer spans -> consecutive frames'
+  // edges line up exactly, so the XOR cancels with no residual outline.
+  function fillDiskBits(bits, cx, cy, r) {
+    let y0 = Math.ceil(cy - r);
+    let y1 = Math.floor(cy + r);
+    if (y0 < 0) y0 = 0;
+    if (y1 > H - 1) y1 = H - 1;
+    const r2 = r * r;
+    for (let y = y0; y <= y1; y++) {
+      const dy = y - cy;
+      const span2 = r2 - dy * dy;
+      if (span2 < 0) continue;
+      const dxf = Math.sqrt(span2);
+      let x0 = Math.ceil(cx - dxf);
+      let x1 = Math.floor(cx + dxf);
+      if (x0 < 0) x0 = 0;
+      if (x1 > W - 1) x1 = W - 1;
+      const row = y * W;
+      for (let x = x0; x <= x1; x++) bits[row + x] = 255;
+    }
+  }
+
+  // Colourise the depth-1 plane onto the visible canvas the way XCopyPlane with
+  // copy_gc does: set bits -> colors[fgIndex], clear bits -> colors[bgIndex].
+  // Reads the 0/255 plane directly; colour is NEVER mixed into the XOR plane
+  // (that would break cancellation).
   function colorize() {
     const fg = palette ? palette[fgIndex] : [255, 255, 255];
     const bg = palette ? palette[bgIndex] : [0, 0, 0];
     const fgP = ((255 << 24) | (fg[2] << 16) | (fg[1] << 8) | fg[0]) >>> 0;
     const bgP = ((255 << 24) | (bg[2] << 16) | (bg[1] << 8) | bg[0]) >>> 0;
-    const src = bufferCtx.getImageData(0, 0, W, H);
-    const s32 = new Uint32Array(src.data.buffer);
     const d32 = visU32;
-    for (let i = 0; i < d32.length; i++) {
-      d32[i] = (s32[i] & 0xff) >= 128 ? fgP : bgP;   // low byte = red; white -> fg
-    }
+    for (let i = 0; i < d32.length; i++) d32[i] = bufBits[i] ? fgP : bgP;
     ctx.putImageData(visImageData, 0, 0);
   }
 
