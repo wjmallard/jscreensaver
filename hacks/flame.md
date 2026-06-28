@@ -1,35 +1,42 @@
 # flame — port notes
 
-Port of `flame.c` (Scott Draves, 1993; from Patrick J. Naughton's 1991 xlock hack `flame.c`, brought into xscreensaver by jwz). Recursive fractal "cosmic flames" — an iterated nonlinear function system whose transforms are re-randomized every frame, plotted as accumulating points.
+Port of `flame.c` (Scott Draves, 1993; from Patrick J. Naughton's 1991 xlock hack `flame.c`, brought into xscreensaver by jwz). Recursive fractal "cosmic flames" — an iterated nonlinear function system whose transforms are re-randomized every frame and plotted as solid-colour points that overwrite onto a persistent buffer (cleared only between flames).
 
-Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/flame.c` (~456 lines)
+Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/flame.c` (~456 lines) · video: <https://www.youtube.com/watch?v=6Pu8JKNT_Jk>
 
 ## Algorithm
 Each frame draws one fractal from a set of **2..4 affine transforms** (`snum = 2 + cur_level % 3`), each `nx = a·x + b·y + c` for both output coordinates (6 random coefficients per function, each in `[-1, 1)`). Some of the functions (`anum` of them) additionally pass through one of **10 nonlinear "variations"** — sinusoidal, complex, bent, swirl, horseshoe, drape, broken, spherical, arctangent, complex-sine. `recurse(x, y, l)` composes these transforms `iterations` deep; at the leaf (`l == max_levels`) it maps the point from the `[-1,1]` square to the screen (`(W/2)(x+1), (H/2)(y+1)`) and plots it — but only the first `points` leaf points get emitted, after which `recurse` returns 0 and the whole depth-first recursion unwinds, ending the frame.
 
-Successive frames overlay new fractals onto the same image (the plot colour cycling through the palette each frame), so the figure builds up and shifts. Every `iterations` frames it hits a **reset**: flip the "alternate" flag (which forces `anum = 0`, i.e. purely affine — these tend to be the clean linear webs), pick a fresh variation, **linger** for `delay2`, then clear and start a new flame.
+Note that the recursion depth and the frames-per-flame counter are the SAME resource — both are `iterations` (the C sets `max_levels = max_points = iterations`). So with the default depth 25 and `snum ≥ 2`, the leaf budget (`points`, 10000) is exhausted long before the depth-first walk leaves the leftmost edge of the tree; each frame is effectively the first ~`points` leaves in DFS order.
 
-`halfrandom()` (the C's cheap second-draw: reuse the high 16 bits of a previous `random()`) is reproduced faithfully — it's what picks `anum` and the initial colour.
+Successive frames overlay new fractals onto the same image (the plot colour cycling one step down the palette each non-reset frame), so the figure builds up and shifts. Every `iterations` frames it hits a **reset**: flip the "alternate" flag (which forces `anum = 0`, i.e. purely affine — the clean linear webs), pick a fresh variation, **linger** for `delay2`, then clear and start a new flame.
+
+`halfrandom()` (the C's cheap second-draw: reuse the high 16 bits of a previous `random()`) is reproduced faithfully — it's what picks `anum` and the initial colour index.
 
 ## Module shape
 `start(canvas) -> { stop, pause, resume, reinit, config, params }` — see `squiral.md`.
 
-## Rendering — Uint32 blit, additive accumulation
+## Rendering — Uint32 blit, plain overwrite (X11 GXcopy)
 Thousands of points per frame, heavily overlapping along the attractor, accumulating across the frames of a flame → the **blit path** (like [[hopalong]] / [[thornbird]]): write points into a persistent `Uint32Array` over an `ImageData`, `putImageData` once per frame. Only the plotted pixels are touched (≈`points`/frame), never the whole screen.
 
-The twist vs. the plain single-colour blit: I **accumulate hits additively** — each hit adds ~1/6 of the current frame's (mid-bright) colour to the pixel, clamped at 255 per channel. Dense regions of the attractor saturate to white-hot while the sparse filaments stay dim and hued, which is what gives the glowing "flame" look (the brief asked for a density-mapped vivid render rather than the C's flat one-pixel-value plots). See **Deviations**.
+Faithful to the C's compositing: each point is a plain **overwrite**. The C builds its GC with `GCForeground | GCBackground` only — no `GCFunction` — so X11 uses the default **GXcopy** (copy, not blend), and `XFillRectangles` just stamps the current foreground pixel value. There is **no additive glow**: the whole frame is ONE colour (the foreground, set once per frame from the cycling colormap), and where points from successive frames overlap the later colour simply replaces the earlier. The buffer is *not* cleared between the frames of a flame, so a block of same-variation fractals layers into one multi-hued figure (each frame a different cycled hue), then clears.
+
+## Colour — faithful `make_smooth_colormap`
+The C builds `make_smooth_colormap` (utils/colors.c) ONCE at init: 2–5 random HSV anchor points (with a min-separation retry and a minimum average saturation/value), interpolated into a smooth **closed loop** of `ncolors` entries — frequently muted/pastel, **not** a rainbow. The port uses the shared faithful helper `makeSmoothColormapRGB(ncolors)` from `colormap.js`, built once per `init()` (the C never rebuilds it). Each non-reset frame draws with one colormap entry and steps `pixcol` down by one (wrapping at 0), exactly as the C does; reset frames keep the previous frame's colour (the C skips `XSetForeground` there). If `ncolors ≤ 2` the C falls back to mono (white); the port mirrors this with a `mono` flag.
 
 ## Variable-delay loop
 `flame_draw` returns the microseconds until the next call — normally `delay`, but `delay2` (the "Linger") on a frame that just finished a flame and is about to clear. The port keeps this with the **boxfit/xspirograph variable-delay accumulator**: `step()` returns the ms to wait, the rAF loop banks time and honours it, so the long linger between flames is preserved. The catch-up cap is `nextDelay + 1000` ms so a multi-second linger always elapses (and a backgrounded tab still can't burst). The buffer persists between steps, so drawing happens inside `step()` (no per-frame full repaint).
 
 ## Deviations from the C
-- **Additive density render** instead of flat single-colour `XFillRectangles`. The C sets one GC foreground per frame and overdraws; overlapping points are just the same pixel value. We instead sum colour per hit and clamp, so overlap → brightness (the cosmic-flame glow). The frame still has one *hue* (the cycling palette colour), so a flame is still multi-hued across its frames, exactly as the C cycles `pixcol` down each non-reset frame.
-- **Colour**: the C builds a `make_smooth_colormap` of `ncolors` smooth (often muted) colours and cycles the pixel index down each frame. We build an `ncolors`-entry **vivid HSL rainbow** (full-sat, L=0.55) and cycle it the same way — house style favours saturated rainbows.
-- **devicePixelRatio**: backing store sized in device px; the point size (`scale`) is 1, or 2 past 2560 px, matching the C's retina bump. The fractal math lives in the unit `[-1,1]` square and maps to `W/2,H/2`, so it auto-scales to the device-px canvas with no extra dpr factors.
+- **Live config.** The C reads each resource once at init; the port re-reads `delay`/`delay2`/`iterations`/`points` every frame so the sliders apply instantly (the house pattern). `ncolors` resizes the palette, so it re-runs `init()` — the only non-live knob.
+- **devicePixelRatio**: backing store sized in device px; the point size (`scale`) is 1, or 2 past 2560 px, matching the C's retina bump. The fractal math lives in the unit `[-1,1]` square and maps to `W/2,H/2`, so it auto-scales to the device-px canvas with no extra dpr factors. No count/frequency is dpr-scaled.
 - **NaN/Inf handling**: the C ignores `SIGFPE` and relies on silent NaNs. JS never throws on float overflow, so NaN/Inf simply propagate — see Correctness below. The C's explicit guards (the `fabs(x) > 1e5 → x = x/y` scale-back, and the per-variation `1e4` clamps) are ported verbatim.
-- **Variation 8**: the C writes `atan(nx) / M_PI_2`; ported as `atan(nx) / Math.PI * 2` (same value, no `M_PI_2` constant in JS).
-- **`delay2` default**: kept at the xml's 2 s linger. The build `delay` default is 40000 µs (xml is 50000) — a touch calmer by feel, as the brief allows.
-- Dropped the X-only plumbing (`mono_p`, GC, colormap, fps overlay, `--root`, `ignoreRotation`).
+- **Variation 8**: the C writes `atan(nx) / M_PI_2`; ported as `atan(nx) / Math.PI * 2` (identical value, no `M_PI_2` constant in JS). The C's `case 10` (polynomial) is dead code — `variation = random() % MAXKINDS` only yields 0–9 — so it is omitted, like the unreachable `default`.
+- **`delay2` slider range** uses the xml's `low=1000` with `step=1000` (so the `2000000` default lands on a step boundary); the xml gives no step.
+- Dropped the X-only plumbing (GC, X colormap allocation, fps overlay, `--root`, `ignoreRotation`).
+
+### History
+An earlier version of this port deviated significantly: it rendered points with **additive accumulation** (each hit adding ~1/6 of the colour, clamped to white, so dense regions glowed white-hot) and used a **vivid full-saturation HSL rainbow** palette. The C does neither — it overwrites solid `make_smooth_colormap` colours via GXcopy. Both embellishments were removed in the 2026-06-27 fidelity audit (GXcopy overwrite + `make_smooth_colormap`, above). The rendering change is visible enough to warrant a live-binary cross-check.
 
 ## Correctness self-review
 - **Termination is guaranteed by `total_points > max_total`** (`points`, default 10000), independent of recursion depth or divergence. The recursion is depth-first to depth `iterations`; the leaf counter ticks on every leaf visit and returns 0 once it exceeds `points`, which unwinds the entire tree. Verified by hand: even with `iterations = 250` and `snum = 4` (an astronomically large tree), the first ~`points` leaves end the frame. JS recursion depth = `iterations` ≤ 250, well within the call-stack limit.
@@ -38,4 +45,4 @@ The twist vs. the plain single-colour blit: I **accumulate hits additively** —
 - **pause/resume** uses the `rafId === 0` sentinel + `lastTime = 0` reset (no catch-up burst); **reinit** rebuilds the palette and buffer and resets `nextDelay = 0` for a clean fresh screen.
 
 ## Config
-Ranges mirror `hacks/config/flame.xml`: `delay` (Frame rate, µs, live, inverted), `delay2` (Linger, µs, live), `iterations` (Number of fractals — recursion depth & frames per flame, live), `points` (Complexity — max points/frame, live), `ncolors` (Colors — palette size, reinit). `iterations`/`points`/`delay`/`delay2` are read every frame so they apply instantly; only `ncolors` resizes the palette and re-runs `init()`.
+Mirrors `hacks/config/flame.xml`, defaults included: `delay` (Frame rate, µs, live, inverted, **50000**), `delay2` (Linger, µs, live, **2000000**, range 1000–10000000), `iterations` (Number of fractals — recursion depth & frames per flame, live, **25**), `points` (Complexity — max points/frame, live, **10000**), `ncolors` (Colors — colormap size, reinit, **64**). `iterations`/`points`/`delay`/`delay2` are read every frame so they apply instantly; only `ncolors` resizes the palette and re-runs `init()`. No invented sliders (the xml's `showfps` is a host-level concern, not exposed here).

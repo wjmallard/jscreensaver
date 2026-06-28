@@ -16,12 +16,16 @@
 // and a new flame begins.
 //
 // Rendering: thousands of points per frame, heavily overlapping along the
-// attractor, so the BLIT path with a twist — instead of single-colour plots we
-// accumulate point hits ADDITIVELY into a persistent Uint32 ImageData buffer
-// (each hit adds a fraction of the current frame's colour, clamped to white).
-// Dense regions saturate to white-hot while the sparse filaments stay dim and
-// hued, which is what gives the glowing "flame" look. putImageData once/frame.
-// (See [[hopalong]] / [[thornbird]] for the plain single-colour blit idiom.)
+// attractor, so the BLIT path -- write points into a persistent Uint32 ImageData
+// buffer, putImageData once per frame. Faithful to the C: each point is a plain
+// OVERWRITE (X11 GXcopy) of one solid colour -- the current frame's smooth-
+// colormap entry, set once per frame and cycled one index down per frame. There
+// is NO additive glow; overlapping points just take the most-recent colour. The
+// buffer persists across the frames of a flame, so a block of same-variation
+// fractals layers into one multi-hued figure, then clears and a new flame begins.
+// (See [[hopalong]] / [[thornbird]] for the same single-colour blit idiom.)
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'flame';
 
@@ -41,23 +45,23 @@ export function start(canvas) {
   //   iterations — recursion depth AND frames per flame before reset+clear
   //                (the xml labels it "Number of fractals").
   //   points  — max leaf points plotted per frame ("Complexity").
-  //   ncolors — size of the hue palette the frame colour cycles through.
+  //   ncolors — size of the smooth colormap the frame colour cycles through.
   const config = {
-    delay: 40000,      // \u00B5s between frames (xml default 50000; calmer-by-feel 40000)
-    delay2: 2000000,   // \u00B5s to linger on a finished flame (--delay2)
-    iterations: 25,    // recursion depth / frames per flame (--iterations)
-    points: 10000,     // max points plotted per frame (--points)
-    ncolors: 96,       // hue-palette size (--colors; xml default 64, a touch more)
+    delay: 50000,      // \u00B5s between frames while a flame builds (--delay; xml default)
+    delay2: 2000000,   // \u00B5s to linger on a finished flame (--delay2; xml default)
+    iterations: 25,    // recursion depth / frames per flame (--iterations; xml default)
+    points: 10000,     // max points plotted per frame (--points; xml default)
+    ncolors: 64,       // smooth-colormap size (--colors; xml default)
   };
 
   // live: true  -> the loop reads config[key] every frame, applies instantly.
   // live: false -> sizes the palette, so a change re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'delay2', label: 'Linger', type: 'range', min: 0, max: 10000000, step: 100000, default: 2000000, unit: ' \u00B5s', lowLabel: 'brief', highLabel: 'long', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay2', label: 'Linger', type: 'range', min: 1000, max: 10000000, step: 1000, default: 2000000, unit: ' \u00B5s', lowLabel: '0 seconds', highLabel: '10 seconds', live: true },
     { key: 'iterations', label: 'Number of fractals', type: 'range', min: 1, max: 250, step: 1, default: 25, lowLabel: 'few', highLabel: 'many', live: true },
     { key: 'points', label: 'Complexity', type: 'range', min: 100, max: 80000, step: 100, default: 10000, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 96, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   const MAXLEV = 4;       // max functions per frame (C: MAXLEV)
@@ -65,8 +69,8 @@ export function start(canvas) {
   const BLACK = 0xFF000000;
 
   let W, H, S;            // canvas size (device px) and devicePixelRatio
-  let imageData, pixels;  // persistent Uint32 accumulation buffer (additive)
-  let palette;            // ncolors packed-ABGR rainbow values
+  let imageData, pixels;  // persistent Uint32 image buffer (overwrite / GXcopy)
+  let palette;            // ncolors packed-ABGR smooth-colormap values
 
   // f[2][3][MAXLEV]: three non-homogeneous transforms per function — [out][term].
   let f;
@@ -78,6 +82,8 @@ export function start(canvas) {
   let flameAlt;          // toggles "alternate" (anum = 0) frames
   let doReset;           // clear the buffer at the top of the next frame
   let pixcol;            // current palette index (cycles down each frame)
+  let curColor;          // packed-ABGR colour for this frame's points (one solid colour)
+  let mono;              // ncolors <= 2 -> draw white, no colour cycling (C: mono_p)
   let totalPoints;       // leaf points emitted this frame (bounds the recursion)
   let maxTotal;          // == config.points for this frame
   let maxLevels;         // == config.iterations for this frame (recursion depth)
@@ -100,36 +106,24 @@ export function start(canvas) {
     return r % mv;
   }
 
-  // hsl (h in [0,1)) -> packed little-endian 0xFFBBGGRR, matching ImageData.
-  function hslToUint(h, s, l) {
-    const c2 = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c2 * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c2 / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c2; g = x; }
-    else if (seg === 1) { r = x; g = c2; }
-    else if (seg === 2) { g = c2; b = x; }
-    else if (seg === 3) { g = x; b = c2; }
-    else if (seg === 4) { r = x; b = c2; }
-    else { r = c2; b = x; }
-    const R = Math.round((r + m) * 255);
-    const G = Math.round((g + m) * 255);
-    const B = Math.round((b + m) * 255);
-    return ((0xff << 24) | (B << 16) | (G << 8) | R) >>> 0;
-  }
-
+  // C: make_smooth_colormap (utils/colors.c) -- random 2-5 HSV anchors smoothly
+  // interpolated into a closed loop, often muted/pastel (NOT a vivid rainbow).
+  // Built ONCE per init; the C never rebuilds it, only cycles pixcol through it.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Uint32Array(n);
-    // Mid-lightness so additive accumulation has room to brighten toward white.
-    for (let p = 0; p < n; p++) palette[p] = hslToUint(p / n, 1, 0.55);
+    const rgb = makeSmoothColormapRGB(n);
+    palette = new Uint32Array(rgb.length);
+    for (let p = 0; p < rgb.length; p++) {
+      const [r, g, b] = rgb[p];
+      palette[p] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
+    }
+    // C: ncolors <= 2 falls back to mono (white), no colour cycling.
+    mono = palette.length <= 2;
   }
 
-  // Additive plot: add a fraction of the current frame's colour at (px,py),
-  // clamping each channel at 255 so overlaps glow toward white-hot. `scale`-sized
-  // block so points stay visible (and bigger on retina).
-  let addR = 0, addG = 0, addB = 0;   // this frame's per-hit increment
+  // Plain overwrite plot (X11 GXcopy): set each pixel to this frame's solid
+  // colour `curColor`. `scale`-sized block so points stay visible (bigger on
+  // retina). The buffer persists, so overlapping points take the latest colour.
   function plot(px, py) {
     for (let dy = 0; dy < scale; dy++) {
       const yy = py + dy;
@@ -138,15 +132,7 @@ export function start(canvas) {
       for (let dx = 0; dx < scale; dx++) {
         const xx = px + dx;
         if (xx < 0 || xx >= W) continue;
-        const idx = rowBase + xx;
-        const c = pixels[idx];
-        let r = (c & 0xff) + addR;
-        let g = ((c >> 8) & 0xff) + addG;
-        let b = ((c >> 16) & 0xff) + addB;
-        if (r > 255) r = 255;
-        if (g > 255) g = 255;
-        if (b > 255) b = 255;
-        pixels[idx] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
+        pixels[rowBase + xx] = curColor;
       }
     }
   }
@@ -282,17 +268,13 @@ export function start(canvas) {
       variation = random31() % MAXKINDS;
     } else {
       curLevel++;
-      if (palette.length > 2) {
+      // C: set the draw colour to the CURRENT pixcol, THEN decrement (wrap at 0).
+      // (Skipped on reset frames -- the C doesn't XSetForeground there.)
+      if (!mono && palette.length > 2) {
+        curColor = palette[pixcol];
         if (--pixcol < 0) pixcol = palette.length - 1;
       }
     }
-
-    // This frame's additive colour increment, derived from the cycling palette.
-    // ~1/6 of a mid-bright colour per hit: a handful of overlaps reach full.
-    const col = palette[pixcol % palette.length];
-    addR = Math.max(1, ((col & 0xff)) / 6) | 0;
-    addG = Math.max(1, (((col >> 8) & 0xff)) / 6) | 0;
-    addB = Math.max(1, (((col >> 16) & 0xff)) / 6) | 0;
 
     // Number of functions this frame (2..MAXLEV).
     snum = 2 + (curLevel % (MAXLEV - 1));
@@ -338,6 +320,9 @@ export function start(canvas) {
 
     variation = random31() % MAXKINDS;
     pixcol = halfrandom(Math.max(1, palette.length));
+    // C: gcv.foreground = colors[pixcol] (white when mono). Frame 0 (a reset
+    // frame) draws with this; the else branch updates it on later frames.
+    curColor = mono ? 0xFFFFFFFF : palette[pixcol];
     curLevel = 0;
     flameAlt = false;
     doReset = false;

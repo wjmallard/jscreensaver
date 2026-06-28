@@ -4,21 +4,27 @@
 // Port of xscreensaver's greynetic.c (Jamie Zawinski, 1992).
 // https://www.jwz.org/xscreensaver/
 //
-// Stamps a new random rectangle onto the canvas every step, forever, never
-// clearing — so the screen fills with a churning pile of overlapping rects.
+// One of the oldest hacks: every step it stamps a single random rectangle and
+// never clears, so the screen fills with a churning pile of overlapping rects.
 // Each rect's size comes from the C's "minimize area, but don't try too hard"
-// loop (10 tries to land a smallish box, then take whatever we have), placed at
-// a random spot. Two looks, switchable: SOLID rects in a vivid random colour
-// with a random alpha (the Mac/jwxyz path: translucent, so layers show through),
-// or STIPPLED rects — a two-colour fill through one of 12 classic X11 bitmap
-// patterns (the original X11 path). The "grey" toggle honours the ironic name
-// by desaturating every colour to a grey level; left off, it's garish colour.
+// loop (up to 10 tries for a box whose w + h fits under both screen dimensions,
+// each side >= 50px, then take whatever the last try produced), placed at a
+// random spot.
 //
-// Rendering: SOLID is a trivial per-step ctx.fillRect with an rgba() fill — no
-// accumulation buffer, the canvas itself is the persistent pile. STIPPLED tiles
-// a tiny offscreen 1-bpp bitmap (fg where the bit is set, bg elsewhere) into a
-// CanvasPattern and fills the rect with it — the canvas analogue of X11's
-// FillOpaqueStippled. Both are cheap vector fills; nothing is ever read back.
+// This ports the X11 / DO_STIPPLE build (the #ifndef HAVE_JWXYZ default, and the
+// path the autoconf/XQuartz live binary runs): each rect is FillOpaqueStippled
+// through one of 12 inlined X11 bitmaps, with random foreground + background
+// colours, both OPAQUE (no alpha). Colours are pure uniform random RGB cached in
+// a 512-entry pool (greynetic.c's pixels[512]); the `grey` toggle collapses
+// every colour to a grey level — the joke behind the name. (The Mac/jwxyz build
+// instead draws solid rects with a random alpha and no stipple; see greynetic.md.)
+//
+// Rendering: bake the tiny 1-bpp bitmap into an offscreen tile (fg where the bit
+// is set, bg elsewhere) and ctx.createPattern(..., 'repeat') — the canvas
+// analogue of FillOpaqueStippled — then fillRect the rect. The pattern is
+// anchored at the canvas origin (not the rect), matching X11's window-origin
+// stipple phase so overlapping weaves align. The canvas itself is the persistent
+// pile; nothing is read back, nothing accumulates in a separate buffer.
 
 export const title = 'greynetic';
 
@@ -31,46 +37,33 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/greynetic.xml. The stock UI exposes only
-  // delay + grey; `mode`, `ncolors`, and `alpha` are added for parity with the
-  // other ports (the C hardcodes the equivalents: 512-colour cap, full-random
-  // alpha on Mac, stipple-vs-solid chosen at compile time).
+  // Config mirrors hacks/config/greynetic.xml exactly: the only real resources
+  // are `delay` (Frame rate, 0..250000 \u00B5s, default 10000, inverted slider) and
+  // `grey` (Boolean, default false). No other knobs exist in the C.
   const config = {
-    delay: 250000,    // µs between stamps (--delay)
-    mode: 'random',   // 'random' | 'solid' | 'stippled' — fill style per rect
-    grey: false,      // desaturate every colour to a grey level (--grey)
-    ncolors: 512,     // size of the recycled colour pool (C caps pixels[] at 512)
-    alpha: 60,        // solid-rect opacity floor %; rest is random translucency
-    scale: 0.5,       // rect-size multiplier (1 = the C's full size)
+    delay: 10000,   // \u00B5s between rects (--delay; xml default 10000)
+    grey: false,    // collapse every colour to a grey level (--grey)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 250000, step: 1000, default: 250000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'mode', label: 'Fill', type: 'select', default: 'random', live: false, options: [
-        { value: 'random', label: 'solid or stippled' },
-        { value: 'solid', label: 'solid only' },
-        { value: 'stippled', label: 'stippled only' },
-      ] },
-    { key: 'alpha', label: 'Opacity', type: 'range', min: 0, max: 100, step: 1, default: 60, unit: '%', lowLabel: 'sheer', highLabel: 'opaque', live: true },
-    { key: 'scale', label: 'Rect size', type: 'range', min: 0.1, max: 1, step: 0.05, default: 0.5, lowLabel: 'small', highLabel: 'large', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 512, step: 1, default: 512, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 250000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'grey', label: 'Grey', type: 'checkbox', default: false, live: false },
   ];
 
-  // The 12 X11 stipple bitmaps inlined in greynetic.c, as { w, h, bits } where
-  // `bits` is the raw little-endian-bit XBM byte array (bit 0 = leftmost pixel,
-  // rows padded to whole bytes). Used to build tiled fg/bg patterns.
+  // The 12 X11 stipple bitmaps inlined verbatim from greynetic.c, as
+  // { w, h, bits } where `bits` is the raw XBM byte array (bit 0 = leftmost
+  // pixel, rows padded to whole bytes). Order matches the C's BITS() calls.
   const STIPPLES = [
-    { w: 16, h: 4,  bits: [0x55, 0x55, 0xee, 0xee, 0x55, 0x55, 0xba, 0xbb] },
+    { w: 16, h: 4,  bits: [0x55, 0x55, 0xee, 0xee, 0x55, 0x55, 0xba, 0xbb] },   // stipple
     { w: 16, h: 16, bits: [0x55, 0x55, 0x88, 0x88, 0x55, 0x55, 0x22, 0x22, 0x55, 0x55, 0x88, 0x88,
                            0x55, 0x55, 0x22, 0x22, 0x55, 0x55, 0x88, 0x88, 0x55, 0x55, 0x22, 0x22,
-                           0x55, 0x55, 0x88, 0x88, 0x55, 0x55, 0x22, 0x22] },
+                           0x55, 0x55, 0x88, 0x88, 0x55, 0x55, 0x22, 0x22] },   // cross_weave
     { w: 16, h: 16, bits: [0x55, 0x55, 0x00, 0x00, 0x55, 0x55, 0x00, 0x00, 0x55, 0x55, 0x00, 0x00,
                            0x55, 0x55, 0x00, 0x00, 0x55, 0x55, 0x00, 0x00, 0x55, 0x55, 0x00, 0x00,
-                           0x55, 0x55, 0x00, 0x00, 0x55, 0x55, 0x00, 0x00] },
+                           0x55, 0x55, 0x00, 0x00, 0x55, 0x55, 0x00, 0x00] },   // dimple1
     { w: 16, h: 16, bits: [0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x00, 0x00,
                            0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                           0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] },
+                           0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] },   // dimple3
     { w: 4,  h: 2,  bits: [0x07, 0x0d] },                 // flipped_gray
     { w: 2,  h: 2,  bits: [0x01, 0x02] },                 // gray1
     { w: 4,  h: 4,  bits: [0x01, 0x00, 0x04, 0x00] },     // gray3
@@ -81,44 +74,46 @@ export function start(canvas) {
     { w: 3,  h: 1,  bits: [0x02] },                       // vlines3
   ];
 
+  const POOL_CAP = 512;   // greynetic.c: pixels[512]
+
   let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
-  let pool;             // recycled pool of vivid colours, [r, g, b] each
-  let patternCanvas;    // scratch canvas used to bake stipple patterns
+  let pixels = [];      // up-to-512 cache of allocated [r, g, b] colours
+  let patternCanvas;    // scratch canvas used to bake stipple tiles
 
   function randByte() {
     return Math.floor(Math.random() * 256);
   }
 
-  // A fresh random colour as [r, g, b]. Greynetic's name is ironic: the original
-  // is garish full-spectrum, so by default we keep it vivid (push channels apart
-  // a little); `grey` collapses the three channels to one grey level like the C.
+  // One colour as [r, g, b], pure uniform random RGB (greynetic.c's
+  // fgc.red/green/blue = random()). grey_p collapses the three channels to a
+  // single grey level — the joke behind the name.
   function randomColor() {
-    let r = randByte(), g = randByte(), b = randByte();
-    if (config.grey) {
-      g = b = r;
-    } else {
-      // Nudge toward saturation: stretch the spread around the mid channel so
-      // colours read as bright hues rather than muddy near-greys.
-      const lo = Math.min(r, g, b), hi = Math.max(r, g, b);
-      if (hi - lo < 64) { r = (r + 96) & 255; b = (b + 160) & 255; }
+    const r = randByte();
+    if (config.grey) return [r, r, r];
+    return [r, randByte(), randByte()];
+  }
+
+  // greynetic.c's colour logic: allocate a fresh random fg + bg into a 512-entry
+  // pool until it fills, then REUSE two random entries. (On the original this was
+  // X colormap recycling; on TrueColor/jwxyz allocation always succeeds, so the
+  // pool simply caps at 512 and recycles.) Returns [fg, bg].
+  function pickColors() {
+    if (pixels.length >= POOL_CAP) {
+      const fg = pixels[Math.floor(Math.random() * pixels.length)];
+      const bg = pixels[Math.floor(Math.random() * pixels.length)];
+      return [fg, bg];
     }
-    return [r, g, b];
-  }
-
-  function buildPool() {
-    const n = Math.max(2, Math.round(config.ncolors));
-    pool = new Array(n);
-    for (let i = 0; i < n; i++) pool[i] = randomColor();
-  }
-
-  function pick() {
-    return pool[Math.floor(Math.random() * pool.length)];
+    const fg = randomColor();
+    const bg = randomColor();
+    pixels.push(fg, bg);
+    return [fg, bg];
   }
 
   // Bake one stipple bitmap into a tiled CanvasPattern: fg pixels where the bit
-  // is set, bg pixels elsewhere — matching X11's FillOpaqueStippled. The tile is
-  // drawn at the device-pixel scale so the weave stays visible on retina.
+  // is set, bg pixels elsewhere — matching X11's FillOpaqueStippled (both
+  // opaque). The tile is drawn at the device-pixel scale so the weave stays
+  // visible on retina.
   function makeStipplePattern(stipple, fg, bg) {
     const tile = Math.max(1, Math.round(S));   // device px per bitmap pixel
     const tw = stipple.w * tile, th = stipple.h * tile;
@@ -145,9 +140,10 @@ export function start(canvas) {
     return ctx.createPattern(patternCanvas, 'repeat');
   }
 
-  // The C's rectangle sizer: try up to 10 times for a box small enough that
-  // w + h stays under both dimensions ("minimize area, but don't try too hard"),
-  // then take whatever the last try produced. Each side is at least 50px.
+  // greynetic.c's rectangle sizer: up to 10 tries for a box whose w + h stays
+  // under both screen dimensions ("minimize area, but don't try too hard"), then
+  // take whatever the last try produced. Each side is at least 50px. No scaling
+  // — the C draws the box at full size.
   function pickRect() {
     const minW = 50 * S, minH = 50 * S;
     let w = minW, h = minH;
@@ -156,39 +152,20 @@ export function start(canvas) {
       h = minH + Math.floor(Math.random() * Math.max(1, H - minH));
       if (w + h < W && w + h < H) break;
     }
-    // Scale the box down (config.scale; 1 = the C's full size) and clamp.
-    w = Math.max(1, Math.min(W, Math.round(w * config.scale)));
-    h = Math.max(1, Math.min(H, Math.round(h * config.scale)));
     const x = Math.floor(Math.random() * Math.max(1, W - w));
     const y = Math.floor(Math.random() * Math.max(1, H - h));
     return { x, y, w, h };
   }
 
-  // One step: stamp a single rectangle. Solid = an rgba() fill at a random alpha
-  // (floor = config.alpha, rest random, so stacked rects show through). Stippled
-  // = a two-colour bitmap pattern. Never clears — the canvas is the pile.
+  // One step: stamp a single FillOpaqueStippled rectangle — a random bitmap with
+  // random fg/bg colours. The pattern tiles from the canvas origin (X11's
+  // window-origin stipple phase), so overlapping weaves align. Never clears.
   function step() {
     const { x, y, w, h } = pickRect();
-    const stippled = config.mode === 'stippled' ? true
-                   : config.mode === 'solid' ? false
-                   : Math.random() < 0.5;
-
-    if (stippled) {
-      const fg = pick(), bg = pick();
-      ctx.save();
-      ctx.fillStyle = makeStipplePattern(STIPPLES[Math.floor(Math.random() * STIPPLES.length)], fg, bg);
-      // The pattern tiles from the canvas origin; translate so it aligns to the
-      // rect's top-left (cosmetic — keeps the weave from shifting between rects).
-      ctx.translate(x, y);
-      ctx.fillRect(0, 0, w, h);
-      ctx.restore();
-    } else {
-      const [r, g, b] = pick();
-      const floor = config.alpha / 100;
-      const a = floor + Math.random() * (1 - floor);
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
-      ctx.fillRect(x, y, w, h);
-    }
+    const [fg, bg] = pickColors();
+    const stipple = STIPPLES[Math.floor(Math.random() * STIPPLES.length)];
+    ctx.fillStyle = makeStipplePattern(stipple, fg, bg);
+    ctx.fillRect(x, y, w, h);
   }
 
   function init() {
@@ -196,14 +173,15 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
     patternCanvas = document.createElement('canvas');
-    buildPool();
+    pixels = [];
   }
 
-  // reinit clears to black (the colour pool or grey toggle may have changed) and re-seeds.
+  // reinit clears to black and empties the colour pool (e.g. the grey toggle
+  // changed); the next rects repopulate it.
   function reinit() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
-    buildPool();
+    pixels = [];
   }
 
   function resize() {
@@ -217,9 +195,9 @@ export function start(canvas) {
     init();
   }
 
-  // Drive off requestAnimationFrame but keep the original pace: one step() per
-  // config.delay, banking leftover time so the speed is the same at any refresh
-  // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
+  // Drive off requestAnimationFrame but keep the C's pace: one step() per
+  // config.delay \u00B5s, banking leftover time so the speed is the same at any
+  // refresh rate. Cap catch-up so a backgrounded tab doesn't burst on refocus.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -257,7 +235,7 @@ export function start(canvas) {
     },
     pause() { cancelAnimationFrame(rafId); rafId = 0; },
     resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
-    reinit,   // re-seed colours + clear, keeping the current config
+    reinit,   // clear + empty the colour pool, keeping the current config
     config,
     params,
   };

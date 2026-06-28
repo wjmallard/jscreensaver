@@ -23,6 +23,8 @@
 // square so the black background shows as a thin grid of gaps. See [[squiral]]
 // and [[greynetic]] for the grid skeleton this follows.
 
+import { makeColorRampRGB } from './colormap.js';
+
 export const title = 'popsquares';
 
 export const info = {
@@ -34,17 +36,21 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/popsquares.xml. The stock hack lets you
-  // pick fg/bg colour-pair endpoints for the ramp; here that becomes a `palette`
-  // select (the faithful blue default, the other XML colour pairs, plus a vivid
-  // full-spectrum rainbow that the brief invites). `delay` is a touch calmer
-  // than the stock 25000 us so the pulse reads as a gentle breathe.
+  // Defaults/ranges mirror hacks/config/popsquares.xml. The stock hack picks the
+  // ramp's two endpoints via the `bg` (light) and `fg` (dark) colour selects;
+  // both are exposed here verbatim (six colours each, blue by default). `delay`
+  // defaults to ~2x the stock 25000 us: a browser rAF loop hits the nominal rate
+  // exactly, whereas xscreensaver's effective fps is ~half nominal (the delay is
+  // a floor + ~30ms of overhead), so 50000 here matches the real binary's pulse
+  // speed (see framerate-calibration; the main session fine-tunes vs the live
+  // install).
   const config = {
-    delay: 50000,          // us between frames (--delay); stock is 25000
+    delay: 50000,          // us between frames (--delay); stock 25000, see note above
     subdivision: 5,        // grid fineness: screen split into ~this many cells (--subdivision)
     border: 1,             // px shaved off each square so a black grid shows (--border)
     ncolors: 128,          // length of the closed colour ramp (--ncolors)
-    palette: 'blue',       // ramp endpoints; 'rainbow' = full-spectrum hue sweep
+    bg: '#0000FF',         // light endpoint = ramp peak (--bg); XML default "Light blue"
+    fg: '#00008B',         // dark endpoint = ramp base (--fg); XML default "Dark blue"
     twitch: false,         // on ramp wrap, sometimes re-roll the whole grid (--twitch)
   };
 
@@ -56,29 +62,24 @@ export function start(canvas) {
     { key: 'subdivision', label: 'Subdivision', type: 'range', min: 1, max: 64, step: 1, default: 5, lowLabel: 'coarse', highLabel: 'fine', live: false },
     { key: 'border', label: 'Border', type: 'range', min: 0, max: 5, step: 1, default: 1, lowLabel: 'none', highLabel: 'thick', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 512, step: 1, default: 128, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'palette', label: 'Palette', type: 'select', default: 'blue', live: false, options: [
-        { value: 'blue', label: 'blue (default)' },
-        { value: 'red', label: 'red' },
-        { value: 'yellow', label: 'yellow' },
-        { value: 'green', label: 'green' },
-        { value: 'cyan', label: 'cyan' },
-        { value: 'magenta', label: 'magenta' },
-        { value: 'rainbow', label: 'rainbow' },
+    { key: 'bg', label: 'Background', type: 'select', default: '#0000FF', live: false, options: [
+        { value: '#FF0000', label: 'Light red' },
+        { value: '#FFFF00', label: 'Light yellow' },
+        { value: '#00FF00', label: 'Light green' },
+        { value: '#00FFFF', label: 'Light cyan' },
+        { value: '#0000FF', label: 'Light blue' },
+        { value: '#FF00FF', label: 'Light magenta' },
+      ] },
+    { key: 'fg', label: 'Foreground', type: 'select', default: '#00008B', live: false, options: [
+        { value: '#8C0000', label: 'Dark red' },
+        { value: '#8C8C00', label: 'Dark yellow' },
+        { value: '#008C00', label: 'Dark green' },
+        { value: '#008C8C', label: 'Dark cyan' },
+        { value: '#00008B', label: 'Dark blue' },
+        { value: '#8C008C', label: 'Dark magenta' },
       ] },
     { key: 'twitch', label: 'Twitch', type: 'checkbox', default: false, live: true },
   ];
-
-  // The XML's fg (dark, ramp start) / bg (light, ramp end) colour pairs, as
-  // [fgHex, bgHex]. The ramp pulses from the dark end up to the light end and
-  // back; the default is xscreensaver's dark-blue -> light-blue.
-  const PAIRS = {
-    blue:    ['#00008B', '#0000FF'],
-    red:     ['#8C0000', '#FF0000'],
-    yellow:  ['#8C8C00', '#FFFF00'],
-    green:   ['#008C00', '#00FF00'],
-    cyan:    ['#008C8C', '#00FFFF'],
-    magenta: ['#8C008C', '#FF00FF'],
-  };
 
   let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
@@ -110,54 +111,18 @@ export function start(canvas) {
     return [h, s, max];
   }
 
-  // HSV -> "rgb(r,g,b)" CSS string. h in [0,360) (wrapped), s/v in [0,1].
-  function hsvToCss(h, s, v) {
-    h = ((h % 360) + 360) % 360;
-    const c = v * s;
-    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-    const m = v - c;
-    let r = 0, g = 0, b = 0;
-    if (h < 60) { r = c; g = x; }
-    else if (h < 120) { r = x; g = c; }
-    else if (h < 180) { g = c; b = x; }
-    else if (h < 240) { g = x; b = c; }
-    else if (h < 300) { r = x; b = c; }
-    else { r = c; b = x; }
-    return `rgb(${Math.round((r + m) * 255)}, ${Math.round((g + m) * 255)}, ${Math.round((b + m) * 255)})`;
-  }
-
-  // Build the closed colour ramp exactly like make_color_ramp(..., closed_p).
-  // First half ramps HSV1 -> HSV2 across `half = floor(n/2)+1` steps (the deltas
-  // divide by `half`, matching the C), then the second half mirrors it back:
-  // colors[i] = colors[n - i]. The result is a seamless fg->bg->fg loop, so a
-  // square stepping its index past the end wraps with no colour jump.
+  // Build the closed colour ramp exactly like popsquares_init's make_color_ramp:
+  // rgb_to_hsv the dark `fg` / light `bg` endpoints, then makeColorRampRGB with
+  // closedP=true ramps HSV fg -> bg over the first floor(n/2)+1 entries (hue
+  // truncated to int, channels 16-bit-quantized -- both handled by colormap.js)
+  // and mirrors them back, giving a seamless fg -> bg -> fg loop. A square
+  // stepping its index past the end wraps with no colour jump.
   function buildColors() {
     const n = Math.max(2, Math.round(config.ncolors));
-    colors = new Array(n);
-
-    let h1, s1, v1, h2, s2, v2;
-    if (config.palette === 'rainbow') {
-      // A full-spectrum closed loop: hue 0 -> 360 (mirrored) at full sat/value.
-      h1 = 0; s1 = 1; v1 = 1;
-      h2 = 360; s2 = 1; v2 = 1;
-    } else {
-      const [fgHex, bgHex] = PAIRS[config.palette] || PAIRS.blue;
-      [h1, s1, v1] = rgbToHsv(...hexToRgb(fgHex));  // dark end = ramp start
-      [h2, s2, v2] = rgbToHsv(...hexToRgb(bgHex));  // light end = ramp peak
-      // hexToRgb on a pure-blue endpoint yields h=240 for both ends, so the ramp
-      // is a pure value pulse; rgbToHsv keeps h stable when s collapses anyway.
-    }
-
-    const half = ((n / 2) | 0) + 1;
-    const dh = (h2 - h1) / half;
-    const ds = (s2 - s1) / half;
-    const dv = (v2 - v1) / half;
-    for (let i = 0; i < half; i++) {
-      colors[i] = hsvToCss(h1 + i * dh, s1 + i * ds, v1 + i * dv);
-    }
-    for (let i = half; i < n; i++) {
-      colors[i] = colors[n - i];   // mirror the back half (closed loop)
-    }
+    const [h1, s1, v1] = rgbToHsv(...hexToRgb(config.fg));  // dark end = ramp start
+    const [h2, s2, v2] = rgbToHsv(...hexToRgb(config.bg));  // light end = ramp peak
+    colors = makeColorRampRGB(h1, s1, v1, h2, s2, v2, n, true)
+      .map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // Lay out the grid. Faithful to popsquares_reshape: clamp the subdivision for
@@ -175,8 +140,9 @@ export function start(canvas) {
     let subx, suby;
     if (W > H * 5 || H > W * 5) {                // weird aspect ratio
       const r = W / H;
-      if (r > 1) { suby = s; subx = Math.round(s * r); }
-      else { subx = s; suby = Math.round(s / r); }
+      // C assigns s*r / s/r to int subdivisionx/y -> truncates toward zero.
+      if (r > 1) { suby = s; subx = Math.trunc(s * r); }
+      else { subx = s; suby = Math.trunc(s / r); }
     } else {
       subx = suby = s;
     }
@@ -199,10 +165,14 @@ export function start(canvas) {
     }
   }
 
-  // One frame: draw every square at its current ramp colour, then advance its
-  // index. A square that runs off the end of the ramp re-rolls — and with
-  // twitch on, a 1-in-4 wrap re-rolls the entire grid at once for a glitchy
-  // strobe. `border` shaves the drawn rect so the black grid lines show.
+  // One frame, transcribed from popsquares_draw: draw every square at its current
+  // ramp colour, then advance its index. When a square's index reaches the end it
+  // re-rolls to a random index -- and with twitch on, a 1-in-4 wrap re-randomises
+  // the ENTIRE grid mid-frame, so the not-yet-drawn squares in this same frame
+  // already show their new colours (exactly like the C), a glitchy strobe. We
+  // mutate squares[] in place (the C steps s->color through a pointer) so a
+  // twitch re-roll sticks for the rest of the loop. `border` shaves the drawn
+  // rect so the black background shows as a thin grid of gutters.
   function step() {
     const n = colors.length;
     const b = Math.round(config.border * S);
@@ -212,18 +182,15 @@ export function start(canvas) {
     for (let y = 0; y < gh; y++) {
       for (let x = 0; x < gw; x++) {
         const idx = gw * y + x;
-        let c = squares[idx];
-        ctx.fillStyle = colors[c];
+        ctx.fillStyle = colors[squares[idx]];
         ctx.fillRect(x * sw, y * sh, dw, dh);
-        c++;
-        if (c >= n) {
-          if (config.twitch && ((Math.random() * 4) | 0) === 0) {
+        squares[idx]++;
+        if (squares[idx] === n) {
+          if (config.twitch && ((Math.random() * 4) | 0) === 0)
             randomizeSquareColors();
-            return;   // the whole grid was just re-rolled; next frame draws it
-          }
-          c = (Math.random() * n) | 0;
+          else
+            squares[idx] = (Math.random() * n) | 0;
         }
-        squares[idx] = c;
       }
     }
   }

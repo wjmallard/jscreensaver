@@ -4,15 +4,23 @@
 // Port of xscreensaver's starfish.c by Jamie Zawinski (1997).
 // https://www.jwz.org/xscreensaver/
 //
-// One big undulating radial-spline blob: N control radii arranged evenly
-// around a centre, every `skip`-th one a "valley" (radius 0) and the rest
-// "peaks", joined into a single CLOSED smooth spline. Each frame the radii
-// throb in and out (sin-like oscillation between min_r and max_r), the whole
-// thing slowly spins with accelerating/reversing rotation, and a single colour
-// cycles smoothly through a rainbow. Periodically the shape is re-rolled with a
-// new arm count / spin / size. Sparse vector path (one filled spline/frame),
-// not per-pixel. Closest twin: [[piecewise]] (filled vector blobs + a single
-// slowly-cycling hue); shares the closed-spline morph idea other blob hacks use.
+// One big undulating radial-spline blob: N control radii arranged evenly around
+// a centre, every `skip`-th one a "valley" (radius 0) and the rest "peaks",
+// joined into a single CLOSED smooth spline. Each frame the radii throb in and
+// out (between min_r and max_r), the whole thing slowly spins with
+// accelerating/reversing rotation, and the fill colour advances one step through
+// a colourmap. Periodically the shape is re-rolled (new arm count / spin / size).
+//
+// RENDER MODEL (faithful to draw_starfish): each frame fills the EvenOddRule
+// region BETWEEN this frame's outline and the PREVIOUS frame's outline — i.e.
+// the thin band the shape just swept — in the next colourmap colour. In
+// "zoom"/colour-gradients mode the canvas is NEVER cleared after the first frame,
+// so successive bands ACCUMULATE into concentric colour rings (the signature
+// look); in "blob" mode the canvas is cleared each frame, leaving one writhing
+// shape. The C uses a plain GXcopy fill with EvenOddRule (NOT XOR). Sparse vector
+// path (a couple of splines per frame), not per-pixel.
+
+import { makeSmoothColormapRGB, makeColorRampRGB } from './colormap.js';
 
 export const title = 'starfish';
 
@@ -26,33 +34,31 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
   const TAU = Math.PI * 2;
 
-  // Defaults/ranges mirror hacks/config/starfish.xml (1:1 with the original),
-  // except `delay` is nudged from the stock 10000 to ~one display frame for
-  // smooth motion. The C tripled both elasticity/rotation AND delay for blob
-  // mode (which cancels in real time) — we keep a single delay and don't
-  // triple, so blob and "color gradients" throb at the same calm real-time
-  // pace the original netted out to. See the .md.
+  // Defaults/ranges mirror hacks/config/starfish.xml 1:1 (delay/mode/duration/
+  // thickness/ncolors). `delay` is the usleep interval in microseconds; blob mode
+  // runs it (and the throb/spin) 3x, exactly as the C. (showfps is a framework
+  // control and is not exposed, matching the sibling ports.)
   const config = {
-    delay: 16000,      // microseconds between steps (--delay; stock 10000)
+    delay: 10000,      // microseconds between steps (--delay; xml default 10000)
     mode: 'random',    // 'random' | 'zoom' (color gradients) | 'blob' (--mode)
     duration: 30,      // seconds before the shape is re-rolled (--duration)
-    thickness: 0,      // throb speed in px/frame; 0 = random (--thickness)
-    ncolors: 200,      // size of the hue cycle (--colors)
+    thickness: 0,      // elasticity / radial velocity in px; 0 = random (--thickness)
+    ncolors: 200,      // size of the colourmap (--colors)
   };
 
   // live: true  -> the loop reads config[key] every step (applies instantly).
-  // live: false -> the value sizes the shape / render mode, so a change
-  //                re-runs init() via reinit().
+  // live: false -> the value sizes the shape / palette, so a change re-runs
+  //                init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'mode', label: 'Mode', type: 'select', default: 'random', live: false, options: [
         { value: 'random', label: 'Random' },
         { value: 'zoom', label: 'Color gradients' },
         { value: 'blob', label: 'Pulsating blob' },
       ] },
     { key: 'duration', label: 'Duration', type: 'range', min: 1, max: 60, step: 1, default: 30, unit: ' s', lowLabel: 'short', highLabel: 'long', live: true },
-    { key: 'thickness', label: 'Throb speed', type: 'range', min: 0, max: 150, step: 1, default: 0, lowLabel: 'auto', highLabel: 'fast', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: true },
+    { key: 'thickness', label: 'Thickness', type: 'range', min: 0, max: 150, step: 1, default: 0, lowLabel: 'thin', highLabel: 'thick', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // C helpers: frand(x) -> [0,x); irand(n) -> integer [0,n); RANDSIGN() -> +-1.
@@ -62,9 +68,12 @@ export function start(canvas) {
 
   let S = 1;          // devicePixelRatio
   let W = 0, H = 0;   // canvas size, device px
-  let blobP = false;  // render/size mode, fixed per init() (the C's st->blob_p)
+  let blobP = false;  // render mode, fixed per init() (the C's st->blob_p)
   let fish = null;    // the current starfish (see makeStarfish)
-  let hue = 0;        // current cycling hue in degrees (the C's fg_index)
+  let prev = null;    // previous frame's outline {cx,cy,n} (the C's s->prev)
+  let palette = null; // Array of fillStyle strings (the C's st->colors)
+  let ncolors = 200;  // captured colour count, 2..255 (the C's st->ncolors)
+  let fgIndex = 0;    // index into palette, +1/frame (the C's fg_index)
   let elapsedMs = 0;  // sim time since the shape was last re-rolled
 
   // make_starfish(): roll a fresh shape. Geometry is in device px. `blobP` is
@@ -87,6 +96,13 @@ export function start(canvas) {
     // converted from degrees to a per-frame ratio.
     let rotv = (frand(4) + frand(4) + frand(4)) / 360;
 
+    // blob mode deforms and spins 3x faster per frame (paired with delay*3, see
+    // effDelayMs); rot_max is taken AFTER the *3, exactly as the C orders it.
+    if (blobP) {
+      elasticity *= 3;
+      rotv *= 3;
+    }
+
     const rotMax = rotv * 2;
     let rota = 0.0004 + frand(0.0002);
 
@@ -105,7 +121,8 @@ export function start(canvas) {
     const skip = skips[irand(skips.length)];
 
     // Deformation mode: in "zoom" the valleys (every skip-th point) stay pinned
-    // at the centre (sharp arms); in "pulse" everything throbs.
+    // at the centre (sharp arms); in "pulse" everything throbs. (This is the C's
+    // per-shape s->mode — distinct from blobP, which is the render mode.)
     const defZoom = irand(skip === 2 ? 3 : 12) === 0;
 
     let maxR = size;
@@ -240,31 +257,22 @@ export function start(canvas) {
     }
   }
 
-  // Build the closed spline as a Path2D. compute_closed_spline() in the C is the
-  // standard uniform cubic B-spline -> Bezier conversion wrapped around the
-  // control array; each section i (control[i] -> control[i+1]) has Bezier points
-  //   p0 = (c[i-1] + 4 c[i] + c[i+1]) / 6
-  //   p1 = (2 c[i] + c[i+1]) / 3
-  //   p2 = (c[i] + 2 c[i+1]) / 3
-  //   p3 = (c[i] + 4 c[i+1] + c[i+2]) / 6
-  // and p3 of section i == p0 of section i+1, so the curve is C2-continuous and
-  // closes seamlessly (canvas draws the Beziers natively — no subdivision, no
-  // integer-pixel polygon, so it stays smooth at any DPI). The wrap uses
-  // (i +- k + n) % n on every index, so there is no off-by-one kink at the seam.
-  function buildPath(s) {
-    const n = s.npoints;
-    const cx = s.cx;
-    const cy = s.cy;
-    const path = new Path2D();
-
-    // Start at p0 of section 0.
+  // compute_closed_spline + draw: append one closed outline (the smooth spline
+  // through control points cx/cy) to `path` as native Bezier sections. Each
+  // section i (control i -> i+1) has Bezier points
+  //   p0 = (c[i-1] + 4 c[i] + c[i+1]) / 6   p1 = (2 c[i] + c[i+1]) / 3
+  //   p2 = (c[i] + 2 c[i+1]) / 3            p3 = (c[i] + 4 c[i+1] + c[i+2]) / 6
+  // (calc_section reduced), and p3 of section i == p0 of section i+1, so the curve
+  // is C2-continuous and closes seamlessly. The C flattens each Bezier to a
+  // polyline (add_bezier_arc); canvas renders the true Bezier, identical to
+  // sub-pixel at any DPI. Every index wraps (i +- k + n) % n -> no seam kink.
+  function appendOutline(path, cx, cy, n) {
     const m = (n - 1) % n;
     const p = 1 % n;
     path.moveTo(
       (cx[m] + 4 * cx[0] + cx[p]) / 6,
       (cy[m] + 4 * cy[0] + cy[p]) / 6,
     );
-
     for (let i = 0; i < n; i++) {
       const i1 = (i + 1) % n;
       const i2 = (i + 2) % n;
@@ -277,54 +285,93 @@ export function start(canvas) {
         (cy[i] + 4 * cy[i1] + cy[i2]) / 6,
       );
     }
-
     path.closePath();
-    return path;
   }
 
-  // Draw the shape. The C cycles a colourmap (the colour shifts one step per
-  // frame) and fills with the EvenOddRule (so self-crossings, when the star
-  // turns inside out, read as holes). We keep even-odd, and emulate the colour
-  // cycle with a smoothly advancing hue. "Pulsating blob" = one solid hue;
-  // "color gradients" = a radial rainbow that also rotates — the full-repaint
-  // stand-in for the C's accumulated concentric colour bands. See the .md.
+  // draw_starfish(): fill the EvenOddRule region between THIS frame's outline and
+  // the PREVIOUS frame's outline (their symmetric difference — the band the shape
+  // just swept) in palette[fgIndex]. The C concatenates both polygons into one
+  // even-odd XFillPolygon; two closed sub-paths give the identical region (bar a
+  // measure-zero connector sliver). zoom mode never clears, so bands accumulate
+  // into concentric colour rings; blob mode clears each frame, leaving a single
+  // writhing shape. The colour advances one colourmap entry per frame. The first
+  // frame after a (re)seed has no prev, so it only records the outline — matching
+  // the C's `if (s->prev)` guard. fg_index advances unconditionally.
   function drawFish(s) {
-    const path = buildPath(s);
-
-    if (blobP) {
-      ctx.fillStyle = `hsl(${hue.toFixed(1)}, 100%, 55%)`;
-    } else {
-      const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.maxR);
-      const stops = 6;
-      for (let k = 0; k <= stops; k++) {
-        const h = (hue + k * 360 / stops) % 360;
-        grad.addColorStop(k / stops, `hsl(${h.toFixed(1)}, 100%, 55%)`);
+    const n = s.npoints;
+    if (prev) {
+      const band = new Path2D();
+      appendOutline(band, s.cx, s.cy, n);
+      appendOutline(band, prev.cx, prev.cy, prev.n);
+      if (blobP) {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
       }
-      ctx.fillStyle = grad;
+      ctx.fillStyle = palette[fgIndex];
+      ctx.fill(band, 'evenodd');
     }
-
-    ctx.fill(path, 'evenodd');
+    prev = { cx: s.cx.slice(0, n), cy: s.cy.slice(0, n), n };
+    fgIndex = (fgIndex + 1) % ncolors;
   }
 
-  // One step: throb, spin, repaint (clear + fill), advance the hue, and re-roll
-  // the shape after `duration` seconds of sim time.
+  // reset_starfish()'s colourmap: 2/3 of the time make_smooth_colormap (2-5
+  // random HSV anchors, often muted/pastel), 1/3 make_uniform_colormap (a full
+  // hue sweep 0..359 at one random saturation/value in 66..99%). Both via the
+  // faithful colormap.js helpers; stored as fillStyle strings. Rebuilt only at
+  // init and on the 1/10 duration re-rolls, exactly like the C.
+  function buildPalette() {
+    let map;
+    if (irand(3) !== 0) {               // random() % 3 nonzero -> 2/3 smooth
+      map = makeSmoothColormapRGB(ncolors);
+    } else {                            // 1/3 uniform (a make_color_ramp)
+      const sat = (irand(34) + 66) / 100;   // the C's (random()%34 + 66)/100
+      const val = (irand(34) + 66) / 100;
+      map = makeColorRampRGB(0, sat, val, 359, sat, val, ncolors, false);
+    }
+    palette = map.map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
+  }
+
+  // reset_starfish(): fresh colourmap + fresh shape, fg_index back to 0. `clear`
+  // mirrors the C's done_once gate — the window is cleared exactly once (at init /
+  // on a resize-reinit), to colourmap[0] in zoom mode or black in blob mode — so
+  // zoom-mode bands keep accumulating across every later re-roll.
+  function reset(clear) {
+    buildPalette();
+    fgIndex = 0;
+    prev = null;
+    fish = makeStarfish();
+    if (clear) {
+      ctx.fillStyle = blobP ? '#000' : palette[0];
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // make_window_starfish(): a fresh shape only — same colourmap, fg_index keeps
+  // cycling, no clear. prev resets so the new shape's first frame just records.
+  function rerollShape() {
+    prev = null;
+    fish = makeStarfish();
+  }
+
+  // blob mode runs delay*3 in the C (with elasticity/rotv also *3, applied in
+  // makeStarfish): chunkier, bigger per-frame steps at the same net real-time pace.
+  function effDelayMs() {
+    return (config.delay * (blobP ? 3 : 1)) / 1000;
+  }
+
+  // One step: throb, spin, draw the swept band, then re-roll the shape after
+  // `duration` seconds of sim time (1-in-10 of those re-rolls the colourmap too).
   function step() {
     throb(fish);
     spin(fish);
-
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
     drawFish(fish);
 
-    // Smooth colour cycle: one colourmap step per frame == 360/ncolors degrees.
-    hue = (hue + 360 / Math.max(2, config.ncolors)) % 360;
-
-    elapsedMs += config.delay / 1000;
+    elapsedMs += effDelayMs();
     if (config.duration > 0 && elapsedMs >= config.duration * 1000) {
       elapsedMs = 0;
-      fish = makeStarfish();
-      // Every now and then, jump to fresh colours (the C re-rolls its colourmap).
-      if (irand(10) === 0) hue = frand(360);
+      // Every now and then pick new colours; otherwise keep the current map.
+      if (irand(10) === 0) reset(false);  // new colourmap, NO clear (zoom keeps accumulating)
+      else rerollShape();
     }
   }
 
@@ -338,15 +385,16 @@ export function start(canvas) {
           : config.mode === 'zoom' ? false
           : irand(3) === 0;
 
-    hue = frand(360);
+    // The C forces ncolors >= 2 (and treats <= 2 as mono b/w; we just build a
+    // 2-colour map there). xml allows 1; we clamp to 2.
+    ncolors = Math.max(2, Math.min(255, Math.round(config.ncolors)));
     elapsedMs = 0;
-    fish = makeStarfish();
+    reset(true);   // build colourmap + shape, clear once (the done_once gate)
   }
 
-  // reinit clears to black and re-seeds (mode/throb-speed may have changed).
+  // reinit re-seeds (mode/thickness/ncolors may have changed); init()'s reset
+  // clears appropriately.
   function reinit() {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
     init();
   }
 
@@ -356,13 +404,11 @@ export function start(canvas) {
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
     init();
   }
 
   // Drive off requestAnimationFrame but keep the original pace: one step() per
-  // config.delay, banking leftover time so the speed is the same at any refresh
+  // effective delay, banking leftover time so the speed is the same at any refresh
   // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
@@ -374,8 +420,9 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // effDelayMs() is in ms (config.delay is microseconds, *3 in blob mode); the
+    // rAF clock is milliseconds.
+    const delayMs = effDelayMs();
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

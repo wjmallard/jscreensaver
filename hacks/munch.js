@@ -37,7 +37,7 @@ export function start(canvas) {
   // the original (delay in µs, counts as-is). `mismunch` is the xml's 3-way
   // select (random/munch/mismunch); `xor` is its XOR-vs-Solid mode select.
   const config = {
-    delay: 20000,       // µs between draw turns (--delay)
+    delay: 10000,       // µs between draw turns (--delay; xml/C stock default)
     clear: 65,          // munchers completed before the screen wipes (--clear / "Duration")
     simul: 5,           // squares munching at once (--simul)
     mismunch: 'random', // 'random' | 'munch' | 'mismunch' (--classic / --mismunch / --random)
@@ -45,7 +45,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'clear', label: 'Duration', type: 'range', min: 1, max: 200, step: 1, default: 65, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'simul', label: 'Simultaneous squares', type: 'range', min: 1, max: 20, step: 1, default: 5, lowLabel: 'one', highLabel: 'many', live: false },
     { key: 'mismunch', label: 'Mode', type: 'select', default: 'random', live: false, options: [
@@ -77,12 +77,16 @@ export function start(canvas) {
   const rnd = (n) => Math.floor(Math.random() * n);   // random() % n
   const coin = () => Math.random() < 0.5;             // random() & 1
 
-  // floor(log2(x)) on an integer, matching utils/pow2.c i_log2 (the C truncates
-  // the float arg to size_t first, so floor the dimension before the log).
+  // floor(log2(x)) on an integer, matching utils/pow2.c i_log2: the C truncates
+  // the double arg to size_t (so floor the dimension first), returns -1 for 0,
+  // and otherwise takes the highest set bit (a clz-based integer op). We mirror
+  // that with 31 - clz32 rather than Math.log2, which can round 2^k down to
+  // k - epsilon and drop a whole size step (e.g. window*0.8 == 1024 exactly).
+  // Window dims are well under 2^31, so clz32 is exact here.
   function ilog2(x) {
     x = Math.floor(x);
     if (x < 1) return -1;
-    return Math.floor(Math.log2(x));
+    return 31 - Math.clz32(x);
   }
 
   // Resolve 'random' to a fresh coin flip; a fixed mode stays put. Matches the

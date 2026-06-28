@@ -71,23 +71,42 @@ export function start(canvas) {
   const frand = (n) => Math.random() * n;
   const randSign = () => (Math.random() < 0.5 ? 1 : -1);
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255. Vivid hues for the blob colours.
-  function hslToRgb(h, s, l) {
-    const a = s * Math.min(l, 1 - l);
-    const f = (n) => {
-      const k = (n + h * 12) % 12;
-      const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-      return Math.round(c * 255);
-    };
-    return [f(0), f(8), f(4)];
+  // hsv_to_rgb (utils/hsv.c): h in degrees, s,v in [0,1] -> [r,g,b] 0-255.
+  // The C emits 16-bit channels (trunc(C * 65535)); an 8-bit display takes the
+  // high byte (>> 8). We fold both, matching colormap.js's quantization, so the
+  // blob colours line up with the X server's downsample of the original.
+  function hsvToRgb(h, s, v) {
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    if (v < 0) v = 0; else if (v > 1) v = 1;
+    const H = (h % 360) / 60;
+    const i = Math.trunc(H);
+    const f = H - i;
+    const p1 = v * (1 - s);
+    const p2 = v * (1 - s * f);
+    const p3 = v * (1 - s * (1 - f));
+    let R, G, B;
+    if      (i === 0) { R = v;  G = p3; B = p1; }
+    else if (i === 1) { R = p2; G = v;  B = p1; }
+    else if (i === 2) { R = p1; G = v;  B = p3; }
+    else if (i === 3) { R = p1; G = p2; B = v;  }
+    else if (i === 4) { R = p3; G = p1; B = v;  }
+    else              { R = v;  G = p1; B = p2; }
+    const q = (c) => Math.min(255, Math.trunc(c * 65535) >> 8);
+    return [q(R), q(G), q(B)];
   }
 
-  // One vivid colour per blob. The C picks random H, S 30-100%, V 66-100% per
-  // layer; we go fully-saturated for the project's vivid-rainbow aesthetic.
+  // One colour per blob, exactly as goop.c's make_goop layer loop: H random
+  // 0-359, S random 30-99%, V random 66-99% (hsv_to_rgb). These are bright but
+  // NOT full-saturation rainbow -- the C deliberately floors S at 30% and V at
+  // 66%, so the palette is somewhat muted. (On jwxyz/macOS this same loop colours
+  // every mode incl. transparent; transparent then drops the alpha to 0xBB.)
   function buildColors(n) {
     colors = new Array(n);
     for (let i = 0; i < n; i++) {
-      const [r, g, b] = hslToRgb(Math.random(), 1, 0.55);
+      const H = Math.floor(Math.random() * 360);
+      const S = (Math.floor(Math.random() * 70) + 30) / 100;
+      const V = (Math.floor(Math.random() * 34) + 66) / 100;
+      const [r, g, b] = hsvToRgb(H, S, V);
       colors[i] = `rgb(${r}, ${g}, ${b})`;
     }
   }
@@ -227,7 +246,7 @@ export function start(canvas) {
 
   // Full-frame redraw: clear to black, then fill every blob with the blend the
   // current mode selects. Canvas has no XOR raster op, so 'xor' uses 'difference'
-  // (|bg - src|), the closest analog; see goop.md for the full rationale.
+  // (|bg - src|); see goop.md for the full rationale.
   function drawAll() {
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
@@ -238,18 +257,25 @@ export function start(canvas) {
     let alpha = 1;
     if (config.mode === 'transparent') {
       comp = 'source-over';
-      alpha = 0.73;            // jwxyz/macOS renders transparent goop at ~0xBB alpha
+      alpha = 0xBB / 0xFF;     // jwxyz/macOS renders transparent goop at alpha 0xBB
     } else if (config.mode === 'additive') {
       comp = 'lighter';        // transmitted light: overlaps brighten toward white
     } else if (config.mode === 'xor') {
       comp = 'difference';     // closest canvas analog to X11 GXxor (overlaps invert)
     } // else 'opaque': source-over, alpha 1
 
+    // XOR is a single-plane (1-bit) mode in the C: every blob is the foreground
+    // colour and overlaps toggle. 'difference' with ONE constant colour on black
+    // reproduces that exactly (|0-fg|=fg, then |fg-fg|=0); per-blob colours would
+    // not. The C's foreground default is yellow.
+    const xorFill = 'rgb(255, 255, 0)';
+    const useXorFill = config.mode === 'xor';
+
     ctx.globalCompositeOperation = comp;
     ctx.globalAlpha = alpha;
     for (let i = 0; i < blobs.length; i++) {
       const b = blobs[i];
-      ctx.fillStyle = b.color;
+      ctx.fillStyle = useXorFill ? xorFill : b.color;
       ctx.fill(buildPath(b));
     }
     ctx.globalCompositeOperation = 'source-over';

@@ -27,43 +27,41 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/wander.xml so the config box maps 1:1 to
-  // the original. `ncolors` isn't in the stock UI (it hardcodes a 256-step rainbow
-  // loop) but we expose it for parity with the other ports. `delay` is a touch
-  // calmer than the stock 20000 by feel (see wander.md).
+  // the original. There is no `ncolors` resource: the C hardcodes a 256-entry
+  // full-saturation rainbow loop (MAXIMUM_COLOR_COUNT), so the palette is fixed.
   const config = {
-    delay: 30000,        // µs between frames (--delay; stock 20000)
+    delay: 20000,        // µs between frames (--delay, stock 20000)
     density: 2,          // 1-in-density iterations step; rest redraw last (--density)
     reset: 2500000,      // ~1/reset chance per iteration to clear + respawn (--reset)
     length: 25000,       // ~1/length chance per iteration to advance colour (--length)
     advance: 1,          // colour step per change; 0 = random (--advance)
     circles: false,      // draw filled discs instead of squares (size>1) (--circles)
-    size: 1,             // block size in logical px (--size)
-    ncolors: 256,        // size of the rainbow colour loop
+    size: 1,             // block size in device px (--size)
   };
 
   // live: true  -> the loop reads config every iteration, so edits apply instantly.
   // live: false -> the value sizes the grid/palette, so a change re-runs init()
   //                via reinit() (which clears the canvas).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'density', label: 'Density', type: 'range', min: 1, max: 30, step: 1, default: 2, invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'reset', label: 'Duration', type: 'range', min: 10000, max: 3000000, step: 10000, default: 2500000, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'length', label: 'Length', type: 'range', min: 100, max: 100000, step: 100, default: 25000, lowLabel: 'short', highLabel: 'long', live: true },
-    { key: 'advance', label: 'Color contrast', type: 'range', min: 0, max: 100, step: 1, default: 1, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'advance', label: 'Color contrast', type: 'range', min: 1, max: 100, step: 1, default: 1, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'circles', label: 'Draw spots', type: 'checkbox', default: false, live: false },
-    { key: 'size', label: 'Size', type: 'range', min: 1, max: 20, step: 1, default: 1, lowLabel: 'small', highLabel: 'large', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 256, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'size', label: 'Size', type: 'range', min: 1, max: 100, step: 1, default: 1, lowLabel: 'small', highLabel: 'large', live: false },
   ];
 
   const BLACK = 0xFF000000;
   const ITERATIONS = 2000;     // walk iterations per drawn frame (verbatim C)
+  const MAX_COLORS = 256;      // MAXIMUM_COLOR_COUNT — fixed palette size (verbatim C)
 
-  let W, H, S;                 // canvas size (device px) and devicePixelRatio
+  let W, H;                    // canvas size (device px)
   let imageData, pixels;       // persistent Uint32 accumulation buffer
-  let palette;                 // ncolors packed-ABGR rainbow values
+  let palette;                 // MAX_COLORS packed-ABGR rainbow-loop values
 
   let gw, gh;                  // grid size = canvas size / size (in size-blocks)
-  let size;                    // block size in device px (size * dpr, *3 on retina)
+  let size;                    // block size in device px (*3 on retina, per the C)
   let stamp;                   // offsets of a filled disc within a block (circles)
 
   // Walker state (matches the C's struct fields).
@@ -76,37 +74,51 @@ export function start(canvas) {
     return (Math.random() * n) | 0;
   }
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255.
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const xx = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = xx; }
-    else if (seg === 1) { r = xx; g = c; }
-    else if (seg === 2) { g = c; b = xx; }
-    else if (seg === 3) { g = xx; b = c; }
-    else if (seg === 4) { r = xx; b = c; }
-    else { r = c; b = xx; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
+  // hsv_to_rgb (utils/hsv.c): h in degrees, s,v in [0,1]. Returns [r,g,b] 0..255.
+  // Faithful to the C — integer hue, then the 16-bit-channel >>8 downsample (==
+  // floor(c*256), the same as colormap.js's to255). wander only ever calls this
+  // at full saturation/value, but the general form keeps it honest.
+  function hsvToRgb(h, s, v) {
+    const H = (((h % 360) + 360) % 360) / 60;
+    const i = Math.trunc(H);
+    const f = H - i;
+    const p1 = v * (1 - s);
+    const p2 = v * (1 - s * f);
+    const p3 = v * (1 - s * (1 - f));
+    let r, g, b;
+    if      (i === 0) { r = v;  g = p3; b = p1; }
+    else if (i === 1) { r = p2; g = v;  b = p1; }
+    else if (i === 2) { r = p1; g = v;  b = p3; }
+    else if (i === 3) { r = p1; g = p2; b = v;  }
+    else if (i === 4) { r = p3; g = p1; b = v;  }
+    else              { r = v;  g = p1; b = p2; }
+    return [to255(r), to255(g), to255(b)];
   }
 
-  // The C's make_color_loop sweeps hue 0 -> 120 -> 240 at full saturation/value,
-  // i.e. a full rainbow (it loops, but only [0,240] of the wheel is one period;
-  // matching that two-thirds sweep keeps the original's red->green->blue feel).
+  // 16-bit-quantized channel -> 8-bit, matching the X server's downsample.
+  function to255(c) {
+    return c <= 0 ? 0 : c >= 1 ? 255 : Math.floor(c * 256);
+  }
+
+  // make_color_loop(0,1,1 -> 120,1,1 -> 240,1,1, closed) (utils/colors.c) routed
+  // through make_color_path: three equal edges (each 1/3 of the wheel), so each
+  // gets trunc(256/3) = 85 colours, hue stepping by 120/85 deg from its anchor at
+  // full saturation/value; the 255 generated entries leave colors[255] padded from
+  // colors[254] (the C's float round-off pad). Net result: a UNIFORM rainbow over
+  // the WHOLE hue wheel (red -> green -> blue -> red). Built once; never cycled.
   function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Uint32Array(n);
-    for (let p = 0; p < n; p++) {
-      const h = (p / n) * (240 / 360);
-      const [r, g, b] = hslToRgb(h, 1, 0.5);
-      palette[p] = (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
+    palette = new Uint32Array(MAX_COLORS);
+    const anchors = [0, 120, 240];
+    const per = Math.trunc(MAX_COLORS / anchors.length);   // 85 colours per edge
+    const dh = 120 / per;                                  // hue step within an edge
+    let k = 0;
+    for (let e = 0; e < anchors.length; e++) {
+      for (let j = 0; j < per; j++, k++) {
+        const [r, g, b] = hsvToRgb(Math.trunc(anchors[e] + j * dh), 1, 1);
+        palette[k] = (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
+      }
     }
+    for (; k < MAX_COLORS; k++) palette[k] = palette[k - 1];   // round-off pad
   }
 
   // Precompute the pixel offsets of a filled disc inside a size x size block,
@@ -188,7 +200,9 @@ export function start(canvas) {
         while (y >= gh) y -= gh;
       }
 
-      // ~1/length chance to advance the trail colour.
+      // ~1/length chance to advance the trail colour. advance===0 is the C's
+      // random-colour mode (-advance 0); the xml slider starts at 1 so the UI
+      // never reaches it, but the branch is kept to match the C exactly.
       if (nrand(lengthLimit) === 0) {
         if (advance === 0) {
           colorIndex = nrand(ncolors);
@@ -210,14 +224,15 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 
-    // size in device px; the C triples it on very large (retina) displays.
-    size = Math.max(1, Math.round(config.size)) * S;
+    // size is in device pixels, exactly as the C's `size` (X11 reports device px,
+    // and canvas.width is device px too). The C triples it when the backing store
+    // exceeds 2560 px in either dimension ("Retina displays"). Do NOT scale by
+    // devicePixelRatio: the C never does, and canvas.width already IS device px.
+    size = Math.max(1, Math.round(config.size));
     if (W > 2560 || H > 2560) size *= 3;
-    size = Math.max(1, Math.round(size));
 
     // Grid is the canvas measured in size-blocks (the C divides w/h by size).
     gw = Math.max(1, Math.floor(W / size));
@@ -280,7 +295,7 @@ export function start(canvas) {
   }
 
   // Re-seed with the current config (clears the accumulation buffer because
-  // size/colors resize the grid and palette).
+  // size/circles resize the grid and the stamp).
   function reinit() {
     init();
   }

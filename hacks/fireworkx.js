@@ -41,13 +41,12 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/fireworkx.xml so the config box maps
-  // 1:1 to the original. delay is microseconds (xml units). `shells` and
-  // `sparks` expose the C's fixed SHELLCOUNT(4)/PIXCOUNT(500) as tunables.
+  // 1:1 to the original (delay/maxlife/flash/shoot). delay is microseconds (xml
+  // units). The C's SHELLCOUNT(4)/PIXCOUNT(500) are FIXED compile-time constants
+  // -- not xml resources -- so they stay constants here (below), not sliders.
   const config = {
     delay: 50000,    // µs between frames (--delay; stock 10000, calmer here)
     maxlife: 32,     // shell life dial 0..100 -> "Activity" (--maxlife)
-    shells: 4,       // simultaneous fireshells (C's fixed SHELLCOUNT)
-    sparks: 500,     // sparks per shell (C's fixed PIXCOUNT)
     flash: true,     // additive colored light flash (--no-flash)
     shoot: false,    // launch shells upward from the floor (--shoot)
   };
@@ -55,36 +54,38 @@ export function start(canvas) {
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'maxlife', label: 'Activity', type: 'range', min: 0, max: 100, step: 1, default: 32, lowLabel: 'dense', highLabel: 'sparse', live: true },
-    { key: 'shells', label: 'Fireworks at once', type: 'range', min: 1, max: 8, step: 1, default: 4, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'sparks', label: 'Sparks per shell', type: 'range', min: 50, max: 1500, step: 50, default: 500, lowLabel: 'thin', highLabel: 'thick', live: false },
     { key: 'flash', label: 'Light flash', type: 'checkbox', default: true, live: true },
     { key: 'shoot', label: 'Shells upward', type: 'checkbox', default: false, live: true },
   ];
 
   // ---- constants (verbatim from the C) -----------------------------------
+  const SHELLCOUNT = 4;              // fireshells (C: FIXED, for SSE lane packing)
+  const PIXCOUNT = 500;              // sparks per shell (C: PIXCOUNT)
   const SHELL_LIFE_RATIO = 6;        // life += life/6 floor
   const POWDER = 5.0;                // initial spark speed scale
   const FTWEAK = 12;                 // sub-steps per displayed frame
   const FLASH_ZOOM = 0.8;            // light-map falloff numerator
   const G_ACCELERATION = 0.001;      // gravity (per sub-step)
 
-  // Calm-tuning (DEVIATION): the C's full-strength flash washes most of the
-  // frame to a bright colored fog. We dim the additive flash to half so the sky
-  // stays dark between blooms while the burst cores still flare. The "Light
-  // flash" toggle removes it entirely; 1.0 here would be the C's exact strength.
-  const FLASH_GAIN = 0.5;
+  // chromo flash strength. 1.0 = the C's EXACT additive flash, no dimming: a
+  // fresh detonation floods a wide radius with colour, then fades by flash_fade
+  // -- the C's signature "colored light flash" (the 2012 rewrite's headline
+  // feature). The "Light flash" toggle removes it entirely. Named only so the
+  // strength stays discoverable; the faithful value is 1.0.
+  const FLASH_GAIN = 1.0;
 
   // Cap the per-frame pixel work: run the whole sim at <= RES_BUDGET logical
   // pixels and let the canvas upscale (the glow is blurry, so this is invisible
   // beyond a touch of softness). The budget keeps the internal width near the
   // C's nominal 1024 on full-screen windows, which (with the raw C spark speeds)
-  // reproduces the C's spark DENSITY -- and hence its calm dark-sky brightness.
+  // reproduces the C's spark DENSITY -- and hence its overall brightness. The C
+  // itself defaults to `.lowrez: true` ("Too slow on macOS Retina screens
+  // otherwise"), so a reduced internal resolution is faithful to the original.
   const RES_BUDGET = 600000;
 
   let S = 1;                  // devicePixelRatio
   let iw, ih;                 // internal (logical, capped) resolution, even
   let bw, bh;                 // half-res block grid for the light flash
-  let SHELLCOUNT, PIXCOUNT;   // captured from config
 
   // The C's single in-place glow accumulation buffer (`palaka1`) + the display
   // buffer (`palaka2` == the offscreen ImageData).
@@ -127,9 +128,11 @@ export function start(canvas) {
         default: r = v; g = p; b = q; break;
       }
     }
-    fs.r = Math.round(r * 255);
-    fs.g = Math.round(g * 255);
-    fs.b = Math.round(b * 255);
+    // C: hsv_to_rgb returns 16-bit channels (trunc(C*65535)); fs_roll_rgb then
+    // keeps the high byte (>> 8). Reproduce that exact quantization (not round).
+    fs.r = ((r * 65535) | 0) >> 8;
+    fs.g = ((g * 65535) | 0) >> 8;
+    fs.b = ((b * 65535) | 0) >> 8;
   }
 
   // mix_colors: fresh random vivid hue + a bright flash charge.
@@ -364,7 +367,9 @@ export function start(canvas) {
   // shell (recycling any that die), then blur + flash + blit.
   function step() {
     // Live "Activity": longer life -> sparser; matches the C's pow() mapping.
-    const ml = Math.pow(10.0, (clampInt(Math.round(config.maxlife), 0, 100) / 50.0) + 2.7);
+    // The C stores max_shell_life in an unsigned int, so truncate -- this keeps
+    // every derived life (and the < 1000 flash_fade branch) integer, as in the C.
+    const ml = Math.floor(Math.pow(10.0, (clampInt(Math.round(config.maxlife), 0, 100) / 50.0) + 2.7));
     maxShellLife = ml;
     flashFade = ml < 1000 ? 0.998 : 0.995;
 
@@ -422,9 +427,6 @@ export function start(canvas) {
     bw = iw >> 1;
     bh = ih >> 1;
 
-    SHELLCOUNT = clampInt(Math.round(config.shells), 1, 8);
-    PIXCOUNT = clampInt(Math.round(config.sparks), 1, 5000);
-
     pcur = new Uint8Array(iw * ih * 4);
 
     scratch = document.createElement('canvas');
@@ -440,7 +442,7 @@ export function start(canvas) {
     fg = new Float32Array(SHELLCOUNT);
     fb = new Float32Array(SHELLCOUNT);
 
-    const ml = Math.pow(10.0, (clampInt(Math.round(config.maxlife), 0, 100) / 50.0) + 2.7);
+    const ml = Math.floor(Math.pow(10.0, (clampInt(Math.round(config.maxlife), 0, 100) / 50.0) + 2.7));
     maxShellLife = ml;
     flashFade = ml < 1000 ? 0.998 : 0.995;
 

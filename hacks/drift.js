@@ -13,7 +13,7 @@
 // coefficients then DRIFT a tiny step every frame (each coefficient bounces
 // inside [-1,1]), so the whole cloud slowly morphs and floats. A colour
 // coordinate `c` rides along (halved toward 0 or 1 each step) and indexes the
-// rainbow. After `count`-scaled many points the field is full; a short pause,
+// colormap. After `count`-scaled many points the field is full; a short pause,
 // then a fresh random flame begins.
 //
 // Rendering: hundreds of thousands of points accumulate over the life of one
@@ -21,6 +21,8 @@
 // so this uses the BLIT path — a persistent Uint32 ImageData buffer we write
 // pixels into and putImageData once per frame, like thornbird / hopalong, not
 // per-point fillRect.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'drift';
 
@@ -42,7 +44,7 @@ export function start(canvas) {
   const config = {
     delay: 20000,    // µs between frames (--delay; stock 10000, calmer here)
     count: 30,       // flame lifetime scale (--count, "Duration")
-    ncolors: 200,    // size of the rainbow palette (--ncolors)
+    ncolors: 200,    // size of the smooth colormap (--ncolors)
     grow: false,     // grow many fractals vs. drift one (--grow)
     liss: false,     // use Lissajous figures for the drift (--liss)
   };
@@ -68,7 +70,7 @@ export function start(canvas) {
 
   let W, H, S;              // canvas size (device px) and devicePixelRatio
   let imageData, pixels;    // persistent Uint32 accumulation buffer
-  let palette;              // ncolors packed-ABGR rainbow values
+  let palette;              // ncolors packed-ABGR smooth-colormap values
   let dot;                  // point size in device px (1, or 2/3 on retina)
 
   // Flame shape: nxforms affine transforms f[row][col][i] with drift df, plus a
@@ -106,30 +108,18 @@ export function start(canvas) {
     return Math.floor(Math.random() * n);
   }
 
-  // hsl (h in [0,1)) -> packed 0xFFBBGGRR (little-endian ImageData layout).
-  function hslToUint(h, s, l) {
-    const k = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h * 6;
-    const xx = k * (1 - Math.abs((hp % 2) - 1));
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(hp) % 6;
-    if (seg === 0) { r = k; g = xx; }
-    else if (seg === 1) { r = xx; g = k; }
-    else if (seg === 2) { g = k; b = xx; }
-    else if (seg === 3) { g = xx; b = k; }
-    else if (seg === 4) { r = xx; b = k; }
-    else { r = k; b = xx; }
-    const m = l - k / 2;
-    const R = Math.round((r + m) * 255);
-    const G = Math.round((g + m) * 255);
-    const B = Math.round((b + m) * 255);
-    return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
-  }
-
+  // The C builds its palette ONCE at startup with make_smooth_colormap (drift.c
+  // defines SMOOTH_COLORS; xlockmore.c:485) -- a muted 2-5 anchor HSV loop, NOT a
+  // vivid rainbow -- and never cycles it (writable_p is False). We reproduce that
+  // exact palette via colormap.js, packed 0xFFBBGGRR for the blit path.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
+    const ramp = makeSmoothColormapRGB(n);
     palette = new Uint32Array(n);
-    for (let i = 0; i < n; i++) palette[i] = hslToUint(i / n, 1, 0.55);
+    for (let i = 0; i < n; i++) {
+      const [r, g, b] = ramp[i];
+      palette[i] = (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
+    }
   }
 
   // Paint a dot-sized block at integer (px, py) with packed colour `value`.
@@ -418,7 +408,9 @@ export function start(canvas) {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
-    // The C bumps the point size on very large (retina) displays.
+    // Port-side hidpi adaptation (NOT in the C, which draws one X pixel/point):
+    // scale the dot with dpr so points stay ~1 CSS px and the per-frame screen-
+    // fill fraction matches dpr 1; bump to 3 on very large backing stores.
     dot = (W > 2560 || H > 2560) ? 3 : Math.max(1, Math.round(S));
 
     imageData = ctx.createImageData(W, H);
