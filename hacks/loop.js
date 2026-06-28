@@ -3,6 +3,8 @@
 // it down (cancel the rAF loop, drop the resize listener), so a host page can
 // cycle hacks on one shared canvas. Loop/sizing stay inline per hack for now.
 
+import { makeColorRampRGB } from './colormap.js';
+
 export const title = 'loop';
 
 export const info = {
@@ -23,34 +25,39 @@ export function start(canvas) {
     // while the inner ones, walled in by their daughters, fall dormant. When the
     // colony fills the dish (or the pattern stops changing) it restarts.
     //
-    // Scope: the SQUARE grid (4 neighbours), the iconic case. loop.c's hexagon
-    // (6-neighbour) variant and its "blue wall flaw" mutations aren't ported.
+    // Scope: the SQUARE grid (4 neighbours), the iconic case. loop.c's default
+    // -neighbors 0 randomises between the square and a HEXAGON (6-neighbour)
+    // variant; the hexagon grid (its 262144-entry rule table + hex geometry) is
+    // NOT ported. The square grid's "blue wall flaw" feature (loop.c's default
+    // --count -5 sprinkles 0..5 random blue debris each restart) IS ported.
     //
     // The crux is the transition table. Each rule is an octal CBLTRI word
     // (Center, Bottom, Left, Top, Right -> next state I), and each rule is
     // entered under all four 90-degree rotations, so a cell's next state depends
     // only on its own state and the multiset/cyclic-order of its 4 neighbours.
-    // Verified offline: from the Adam seed the population grows and multiple
-    // independent loops form -- the signature of correct self-reproduction.
 
     const ctx = canvas.getContext('2d');
 
-    // Configuration. Units/defaults follow hacks/config/loop.xml so the tuning
-    // UI maps 1:1 to the original (delay converted from the C's microseconds to
-    // milliseconds for the rAF clock; default eased a touch calmer than stock).
+    // Configuration. Names/defaults/ranges follow hacks/config/loop.xml so the
+    // tuning UI maps 1:1 to the original. `delay` is the usleep interval in
+    // MICROSECONDS (the xml resource), divided to ms for the rAF clock.
     const config = {
-      size: 12,        // cell size in px (the xml's --size, abs value)
-      cycles: 1600,    // generations before the colony restarts (--cycles)
-      delay: 100,      // ms per generation (xml --delay was 100000 us)
+      delay: 100000,   // usleep between generations, microseconds (xml --delay)
+      cycles: 1600,    // generations before the colony restarts (xml --cycles)
+      ncolors: 15,     // framework colormap size; sets the 8 state hues (--ncolors)
+      size: -12,       // cell size px; <0 = random magnitude, 0 = auto (xml --size)
     };
 
-    // Tunable params for the host config box.
+    // Tunable params for the host config box (mirrors loop.xml exactly).
     // live: true  -> the loop reads config[key] every step (applies instantly).
-    // live: false -> the value sizes the grid, so a change re-runs init().
+    // live: false -> the value sizes the grid / palette, so a change re-runs init().
+    // NB `size` mirrors the xml spinbutton (-50..50, default -12); a NEGATIVE value
+    // means "random magnitude up to |size|" (the xlockmore convention), 0 = auto-fit.
     const params = [
-      { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 200, step: 1, default: 100, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-      { key: 'size', label: 'Cell size', type: 'range', min: 2, max: 24, step: 1, default: 12, unit: ' px', lowLabel: 'small', highLabel: 'big', live: false },
-      { key: 'cycles', label: 'Lifespan', type: 'range', min: 200, max: 8000, step: 100, default: 1600, lowLabel: 'short', highLabel: 'long', live: true },
+      { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 200000, step: 1000, default: 100000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+      { key: 'cycles', label: 'Timeout', type: 'range', min: 0, max: 8000, step: 100, default: 1600, lowLabel: 'small', highLabel: 'large', live: true },
+      { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 15, lowLabel: 'two', highLabel: 'many', live: false },
+      { key: 'size', label: 'Size', type: 'range', min: -50, max: 50, step: 1, default: -12, lowLabel: 'small', highLabel: 'big', live: false },
     ];
 
     // The square transition table from loop.c, verbatim. Each entry is an octal
@@ -118,20 +125,46 @@ export function start(canvas) {
       [0, 2, 2, 2, 2, 2, 2, 2, 2, 0],
     ];
     const ADAM_N = 10;   // ADAM_LOOPX == ADAM_LOOPY == ADAM_SIZE + 2
+    const MINSIZE = 5;          // loop.c MINSIZE
+    const MINGRIDSIZE = 30;     // loop.c MINGRIDSIZE = 3*ADAM_LOOPX
 
-    // Eight state colours. The C used: 0 black, 1 red, 2 blue, 3 magenta,
-    // 4 green, 5 yellow, 6 cyan, 7 white. We keep that mapping but in vivid
-    // full-saturation HSL (state 0 stays the black background).
-    const COLORS = [
-      '#000000',                 // 0 background
-      'hsl(0, 100%, 55%)',       // 1 red    (sheath data)
-      'hsl(220, 100%, 58%)',     // 2 blue   (the loop's outer wall)
-      'hsl(300, 100%, 60%)',     // 3 magenta
-      'hsl(120, 100%, 50%)',     // 4 green
-      'hsl(55, 100%, 55%)',      // 5 yellow
-      'hsl(185, 100%, 55%)',     // 6 cyan
-      'hsl(0, 0%, 100%)',        // 7 white
-    ];
+    // Helpers. aRand mirrors the C's NRAND(n): a random integer in [0, n-1].
+    function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+    function aRand(n) { return Math.floor(Math.random() * Math.max(1, n)); }
+
+    // Eight state colours. loop.c #defines UNIFORM_COLORS, so the xlockmore
+    // framework fills the colormap with make_uniform_colormap, which is
+    // make_color_ramp(0,S,V -> 359,S,V) with S (saturation) and V (value) each a
+    // single RANDOM value in 66%..100% held for the whole session (utils/colors.c).
+    // init_loop then sets 8 fixed state colours by sampling that hue ramp at evenly
+    // spaced indices (k*ncolors/REALCOLORS, REALCOLORS=6), plus black (state 0) and
+    // white (state 7). So the palette is a per-session random-S/V hue wheel, NOT
+    // fixed vivid primaries, and `ncolors` quantises the hues. We rebuild the exact
+    // ramp via colormap.js's make_color_ramp and pick the same indices. S/V are
+    // fixed across colony restarts (as in the C); rebuilt only when ncolors changes.
+    let COLORS = null;
+    let builtNP = -1;
+    function buildColors() {
+      const NP = clamp(Math.round(config.ncolors), 2, 255);   // MI_NPIXELS
+      if (COLORS && NP === builtNP) return;
+      builtNP = NP;
+      const REALCOLORS = 6;
+      const S = (Math.floor(Math.random() * 34) + 66) / 100;  // make_uniform_colormap
+      const V = (Math.floor(Math.random() * 34) + 66) / 100;
+      const ramp = makeColorRampRGB(0, S, V, 359, S, V, NP, false);
+      const css = (rgb) => 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+      const at = (k) => css(ramp[Math.floor(k * NP / REALCOLORS)]);
+      COLORS = [
+        '#000000',     // 0 background (MI_BLACK_PIXEL)
+        css(ramp[0]),  // 1 red     (MI_PIXEL 0)
+        at(4),         // 2 blue    (MI_PIXEL 4*NP/6)
+        at(5),         // 3 magenta (MI_PIXEL 5*NP/6)
+        at(2),         // 4 green   (MI_PIXEL 2*NP/6)
+        at(1),         // 5 yellow  (MI_PIXEL 1*NP/6)
+        at(3),         // 6 cyan    (MI_PIXEL 3*NP/6)
+        '#ffffff',     // 7 white   (MI_WHITE_PIXEL)
+      ];
+    }
 
     let cols, rows;            // active cell area (excludes the 1-cell border)
     let bncols, bnrows;        // grid incl. a 1-cell dead border on every side
@@ -203,29 +236,99 @@ export function start(canvas) {
       }
     }
 
-    // Seed the Adam loop in the centre with a random handedness and draw it.
+    // Write one cell (border coords) and grow the active bbox to include it.
+    // Clamped to the interior so doGen's neighbour reads stay on-grid; the seed
+    // and the centred flaws are interior on any sane grid, so this never clips.
+    function setCell(col, row, v) {
+      if (col < 1 || col > bncols - 2 || row < 1 || row > bnrows - 2) return;
+      cells[row * bncols + col] = v;
+      if (col < minCol) minCol = col;
+      if (col > maxCol) maxCol = col;
+      if (row < minRow) minRow = row;
+      if (row > maxRow) maxRow = row;
+    }
+
+    // A "blue wall flaw" (loop.c init_flaw, square branch): a 3-cell blue elbow at
+    // a random, roughly centred spot. Verbatim placement; BLUE = state 2. The
+    // colony collides with this debris, which liven things up / spawns mutants.
+    function initFlaw() {
+      const BLUE = 2;
+      if (bncols <= 3 || bnrows <= 3) return;
+      const aw = Math.min(bncols - 3, 2 * MINGRIDSIZE);
+      const a = aRand(aw) + Math.floor((bncols - aw) / 2);
+      const bw = Math.min(bnrows - 3, 2 * MINGRIDSIZE);
+      const b = aRand(bw) + Math.floor((bnrows - bw) / 2);
+      const orient = aRand(4);
+      setCell(a + 1, b + 1, BLUE);                                 // center
+      if (orient === 0 || orient === 1) setCell(a + 1, b, BLUE);     // top
+      if (orient === 1 || orient === 2) setCell(a + 2, b + 1, BLUE); // right
+      if (orient === 2 || orient === 3) setCell(a + 1, b + 2, BLUE); // bottom
+      if (orient === 3 || orient === 0) setCell(a, b + 1, BLUE);     // left
+    }
+
+    // loop.c init_loop seeds `flaws` of them, where flaws = NRAND(-count+1) for a
+    // negative count. The xml does not expose --count, so it stays at the baked-in
+    // DEFAULTS value of -5 -> 0..5 flaws per restart.
+    function initFlaws() {
+      const count = -5;
+      const flaws = count < 0 ? aRand(-count + 1) : count;
+      for (let i = 0; i < flaws; i++) initFlaw();
+    }
+
+    // Seed the Adam loop with a random handedness AND a random 90-degree
+    // orientation (loop.c init_adam, square branch: dir = NRAND(4), placed via the
+    // dirx/diry basis vectors). clockwise mirrors the seed columns (ADAM[j][N-1-i]).
+    // Cells are only written here; drawInitial() paints the whole seed afterwards.
     function initAdam() {
       clockwise = Math.random() < 0.5;
-      // Centre the loop in the active area, then shift into border coords.
-      const sx = ((cols - ADAM_N) >> 1) + 1;
-      const sy = ((rows - ADAM_N) >> 1) + 1;
+      const dir = aRand(4);                 // NRAND(local_neighbors), square = 4
+      let sx, sy, dxX, dxY, dyX, dyY;       // start point + dirx/diry basis
+      switch (dir) {
+        case 0: sx = Math.floor((bncols - ADAM_N) / 2); sy = Math.floor((bnrows - ADAM_N) / 2); dxX = 1; dxY = 0; dyX = 0; dyY = 1; break;
+        case 1: sx = Math.floor((bncols + ADAM_N) / 2); sy = Math.floor((bnrows - ADAM_N) / 2); dxX = 0; dxY = 1; dyX = -1; dyY = 0; break;
+        case 2: sx = Math.floor((bncols + ADAM_N) / 2); sy = Math.floor((bnrows + ADAM_N) / 2); dxX = -1; dxY = 0; dyX = 0; dyY = -1; break;
+        default: sx = Math.floor((bncols - ADAM_N) / 2); sy = Math.floor((bnrows + ADAM_N) / 2); dxX = 0; dxY = -1; dyX = 1; dyY = 0; break;
+      }
       for (let j = 0; j < ADAM_N; j++) {
         for (let i = 0; i < ADAM_N; i++) {
           const v = clockwise ? ADAM[j][ADAM_N - 1 - i] : ADAM[j][i];
-          cells[(sy + j) * bncols + (sx + i)] = v;
-          if (v) drawCell(sx + i - 1, sy + j - 1, v);
+          setCell(sx + dxX * i + dyX * j, sy + dxY * i + dyY * j, v);
         }
       }
-      // Active box starts as the loop's footprint (clamped inside the border).
-      minCol = Math.max(1, sx - 1);
-      minRow = Math.max(1, sy - 1);
-      maxCol = Math.min(bncols - 2, sx + ADAM_N);
-      maxRow = Math.min(bnrows - 2, sy + ADAM_N);
+    }
+
+    // Paint the whole seeded dish once (the first frame's "diff against an all-0
+    // grid" in loop.c's draw_loop). The canvas is already black, so only non-0
+    // cells need drawing; the final cell value is used, so a flaw overwritten by a
+    // 0 of the seed correctly stays black.
+    function drawInitial() {
+      for (let j = minRow; j <= maxRow; j++) {
+        const base = j * bncols;
+        for (let i = minCol; i <= maxCol; i++) {
+          const v = cells[base + i];
+          if (v) drawCell(i - 1, j - 1, v);
+        }
+      }
     }
 
     function init() {
+      buildColors();
       const dpr = window.devicePixelRatio || 1;
-      cellPx = Math.max(1, Math.round(config.size * dpr));
+
+      // Cell size (CSS px), faithful to loop.c init_loop: a NEGATIVE --size means
+      // "random magnitude in [MINSIZE, |size|]", 0 = auto-fit, positive = fixed;
+      // all capped so at least MINGRIDSIZE cells fit. (loop.c's >2560px retina *3
+      // hack is replaced by dpr scaling: cells are a constant CSS size, sharpened
+      // to device px, so counts stay in CSS px and rendering stays crisp.)
+      const cssW = window.innerWidth, cssH = window.innerHeight;
+      const cap = Math.max(MINSIZE, Math.floor(Math.min(cssW, cssH) / MINGRIDSIZE));
+      const sz = Math.round(config.size);
+      let ys;
+      if (sz < -MINSIZE) ys = aRand(Math.min(-sz, cap) - MINSIZE + 1) + MINSIZE;
+      else if (sz < MINSIZE) ys = (sz === 0) ? cap : MINSIZE;
+      else ys = Math.min(sz, cap);
+
+      cellPx = Math.max(1, Math.round(ys * dpr));
       cellDraw = cellPx - (cellPx > 3 ? 1 : 0);   // 1px gridline, like the C
 
       // Active grid sized to the canvas, with room for at least one loop.
@@ -243,7 +346,21 @@ export function start(canvas) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+      // Empty-bbox sentinel; initFlaws + initAdam expand it (as loop.c's init_loop
+      // sets mincol = bncols-1 etc. then init_flaw/init_adam lower/raise it).
+      minCol = bncols; minRow = bnrows; maxCol = -1; maxRow = -1;
+      initFlaws();
       initAdam();
+
+      // Grow the bbox by a 1-cell margin: the port runs doGen BEFORE the diff that
+      // grows the box, so every active cell must already have its neighbours
+      // in-box (the front advances <=1 cell/gen). Then clamp inside the border.
+      minCol = Math.max(1, minCol - 1);
+      minRow = Math.max(1, minRow - 1);
+      maxCol = Math.min(bncols - 2, maxCol + 1);
+      maxRow = Math.min(bnrows - 2, maxRow + 1);
+
+      drawInitial();
     }
 
     function resize() {
@@ -284,9 +401,9 @@ export function start(canvas) {
     }
 
     // Drive off requestAnimationFrame but keep the original pace: run one
-    // step() per config.delay ms, banking leftover time so the speed is the
-    // same at any refresh rate. Cap catch-up so a backgrounded tab (where rAF
-    // is paused) doesn't fire a burst of steps when it regains focus.
+    // step() per config.delay (microseconds -> ms), banking leftover time so the
+    // speed is the same at any refresh rate. Cap catch-up so a backgrounded tab
+    // (where rAF is paused) doesn't fire a burst of steps when it regains focus.
     const MAX_CATCHUP_STEPS = 8;
     let lastTime = 0;
     let lag = 0;
@@ -297,12 +414,12 @@ export function start(canvas) {
       lag += now - lastTime;
       lastTime = now;
 
-      const delay = Math.max(1, config.delay);
-      lag = Math.min(lag, delay * MAX_CATCHUP_STEPS);
+      const delayMs = config.delay / 1000;
+      lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
       let steps = 0;
-      while (lag >= delay && steps < MAX_CATCHUP_STEPS) {
+      while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
         step();
-        lag -= delay;
+        lag -= delayMs;
         steps++;
       }
 

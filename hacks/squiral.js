@@ -2,6 +2,8 @@
 // start(canvas) returns { stop, reinit, config, params }; the host renders the
 // config box from `config`/`params`. Loop/sizing/units stay inline per hack.
 
+import { makeColorRampRGB } from './colormap.js';
+
 export const title = 'squiral';
 
 export const info = {
@@ -24,7 +26,7 @@ export function start(canvas) {
       ncolors: 100,      // size of the hue cycle (--ncolors)
       delay: 10000,      // microseconds between steps (--delay)
       disorder: 0.005,   // chance per step of re-rolling winding (--disorder)
-      handedness: 0.5,   // 0 = all right-handed, 1 = all left-handed (--handedness)
+      handedness: 0.5,   // 0 = all left-winding (CCW), 1 = all right-winding (CW) (--handedness)
       cycle: false,      // animate each worm's hue as it travels (--cycle)
       scale: 1,          // cell size / line thickness (--scale)
     };
@@ -40,7 +42,7 @@ export function start(canvas) {
       { key: 'scale', label: 'Scale', type: 'range', min: 1, max: 10, step: 1, default: 1, lowLabel: 'small', highLabel: 'large', live: false },
       { key: 'handedness', label: 'Handedness', type: 'range', min: 0, max: 1, step: 0.01, default: 0.5, lowLabel: 'left', highLabel: 'right', live: true },
       { key: 'fill', label: 'Density', type: 'range', min: 0, max: 100, step: 1, default: 75, unit: '%', lowLabel: 'sparse', highLabel: 'dense', live: false },
-      { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
+      { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
       { key: 'cycle', label: 'Color cycling', type: 'checkbox', default: false, live: false },
     ];
 
@@ -69,15 +71,25 @@ export function start(canvas) {
     }
 
     function init() {
-      scale = config.scale * (window.devicePixelRatio || 1);
+      // scale is in device pixels (the canvas backing store is device-sized).
+      // squiral.c: scale = the --scale resource, tripled past 2560px in either
+      // dimension as a crude Retina bump -- NOT folded with devicePixelRatio.
+      // canvas.width/height are already device pixels, the analog of xgwa.w/h.
+      scale = config.scale;
+      if (canvas.width > 2560 || canvas.height > 2560) scale *= 3;
 
       width = Math.floor(canvas.width / scale);
       height = Math.floor(canvas.height / scale);
 
-      colors = [];
-      for (let i = 0; i < config.ncolors; i++) {
-        colors.push(`hsl(${(i * 360 / config.ncolors)}, 100%, 50%)`);
-      }
+      // Palette = squiral.c's make_uniform_colormap (utils/colors.c): a uniform
+      // hue ramp 0..359 at a CONSTANT saturation/value, each chosen once per
+      // init in the range 66%..100%. That is make_color_ramp(0,S,V, 359,S,V,
+      // ncolors, closed=False) -- so most runs are somewhat muted, not a vivid
+      // full-saturation rainbow. Built once per init() and held for the session.
+      const S = (Math.floor(Math.random() * 34) + 66) / 100;
+      const V = (Math.floor(Math.random() * 34) + 66) / 100;
+      colors = makeColorRampRGB(0, S, V, 359, S, V, config.ncolors, false)
+        .map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
 
       grid = new Uint8Array(width * height);
 
@@ -98,7 +110,10 @@ export function start(canvas) {
 
       coverage = 0;
       clearThreshold = clamp(config.fill / 100, 0.01, 0.99) * width * height;
-      inclear = height;
+      // squiral.c calloc's state to zero, so the first frames run the edge-in
+      // clear-sweep over the (black) screen: it suppresses worms near the edges
+      // until the sweep meets in the middle. inclear=0 reproduces that startup.
+      inclear = 0;
     }
 
     function resize() {
@@ -141,6 +156,9 @@ export function start(canvas) {
       let winding = worm.winding;  // 0 = left-winding (CCW), 1 = right-winding (CW)
       let heading = worm.heading;  // 0=up, 1=right, 2=down, 3=left
 
+      // colorStep is squiral.c's w->cc taken mod ncolors: the C uses R(3)+ncolors
+      // ({n,n+1,n+2}), but (c + n + k) % n == (c + k) % n, so R(3) ({0,1,2}) is
+      // identical here -- including that ~1/3 of cycling worms (k==0) stay fixed.
       worm.colorIndex = (worm.colorIndex + worm.colorStep) % config.ncolors;
       ctx.fillStyle = colors[worm.colorIndex];
 
@@ -178,7 +196,10 @@ export function start(canvas) {
 
     function clearRow(y) {
       if (y >= 0 && y < height) {
-        ctx.fillRect(0, y * scale, width * scale, scale);
+        // squiral.c erases a strip (width-1)*scale wide from x=0, leaving the
+        // last column's pixels un-swept, while its fill[] memset clears the whole
+        // row. Mirror both: the screen rect is one cell short, the grid is full.
+        ctx.fillRect(0, y * scale, (width - 1) * scale, scale);
         for (let x = 0; x < width; x++) grid[y * width + x] = 0;
       }
     }
@@ -205,6 +226,14 @@ export function start(canvas) {
     // step() per config.delay ms, banking leftover time so the speed is the
     // same at any refresh rate. Cap catch-up so a backgrounded tab (where rAF
     // is paused) doesn't fire a burst of steps when it regains focus.
+    //
+    // OVERHEAD: the stock delay is only a sleep floor; the live binary's real
+    // rate is lower (delay + framework overhead — see the framerate-calibration
+    // note). The live squiral measures 40.4 fps (Load 60%, delay-bound = a
+    // portable target), but the port at the stock 10000 µs ran ~100 steps/sec
+    // (2.5x fast). 10000 + 15000 = 25000 µs -> 40 steps/sec, matching the live
+    // binary. This only offsets the delay; the accumulator logic is unchanged.
+    const OVERHEAD = 15000;
     const MAX_CATCHUP_STEPS = 8;
     let lastTime = 0;
     let lag = 0;
@@ -216,7 +245,7 @@ export function start(canvas) {
       lastTime = now;
 
       // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-      const delayMs = config.delay / 1000;
+      const delayMs = (config.delay + OVERHEAD) / 1000;
       lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
       // The step counter bounds the loop even when delayMs is 0 (max frame

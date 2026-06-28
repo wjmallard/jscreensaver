@@ -14,12 +14,16 @@
 // fill the screen. Each particle leaves a streaky trail as it is carried by the
 // flow; after `cycles` steps a fresh flow (new vortices, new boundary) is rolled.
 //
-// Rendering note: like [[binaryring]] this is per-pixel compositing of thousands
-// of tiny segments per frame, so it uses the BLIT path — a persistent Uint32
-// buffer that we (a) fade toward black each frame to age the trails (the canvas
-// analogue of the C's ring-buffer of old segments it erases in black), and (b)
-// stamp the new segments into with a Bresenham alpha-blend. See [[interference]]
-// for the Uint32-over-ImageData idiom and [[squiral]] for the canvas conventions.
+// Rendering note: per-frame compositing of thousands of tiny segments, so it
+// uses the BLIT path — a persistent Uint32 buffer drawn into with opaque 1-px
+// Bresenham segments (no antialiasing, matching the C's jwxyz AA-off path).
+// Trails are aged EXACTLY as the C does (draw_euler2d): a ring buffer holds the
+// last `eulertail` frames of segments and the oldest frame is re-stamped in
+// BLACK each step to erase it — a hard cutoff after `eulertail` frames, NOT a
+// smooth fade. See [[interference]] for the Uint32-over-ImageData idiom and
+// [[squiral]] for the canvas conventions.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'euler2d';
 
@@ -33,15 +37,17 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges/labels mirror hacks/config/euler2d.xml so the config box
-  // maps 1:1 to the original. delay is in microseconds (xml units). `count`
-  // is reduced from the stock 1024 because every particle is advected against
-  // every vortex each frame (O(count * Nvortex)); see the .md perf note.
+  // maps 1:1 to the original (delay, count, eulertail, cycles, ncolors), at the
+  // stock defaults. delay is in microseconds (xml units). `power` (-eulerpower)
+  // is a real command-line resource the C reads but the xml omits; it is exposed
+  // here, default 1 = classic Euler (which is also what enables the polynomial
+  // boundary). See the .md for the count perf note.
   const config = {
-    delay: 16000,    // \u00B5s between frames (--delay; stock 10000, calmed a touch)
-    count: 700,      // number of tracer particles (--count; stock 1024)
-    eulertail: 16,   // trail length in frames (--eulertail; stock 10)
+    delay: 10000,    // \u00B5s between frames (--delay; xml default 10000)
+    count: 1024,     // number of tracer particles (--count; xml default 1024)
+    eulertail: 10,   // trail length in frames (--eulertail; xml default 10)
     cycles: 3000,    // steps before a brand-new flow is rolled (--cycles)
-    ncolors: 96,     // size of the rainbow hue loop (--ncolors; stock 64)
+    ncolors: 64,     // size of the make_smooth_colormap palette (--ncolors)
     power: 1,        // interaction-law power; 1 = classic Euler (--eulerpower)
   };
 
@@ -49,11 +55,11 @@ export function start(canvas) {
   // live: false -> the value sizes particle arrays / colours / the flow, so a
   //                change re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Particles', type: 'range', min: 2, max: 3000, step: 1, default: 700, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'eulertail', label: 'Trail length', type: 'range', min: 2, max: 200, step: 1, default: 16, lowLabel: 'short', highLabel: 'long', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'count', label: 'Particles', type: 'range', min: 2, max: 5000, step: 1, default: 1024, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'eulertail', label: 'Trail length', type: 'range', min: 2, max: 500, step: 1, default: 10, lowLabel: 'short', highLabel: 'long', live: false },
     { key: 'cycles', label: 'Duration', type: 'range', min: 100, max: 5000, step: 10, default: 3000, lowLabel: 'short', highLabel: 'long', live: true },
-    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 2, max: 255, step: 1, default: 96, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 2, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'power', label: 'Interaction power', type: 'range', min: 0.5, max: 3, step: 0.1, default: 1, lowLabel: 'soft', highLabel: 'sharp', live: false },
   ];
 
@@ -62,7 +68,8 @@ export function start(canvas) {
   const N_BOUND_P = 500;                // n_bound_p (boundary polyline resolution)
   const DEG_P = 6;                      // deg_p (polynomial degree)
   const NR_ROTATES = 18;               // nr_rotates (must be even)
-  const BLACK = 0xFF000000;
+  const BLACK = 0xFF000000;            // opaque black, little-endian 0xAABBGGRR
+  const WHITE = 0xFFFFFFFF;            // opaque white (vortices / mono path)
 
   // --- rng helpers (the C's balance_rand / positive_rand) ---------------------
   const positiveRand = (v) => Math.random() * v;             // [0, v)
@@ -91,11 +98,18 @@ export function start(canvas) {
   let radius;                // domain -> screen radius (circle case)
   let boundarySegs;          // [{x1,y1,x2,y2}] screen-space boundary polyline
   let hideVortex;            // hide the vortex points themselves
-  let boundaryRGB;           // boundary colour [r,g,b]
-  let colorsRGB;             // ncolors rainbow buckets [[r,g,b], ...]
+  let colorsU32;             // ncolors smooth-colormap buckets, packed 0xAABBGGRR
+  let boundaryU32;           // boundary colour, packed (a random colormap entry)
+  let mono;                  // ncolors <= 2: the C's mono path (draw everything white)
   let count;                 // step counter (the C's sp->count)
-  let nNonVortexSegs;        // tracer segments drawn this frame (for colouring)
-  let segments;              // reusable segment list: {x1,y1,x2,y2,r,g,b}
+
+  // Segment lists (the C's csegs + the old_segs erase ring), flat int arrays of
+  // [x1,y1,x2,y2] per segment, exactly like the C's XSegment buffers.
+  let csegs, cnsegs;         // this frame's segments (tracers then vortices) + count
+  let nNonVortexSegs;        // tracer segments this frame (the colour split runs over these)
+  let oldSegs, nOldSegs;     // ring of the last `tailLen` frames + per-frame counts
+  let cOldSeg;               // current ring slot (the C's c_old_seg)
+  let tailLen;               // captured eulertail (sizes the ring; 1..cycles)
 
   // --- complex helpers (mirror the C's add / mult macros) ---------------------
   // Evaluate p(z) = z + c2 z^2 + ... + c_n z^n via Horner, complex arithmetic.
@@ -151,7 +165,11 @@ export function start(canvas) {
   // Fills diffx[] = dx/dt for every live point given positions xx.
   function derivs(xx) {
     const power = config.power;
-    if (variableBoundary) calcAllModDp2(xx);
+    // The C always evaluates the metric at sp->x (the current positions), even
+    // on the midpoint method's intermediate derivs(tempx) call: it literally
+    // passes calc_all_mod_dp2(sp->x,sp), NOT the parameter x. Match that exactly
+    // (an earlier port used the parameter, perturbing the first step of each flow).
+    if (variableBoundary) calcAllModDp2(x);
 
     // Reflection of each vortex about the unit circle: xs = a / |a|^2.
     for (let j = 0; j < Nvortex; j++) {
@@ -278,21 +296,15 @@ export function start(canvas) {
     }
   }
 
-  // --- trail buffer: stamp segments with alpha blend, fade each frame ---------
-  function blend(px, py, r, g, b, a) {
-    px |= 0; py |= 0;
+  // --- trail buffer: opaque 1-px segments (the C's XDrawSegments, AA off) ------
+  function setPixel(px, py, packed) {
     if (px < 0 || px >= W || py < 0 || py >= H) return;
-    const idx = py * W + px;
-    const c = pixels[idx];
-    const or = c & 0xff, og = (c >> 8) & 0xff, ob = (c >> 16) & 0xff;
-    const nr = (or + (r - or) * a) | 0;
-    const ng = (og + (g - og) * a) | 0;
-    const nb = (ob + (b - ob) * a) | 0;
-    pixels[idx] = ((0xff << 24) | (nb << 16) | (ng << 8) | nr) >>> 0;
+    pixels[py * W + px] = packed;
   }
 
-  // Bresenham line, alpha-blending each pixel (the C's non-antialiased path).
-  function drawLine(x0, y0, x1, y1, r, g, b, a) {
+  // Bresenham line in a single packed colour, no antialiasing or blending — the
+  // canvas analogue of XDrawSegments with jwxyz anti-aliasing disabled.
+  function drawLine(x0, y0, x1, y1, packed) {
     x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0;
     const steep = Math.abs(y1 - y0) > Math.abs(x1 - x0);
     if (steep) { let t = x0; x0 = y0; y0 = t; t = x1; x1 = y1; y1 = t; }
@@ -301,25 +313,16 @@ export function start(canvas) {
     let err = 0, y = y0;
     const ystep = y0 < y1 ? 1 : -1;
     for (let xp = x0; xp <= x1; xp++) {
-      if (steep) blend(y, xp, r, g, b, a); else blend(xp, y, r, g, b, a);
+      if (steep) setPixel(y, xp, packed); else setPixel(xp, y, packed);
       err += dy;
       if ((err << 1) > dx) { y += ystep; err -= dx; }
     }
   }
 
-  // Fade the whole buffer toward black. fade in (0,1]; smaller = trails die
-  // faster. Chosen so a pixel decays to ~black over ~eulertail frames, matching
-  // the C's ring-buffer trail length.
-  function fadeBuffer(fade) {
-    if (fade >= 1) return;
-    const f = Math.max(0, Math.min(255, Math.round(fade * 256)));
-    for (let i = 0; i < pixels.length; i++) {
-      const c = pixels[i];
-      const r = (((c & 0xff) * f) >> 8);
-      const g = ((((c >> 8) & 0xff) * f) >> 8);
-      const b = ((((c >> 16) & 0xff) * f) >> 8);
-      pixels[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
-    }
+  // Draw segment s of the flat csegs array ([x1,y1,x2,y2] per segment).
+  function drawCseg(s, packed) {
+    const o = s * 4;
+    drawLine(csegs[o], csegs[o + 1], csegs[o + 2], csegs[o + 3], packed);
   }
 
   // --- flow initialisation (the C's init_euler2d) -----------------------------
@@ -334,8 +337,12 @@ export function start(canvas) {
     hideVortex = (Math.floor(Math.random() * 4) !== 0);   // NRAND(4) != 0
     count = 0;
 
-    // Boundary colour is a random rainbow bucket; trail colours follow.
-    boundaryRGB = colorsRGB[Math.floor(Math.random() * colorsRGB.length)];
+    // Boundary colour is a random colormap entry (the C's NRAND(MI_NPIXELS)).
+    boundaryU32 = colorsU32[Math.floor(Math.random() * colorsU32.length)];
+
+    // Reset the erase-ring (the C zeroes nold_segs[] and c_old_seg each init).
+    nOldSegs.fill(0);
+    cOldSeg = 0;
 
     pCoef = new Float64Array(2 * (DEG_P - 1));
     boundarySegs = null;
@@ -500,16 +507,16 @@ export function start(canvas) {
   }
 
   // --- per-frame step (the C's draw_euler2d) ----------------------------------
+  // Returns whether the pixel buffer changed (so the loop blits only when needed).
   function step() {
     odeSolve();
     if (variableBoundary) calcAllP();
 
-    // Build this frame's tracer segments (lastx -> new screen position), then
-    // the vortex segments after them (drawn white). Colour buckets are assigned
-    // by splitting the tracer segments evenly across ncolors, like the C.
+    // Build this frame's segment list: tracers (Nvortex..N-1) first, then the
+    // vortex points after them. Each segment runs lastx -> new screen position;
+    // lastx is then updated. This runs every frame, including count == 0 (which
+    // just seeds lastx and draws nothing), exactly as in draw_euler2d.
     let ns = 0;
-
-    // Tracers first (indices Nvortex..N-1).
     for (let b = Nvortex; b < N; b++) {
       if (dead[b]) continue;
       let sx, sy;
@@ -520,18 +527,17 @@ export function start(canvas) {
         sx = x[2 * b + 0] * radius + W / 2;
         sy = x[2 * b + 1] * radius + H / 2;
       }
-      const seg = segments[ns++];
-      seg.x1 = lastx[2 * b + 0];
-      seg.y1 = lastx[2 * b + 1];
-      seg.x2 = sx | 0;
-      seg.y2 = sy | 0;
-      seg.idx = b;
-      lastx[2 * b + 0] = seg.x2;
-      lastx[2 * b + 1] = seg.y2;
+      const o = ns * 4;
+      csegs[o + 0] = lastx[2 * b + 0];
+      csegs[o + 1] = lastx[2 * b + 1];
+      csegs[o + 2] = sx | 0;
+      csegs[o + 3] = sy | 0;
+      lastx[2 * b + 0] = csegs[o + 2];
+      lastx[2 * b + 1] = csegs[o + 3];
+      ns++;
     }
     nNonVortexSegs = ns;
 
-    // Vortex points after the tracers (drawn white when visible).
     if (!hideVortex) {
       for (let b = 0; b < Nvortex; b++) {
         if (dead[b]) continue;
@@ -543,69 +549,86 @@ export function start(canvas) {
           sx = x[2 * b + 0] * radius + W / 2;
           sy = x[2 * b + 1] * radius + H / 2;
         }
-        const seg = segments[ns++];
-        seg.x1 = lastx[2 * b + 0];
-        seg.y1 = lastx[2 * b + 1];
-        seg.x2 = sx | 0;
-        seg.y2 = sy | 0;
-        seg.idx = b;
-        lastx[2 * b + 0] = seg.x2;
-        lastx[2 * b + 1] = seg.y2;
+        const o = ns * 4;
+        csegs[o + 0] = lastx[2 * b + 0];
+        csegs[o + 1] = lastx[2 * b + 1];
+        csegs[o + 2] = sx | 0;
+        csegs[o + 3] = sy | 0;
+        lastx[2 * b + 0] = csegs[o + 2];
+        lastx[2 * b + 1] = csegs[o + 3];
+        ns++;
       }
     }
-    const cnsegs = ns;
+    cnsegs = ns;
 
-    // Only draw once we have a previous position to draw FROM (count>0), exactly
-    // like the C (it guards segment drawing on sp->count).
+    let dirty = false;
+
+    // Only draw once we have a previous position to draw FROM (count > 0),
+    // exactly like the C (it guards the whole draw/erase/store on sp->count).
     if (count) {
-      // Age existing trails. fade is set so a trail lasts ~eulertail frames:
-      // after t frames a stamp is at fade^t; solve fade^eulertail = ~1/255.
-      const tail = Math.max(2, Math.round(config.eulertail));
-      const fade = Math.pow(1 / 255, 1 / tail);
-      fadeBuffer(fade);
-
-      // Tracer segments, coloured by even split across the rainbow buckets.
-      const nc = colorsRGB.length;
-      for (let s = 0; s < nNonVortexSegs; s++) {
-        const seg = segments[s];
-        // Same start..finish bucketing the C uses (col*ns/ncolors).
-        const col = Math.floor(s * nc / Math.max(1, nNonVortexSegs));
-        const c = colorsRGB[col >= nc ? nc - 1 : col];
-        drawLine(seg.x1, seg.y1, seg.x2, seg.y2, c[0], c[1], c[2], 0.85);
+      // Erase the frame from `tailLen` steps ago: re-stamp its stored segments
+      // in BLACK (the C's XDrawSegments(old_segs+c_old_seg*N, ...) in black).
+      const base = cOldSeg * N * 4;
+      const nold = nOldSegs[cOldSeg];
+      for (let s = 0; s < nold; s++) {
+        const o = base + s * 4;
+        drawLine(oldSegs[o], oldSegs[o + 1], oldSegs[o + 2], oldSegs[o + 3], BLACK);
       }
 
-      // Vortex segments in white.
-      for (let s = nNonVortexSegs; s < cnsegs; s++) {
-        const seg = segments[s];
-        drawLine(seg.x1, seg.y1, seg.x2, seg.y2, 255, 255, 255, 0.95);
+      if (mono) {
+        // ncolors <= 2: the C's MI_NPIXELS<=2 branch draws every segment white.
+        for (let s = 0; s < cnsegs; s++) drawCseg(s, WHITE);
+      } else {
+        // Tracers, split into ncolors buckets EXACTLY as the C does: bucket col
+        // owns segments [floor(col*n/npix), floor((col+1)*n/npix)) in colour col.
+        const npix = colorsU32.length;
+        for (let col = 0; col < npix; col++) {
+          const startSeg = Math.floor(col * nNonVortexSegs / npix);
+          const finishSeg = Math.floor((col + 1) * nNonVortexSegs / npix);
+          const c = colorsU32[col];
+          for (let s = startSeg; s < finishSeg; s++) drawCseg(s, c);
+        }
+        // Vortex segments in white.
+        for (let s = nNonVortexSegs; s < cnsegs; s++) drawCseg(s, WHITE);
       }
 
-      // Boundary, re-stamped each frame so it stays crisp against the fade.
+      // Boundary, drawn every frame on top. The C never stores it in the ring,
+      // so it is never erased; it just gets repainted over the same pixels.
+      const bcol = mono ? WHITE : boundaryU32;
       if (variableBoundary && boundarySegs) {
         for (let k = 0; k < boundarySegs.length; k++) {
-          const s = boundarySegs[k];
-          drawLine(s.x1, s.y1, s.x2, s.y2, boundaryRGB[0], boundaryRGB[1], boundaryRGB[2], 1.0);
+          const sgmt = boundarySegs[k];
+          drawLine(sgmt.x1, sgmt.y1, sgmt.x2, sgmt.y2, bcol);
         }
       } else if (!variableBoundary) {
-        drawCircle(W / 2, H / 2, radius, boundaryRGB);
+        drawCircle(W / 2, H / 2, radius, bcol);
       }
 
-      ctx.putImageData(imageData, 0, 0);
+      // Copy this frame into the erase-ring, then advance the slot (the C's
+      // memcpy into old_segs + c_old_seg*N; c_old_seg++ wrapping at tail_len).
+      oldSegs.set(csegs.subarray(0, cnsegs * 4), base);
+      nOldSegs[cOldSeg] = cnsegs;
+      cOldSeg++;
+      if (cOldSeg >= tailLen) cOldSeg = 0;
+
+      dirty = true;
     }
 
     // After `cycles` steps, roll a brand-new flow (new vortices + boundary).
     if (++count > Math.max(100, Math.round(config.cycles))) {
       pixels.fill(BLACK);   // the C does MI_CLEARWINDOW on re-init
       initFlow();
+      dirty = true;
     }
+    return dirty;
   }
 
-  // Midpoint-circle outline, alpha-blended (the circle-boundary case).
-  function drawCircle(cx, cy, rad, rgb) {
+  // Midpoint-circle outline in a packed colour (the circle-boundary case).
+  function drawCircle(cx, cy, rad, packed) {
     const r = Math.round(rad);
     if (r < 1) return;
     let xp = r, yp = 0, err = 1 - r;
-    const put = (a, b) => blend(cx + a, cy + b, rgb[0], rgb[1], rgb[2], 1.0);
+    const put = (a, b) => setPixel(cx + a, cy + b, packed);
     while (xp >= yp) {
       put(xp, yp); put(yp, xp); put(-yp, xp); put(-xp, yp);
       put(-xp, -yp); put(-yp, -xp); put(yp, -xp); put(xp, -yp);
@@ -616,35 +639,21 @@ export function start(canvas) {
   }
 
   // --- sizing / lifecycle -----------------------------------------------------
+  // The colormap is the framework's SMOOTH_COLORS map: make_smooth_colormap with
+  // `ncolors` entries (utils/colors.c, ported in colormap.js). xlockmore builds
+  // it ONCE at startup and euler2d never rebuilds it, so it is stable across
+  // flows (only the boundary picks a fresh random entry per flow, the C's
+  // NRAND(MI_NPIXELS)). Pack each [r,g,b] into the little-endian 0xAABBGGRR
+  // Uint32 the blit path expects.
   function buildPalette() {
     const nc = Math.max(2, Math.round(config.ncolors));
-    colorsRGB = new Array(nc);
+    mono = nc <= 2;   // the C's MI_NPIXELS <= 2 path: draw everything white
+    const map = makeSmoothColormapRGB(nc);
+    colorsU32 = new Uint32Array(nc);
     for (let i = 0; i < nc; i++) {
-      colorsRGB[i] = hslToRgb(i * 360 / nc, 1, 0.5);
+      const [r, g, b] = map[i];
+      colorsU32[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
     }
-  }
-
-  function hslToRgb(h, s, l) {
-    h = ((h % 360) + 360) % 360 / 360;
-    let r, g, b;
-    if (s === 0) {
-      r = g = b = l;
-    } else {
-      const hue2rgb = (pp, qq, t) => {
-        if (t < 0) t += 1;
-        if (t > 1) t -= 1;
-        if (t < 1 / 6) return pp + (qq - pp) * 6 * t;
-        if (t < 1 / 2) return qq;
-        if (t < 2 / 3) return pp + (qq - pp) * (2 / 3 - t) * 6;
-        return pp;
-      };
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      const pp = 2 * l - q;
-      r = hue2rgb(pp, q, h + 1 / 3);
-      g = hue2rgb(pp, q, h);
-      b = hue2rgb(pp, q, h - 1 / 3);
-    }
-    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 
   // Allocate the simulation arrays from the current count, then roll a flow.
@@ -673,11 +682,17 @@ export function start(canvas) {
     dead = new Uint8Array(N);
     lastx = new Int32Array(N * 2);
 
-    // One reusable segment record per point (tracers + vortices).
-    segments = new Array(N);
-    for (let i = 0; i < N; i++) {
-      segments[i] = { x1: 0, y1: 0, x2: 0, y2: 0, idx: 0 };
-    }
+    // Erase-ring (the C's old_segs / nold_segs): tailLen frames of up to N
+    // segments each [x1,y1,x2,y2], plus this frame's list (csegs). tailLen is
+    // captured here because it SIZES this allocation (so eulertail is live:false,
+    // matching the C reading the resource once); clamped to [1, cycles] exactly
+    // as init_euler2d does.
+    tailLen = Math.max(1, Math.min(Math.round(config.eulertail), Math.round(config.cycles)));
+    csegs = new Int32Array(N * 4);
+    cnsegs = 0;
+    oldSegs = new Int32Array(tailLen * N * 4);
+    nOldSegs = new Int32Array(tailLen);
+    cOldSeg = 0;
 
     buildPalette();
     initFlow();
@@ -696,8 +711,10 @@ export function start(canvas) {
 
   // Drive off requestAnimationFrame but keep the original pace: one step() per
   // config.delay, banking leftover time. Each step is an O(count*Nvortex)
-  // physics pass plus a full-buffer fade, so keep the catch-up cap low.
-  const MAX_CATCHUP_STEPS = 3;
+  // physics pass plus ~2*cnsegs short Bresenham lines (erase the oldest ring
+  // frame + draw the new one), so keep the catch-up cap low. One blit per frame,
+  // only when a step actually drew.
+  const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
   let rafId = 0;
@@ -711,13 +728,15 @@ export function start(canvas) {
     const delayMs = config.delay / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
+    let drew = false;
     let steps = 0;
     while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
-      step();
+      if (step()) drew = true;
       lag -= delayMs;
       steps++;
     }
 
+    if (drew) ctx.putImageData(imageData, 0, 0);
     rafId = requestAnimationFrame(frame);
   }
 

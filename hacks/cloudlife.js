@@ -1,7 +1,22 @@
 // cloudlife.js — cloudlife packaged as a mountable module.
-// start(canvas) runs the hack on the given canvas and returns { stop } to tear
-// it down (cancel the rAF loop, drop the resize listener), so a host page can
-// cycle hacks on one shared canvas. Loop/sizing stay inline per hack for now.
+// start(canvas) runs the hack on the given canvas and returns
+// { stop, pause, resume, reinit, config, params } to tear it down or retune it,
+// so a host page can cycle hacks on one shared canvas.
+//
+// Port of xscreensaver's cloudlife.c (Don Marti, 2003).
+// https://www.jwz.org/xscreensaver/
+//
+// Conway's Life (B3/S23) with one rule change: cells carry an AGE, and once a
+// cell is older than maxAge it counts as 3 when populating the next generation
+// (cell_value) — so long-lived formations destabilise and "explode" instead of
+// sitting there. Rendering is the signature: exactly ONE random sub-pixel of
+// each cell's size x size block is painted per tick (live cells in the current
+// foreground colour, dead cells in black) into a persistent buffer, so cells
+// fade in and out like clouds and movers leave comet trails. The foreground is
+// a SINGLE colour walked backwards through a make_smooth_colormap every couple
+// of ticks (not a per-cell age colour). See cloudlife.md.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'cloudlife';
 
@@ -12,247 +27,258 @@ export const info = {
 };
 
 export function start(canvas) {
-    // cloudlife - port of xscreensaver hack by Don Marti (2003)
-    // https://www.jwz.org/xscreensaver/
-    //
-    // Conway's Life (B3/S23) with two twists: cells track an age, and once a
-    // cell is older than maxAge it counts as 3 neighbours instead of 1 -- so
-    // stable blobs destabilise and "explode" rather than sitting forever.
-    // Only a few random sub-pixels of each cell are painted per tick (live
-    // cells in colour, dead cells in black), so the field fades in and out
-    // like clouds and moving cells leave comet trails.
+  const ctx = canvas.getContext('2d');
 
-    const ctx = canvas.getContext('2d');
+  // Defaults/ranges mirror hacks/config/cloudlife.xml 1:1, so the config box maps
+  // onto the original's resources: delay (--cycle-delay, µs/tick, "Frame rate",
+  // inverted), maxAge (--max-age), density (--initial-density, a percent),
+  // cellSize (--cell-size, a power-of-two EXPONENT). cloudlife.xml exposes nothing
+  // else animatable (showfps is a framework control). ncolors and cycleColors are
+  // command-line-only in the C and are NOT exposed here (see consts below).
+  const config = {
+    delay: 25000,    // usleep interval, microseconds (xml default 25000)
+    maxAge: 64,      // age past which a cell counts as 3 neighbours (xml default 64)
+    density: 30,     // % of cells alive when (re)seeding (xml default 30)
+    cellSize: 3,     // exponent: a cell is 1 << cellSize device px (xml default 3)
+  };
 
-    // Configuration (matching original defaults)
-    const config = {
-      cellSize: 8,        // CSS pixels per cell (the original's 1 << cellSize)
-      density: 30,        // % of cells alive when (re)seeding
-      maxAge: 64,         // age past which a cell counts triple and explodes
-      ncolors: 64,
-      cycleColors: 2,     // advance the foreground colour every N ticks (0 = off)
-      delay: 40,          // ms per tick
-    };
+  const params = [
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'maxAge', label: 'Max age', type: 'range', min: 2, max: 255, step: 1, default: 64, lowLabel: 'young', highLabel: 'old', live: true },
+    { key: 'density', label: 'Initial density', type: 'range', min: 1, max: 99, step: 1, default: 30, unit: '%', lowLabel: 'low', highLabel: 'high', live: false },
+    { key: 'cellSize', label: 'Cell size', type: 'range', min: 1, max: 20, step: 1, default: 3, lowLabel: 'small', highLabel: 'large', live: false },
+  ];
 
-    // Tunable params for the host config box.
-    const params = [
-      { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 200, step: 1, default: 40, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-      { key: 'cellSize', label: 'Cell size', type: 'range', min: 2, max: 24, step: 1, default: 8, unit: ' px', lowLabel: 'small', highLabel: 'big', live: false },
-      { key: 'density', label: 'Density', type: 'range', min: 1, max: 90, step: 1, default: 30, unit: '%', lowLabel: 'sparse', highLabel: 'dense', live: false },
-      { key: 'maxAge', label: 'Max age', type: 'range', min: 4, max: 200, step: 1, default: 64, live: true },
-      { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, live: false },
-      { key: 'cycleColors', label: 'Colour cycle', type: 'range', min: 0, max: 16, step: 1, default: 2, lowLabel: 'off', highLabel: 'slow', live: true },
-    ];
+  // Fixed C defaults NOT exposed by cloudlife.xml (command-line only). The C only
+  // builds/cycles colours when cycleColors is non-zero; its stock value is 2.
+  const NCOLORS = 64;        // cloudlife_defaults *ncolors
+  const CYCLE_COLORS = 2;    // cloudlife_defaults *cycleColors (ticks per colour step)
 
-    let cellPx, dotsPerCell;
-    let width, height;          // grid size in cells, including a 1-cell border
-    let cells, newCells;        // age per cell; 0 = dead
-    let imageData, pixels;      // canvas-sized RGBA buffer, blitted once per tick
-    let colors, colorIndex, colorTimer, fgUint;
-    let cycles;
+  const BLACK = 0xFF000000;  // opaque black, little-endian packed 0xAABBGGRR
 
-    const BLACK = 0xFF000000;   // opaque black, little-endian packed 0xAABBGGRR
+  let cellPx;                 // cell size in device px = 1 << cellSize (C's `size`)
+  let width, height;          // grid size in cells, including a 1-cell border ring
+  let cells, newCells;        // age per cell (Uint8, 0 = dead) — wraps at 256 like the C
+  let imageData, pixels;      // canvas-sized RGBA buffer, blitted once per tick
+  let colors;                 // Uint32 smooth colormap (built once)
+  let colorIndex, colorTimer, fgUint;
+  let cycles;
 
-    // HSL (h in degrees, s/l in [0,1]) packed into a little-endian RGBA uint.
-    function hslToUint(h, s, l) {
-      const c = (1 - Math.abs(2 * l - 1)) * s;
-      const hp = h / 60;
-      const x = c * (1 - Math.abs(hp % 2 - 1));
-      let r = 0, g = 0, b = 0;
-      if (hp < 1)      { r = c; g = x; }
-      else if (hp < 2) { r = x; g = c; }
-      else if (hp < 3) { g = c; b = x; }
-      else if (hp < 4) { g = x; b = c; }
-      else if (hp < 5) { r = x; b = c; }
-      else             { r = c; b = x; }
-      const m = l - c / 2;
-      const R = Math.round((r + m) * 255);
-      const G = Math.round((g + m) * 255);
-      const B = Math.round((b + m) * 255);
-      return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
+  // make_smooth_colormap (utils/colors.c via colormap.js), built ONCE exactly as
+  // cloudlife_init does: 2-5 random HSV anchors interpolated into a smooth loop,
+  // often muted/pastel — NOT a vivid rainbow. The C never rebuilds this map; it
+  // only cycles WHICH single entry is the foreground colour.
+  function buildColors() {
+    const map = makeSmoothColormapRGB(NCOLORS);
+    colors = new Uint32Array(map.length);
+    for (let i = 0; i < map.length; i++) {
+      const [r, g, b] = map[i];
+      colors[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
+    }
+    fgUint = colors[0];
+  }
+
+  // initialDensity resource -> 0..256 threshold, exactly as cloudlife_init:
+  //   density = (initialDensity % 100 * 256) / 100        (C integer arithmetic)
+  function densityThreshold() {
+    return Math.trunc((config.density % 100) * 256 / 100);
+  }
+
+  // random_cell(p): 1 with probability p/256, else 0 (C's `random() & 0xff < p`).
+  function randomCell(p) {
+    return Math.floor(Math.random() * 256) < p ? 1 : 0;
+  }
+
+  function populateField() {
+    const p = densityThreshold();
+    for (let i = 0; i < cells.length; i++) cells[i] = randomCell(p);
+  }
+
+  // Seed (p = threshold) or clear (p = 0) the off-screen border ring (populate_edges).
+  function populateEdges(p) {
+    for (let x = 0; x < width; x++) {
+      cells[x] = randomCell(p);
+      cells[(height - 1) * width + x] = randomCell(p);
+    }
+    for (let y = 0; y < height; y++) {
+      cells[y * width] = randomCell(p);
+      cells[y * width + width - 1] = randomCell(p);
+    }
+  }
+
+  // is_alive: sum the eight neighbours via cell_value (dead=0, older-than-maxAge=3,
+  // else 1) then apply B3/S23 to the centre's age (survivors age by one).
+  function nextAge(x, y) {
+    let count = 0;
+    for (let j = y - 1; j <= y + 1; j++) {
+      const row = j * width;
+      for (let i = x - 1; i <= x + 1; i++) {
+        if (i === x && j === y) continue;
+        const c = cells[row + i];
+        count += c === 0 ? 0 : (c > config.maxAge ? 3 : 1);
+      }
+    }
+    const age = cells[y * width + x];
+    if (age) {
+      return (count === 2 || count === 3) ? age + 1 : 0;   // survive (age++) or die
+    }
+    return count === 3 ? 1 : 0;                             // birth on exactly 3
+  }
+
+  // Advance one generation into newCells, copy back, and return the age-sum
+  // (do_tick's `count`, used to decide when to reseed). The sum reads back the
+  // uint8-stored value so it matches the C's `count += (unsigned char)assignment`.
+  function tick() {
+    let sum = 0;
+    for (let y = 1; y < height - 1; y++) {
+      const rowBase = y * width;
+      for (let x = 1; x < width - 1; x++) {
+        const idx = rowBase + x;
+        newCells[idx] = nextAge(x, y);
+        sum += newCells[idx];
+      }
+    }
+    cells.set(newCells);
+    return sum;
+  }
+
+  // draw_field: for every cell paint ONE random sub-pixel of its size x size block
+  // (live -> current fg colour, dead -> black) straight into the persistent pixel
+  // buffer, then blit. Old dots persist, so the field fades like clouds and movers
+  // comet-trail. (Per-pixel fillRect is hopelessly slow at this volume; the single
+  // putImageData mirrors the C's batched XDrawPoints.)
+  function drawField() {
+    const cw = canvas.width;
+    const size = cellPx;
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const color = cells[y * width + x] ? fgUint : BLACK;
+        // px = x*size - rx - 1, py = y*size - ry - 1, with rx,ry in [0,size).
+        const rx = Math.floor(Math.random() * size);
+        const ry = Math.floor(Math.random() * size);
+        pixels[(y * size - ry - 1) * cw + (x * size - rx - 1)] = color;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  function init() {
+    // cellSize is the C's power-of-two EXPONENT (the "cellSize" resource); the
+    // on-screen cell is 1 << cellSize pixels, measured in DEVICE px — the canvas
+    // backing store is the analogue of the X11 screen, so there is no dpr fudge
+    // (C: `size = 1 << f->cell_size`; grid = screen / size + 2).
+    const size = 1 << Math.max(1, Math.round(config.cellSize));
+    cellPx = size;
+    width = Math.floor(canvas.width / size) + 2;    // +2 for the off-screen border ring
+    height = Math.floor(canvas.height / size) + 2;
+
+    cells = new Uint8Array(width * height);
+    newCells = new Uint8Array(width * height);
+    populateField();
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    imageData = ctx.createImageData(canvas.width, canvas.height);
+    pixels = new Uint32Array(imageData.data.buffer);
+    pixels.fill(BLACK);
+    init();
+  }
+
+  // One tick (cloudlife_draw): cycle the foreground colour, paint the current
+  // field, advance a generation (reseeding if it nearly died), and every maxAge/2
+  // ticks stir the border for one generation then clear it.
+  function step() {
+    if (CYCLE_COLORS) {
+      if (colorTimer === 0) {
+        colorTimer = CYCLE_COLORS;
+        // Walk the single foreground colour BACKWARDS through the map, wrapping
+        // 0 -> last (C: if(colorindex==0) colorindex=ncolors; colorindex--).
+        colorIndex = (colorIndex + colors.length - 1) % colors.length;
+        fgUint = colors[colorIndex];
+      }
+      colorTimer--;
     }
 
-    function populateField() {
-      for (let i = 0; i < cells.length; i++) {
-        cells[i] = Math.random() * 100 < config.density ? 1 : 0;
-      }
-    }
+    drawField();
 
-    // Seed (or with density 0, clear) the off-screen border ring.
-    function populateEdges(density) {
-      for (let x = 0; x < width; x++) {
-        cells[x] = Math.random() * 100 < density ? 1 : 0;
-        cells[(height - 1) * width + x] = Math.random() * 100 < density ? 1 : 0;
-      }
-      for (let y = 0; y < height; y++) {
-        cells[y * width] = Math.random() * 100 < density ? 1 : 0;
-        cells[y * width + width - 1] = Math.random() * 100 < density ? 1 : 0;
-      }
-    }
-
-    function nextAge(x, y) {
-      // Sum the eight neighbours. A live cell counts 1, but one older than
-      // maxAge counts 3 -- the twist that keeps long-lived shapes from
-      // freezing in place.
-      let count = 0;
-      for (let j = y - 1; j <= y + 1; j++) {
-        const row = j * width;
-        for (let i = x - 1; i <= x + 1; i++) {
-          if (i === x && j === y) continue;
-          const c = cells[row + i];
-          count += c === 0 ? 0 : (c > config.maxAge ? 3 : 1);
-        }
-      }
-
-      const age = cells[y * width + x];
-      if (age) {
-        // Survives on 2 or 3 neighbours, ageing by one; otherwise dies.
-        return (count === 2 || count === 3) ? age + 1 : 0;
-      }
-      // A dead cell is born on exactly 3.
-      return count === 3 ? 1 : 0;
-    }
-
-    // Advance one generation into newCells, copy back, and return the total
-    // age-sum (a liveliness measure used to decide when to reseed).
-    function tick() {
-      let sum = 0;
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          const v = nextAge(x, y);
-          newCells[y * width + x] = v;
-          sum += v;
-        }
-      }
-      cells.set(newCells);
-      return sum;
-    }
-
-    // Repaint a few random sub-pixels of every cell straight into the pixel
-    // buffer -- live cells in the cycling colour, dead cells in black -- then
-    // blit the whole buffer in one putImageData. (Per-pixel fillRect calls are
-    // hopelessly slow at this volume; this mirrors the original's batched
-    // XDrawPoints.) Old dots persist in the buffer, so cells fade in and out
-    // like clouds and movers leave comet trails.
-    function drawField() {
-      const cw = canvas.width;
-      for (let y = 1; y < height - 1; y++) {
-        for (let x = 1; x < width - 1; x++) {
-          const color = cells[y * width + x] ? fgUint : BLACK;
-          for (let d = 0; d < dotsPerCell; d++) {
-            const rx = Math.floor(Math.random() * cellPx);
-            const ry = Math.floor(Math.random() * cellPx);
-            pixels[(y * cellPx - ry - 1) * cw + (x * cellPx - rx - 1)] = color;
-          }
-        }
-      }
-      ctx.putImageData(imageData, 0, 0);
-    }
-
-    function init() {
-      const dpr = window.devicePixelRatio || 1;
-      cellPx = config.cellSize * dpr;
-      // Scatter ~1 dot per tick for an original-sized cell, scaled by area so
-      // the cloud's fade rate looks the same on any display.
-      dotsPerCell = Math.max(1, Math.round(dpr * dpr));
-
-      width = Math.floor(canvas.width / cellPx) + 2;
-      height = Math.floor(canvas.height / cellPx) + 2;
-
-      // Vivid full-spectrum rainbow -- intentionally brighter and more
-      // saturated than the C's softer smooth colormap.
-      colors = [];
-      for (let i = 0; i < config.ncolors; i++) {
-        colors.push(hslToUint(i * 360 / config.ncolors, 1, 0.5));
-      }
-      colorIndex = 0;
-      colorTimer = 0;
-      fgUint = colors[0];
-
-      cells = new Uint8Array(width * height);
-      newCells = new Uint8Array(width * height);
-      cycles = 0;
-
+    // Reseed the whole field if the population (age-sum) has nearly died out.
+    // (C: do_tick() < (height + width) / 4, integer division.)
+    if (tick() < Math.floor((width + height) / 4)) {
       populateField();
     }
 
-    function resize() {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(window.innerWidth * dpr);
-      canvas.height = Math.round(window.innerHeight * dpr);
-      canvas.style.width = window.innerWidth + 'px';
-      canvas.style.height = window.innerHeight + 'px';
-      imageData = ctx.createImageData(canvas.width, canvas.height);
-      pixels = new Uint32Array(imageData.data.buffer);
-      pixels.fill(BLACK);
-      init();
+    // Periodic edge stir: inject border activity for one generation, then clear
+    // the border again. (C: cycles % (max_age / 2) == 0.)
+    if (cycles % Math.floor(config.maxAge / 2) === 0) {
+      populateEdges(densityThreshold());
+      tick();
+      populateEdges(0);
     }
 
-    function step() {
-      // Cycle the single foreground colour, walking the spectrum backwards to
-      // match the original.
-      if (config.cycleColors) {
-        if (colorTimer === 0) {
-          colorTimer = config.cycleColors;
-          colorIndex = (colorIndex + config.ncolors - 1) % config.ncolors;
-          fgUint = colors[colorIndex];
-        }
-        colorTimer--;
-      }
+    cycles++;
+  }
 
-      drawField();
+  // Drive off requestAnimationFrame but keep the original pace: run one step()
+  // per config.delay (µs -> ms), banking leftover time so the rate is the same at
+  // any refresh rate. Cap catch-up so a backgrounded tab (rAF paused) doesn't fire
+  // a burst on refocus, and so delay=0 doesn't spin forever.
+  //
+  // OVERHEAD: xscreensaver's real per-frame rate is below its nominal delay (the
+  // delay is a floor plus framework overhead — see the framerate-calibration note;
+  // starfish needed OVERHEAD=8000). Measured against the live -fps overlay the
+  // binary runs at 30.3 fps (Load 24%, i.e. delay-bound, a portable target), while
+  // the port at the stock 25000 µs ran 40 gen/sec (1.3x fast). 25000 + 8000 =
+  // 33000 µs -> 30.3 gen/sec, matching the live binary. NOT tuning — a calibration.
+  const OVERHEAD = 8000;
+  const MAX_CATCHUP_STEPS = 4;
+  let lastTime = 0;
+  let lag = 0;
+  let rafId = 0;
 
-      // Advance a generation; if the population has nearly died out, reseed.
-      if (tick() < (width + height) / 4) {
-        populateField();
-      }
+  function frame(now) {
+    if (lastTime === 0) lastTime = now;
+    lag += now - lastTime;
+    lastTime = now;
 
-      // Periodically stir in fresh activity from the border so it never stalls.
-      if (cycles % Math.floor(config.maxAge / 2) === 0) {
-        populateEdges(config.density);
-        tick();
-        populateEdges(0);
-      }
+    const delayMs = (config.delay + OVERHEAD) / 1000;
+    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
-      cycles++;
+    let steps = 0;
+    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
+      step();
+      lag -= delayMs;
+      steps++;
     }
 
-    // Drive off requestAnimationFrame but keep the original pace: run one
-    // step() per config.delay ms, banking leftover time so the speed is the
-    // same at any refresh rate. Cap catch-up so a backgrounded tab (where rAF
-    // is paused) doesn't fire a burst of steps when it regains focus.
-    const MAX_CATCHUP_STEPS = 8;
-    let lastTime = 0;
-    let lag = 0;
-    let rafId = 0;
-
-    function frame(now) {
-      if (lastTime === 0) lastTime = now;
-      lag += now - lastTime;
-      lastTime = now;
-
-      lag = Math.min(lag, config.delay * MAX_CATCHUP_STEPS);
-      while (lag >= config.delay) {
-        step();
-        lag -= config.delay;
-      }
-
-      rafId = requestAnimationFrame(frame);
-    }
-
-    window.addEventListener('resize', resize);
-    resize();
     rafId = requestAnimationFrame(frame);
+  }
 
-    return {
-      stop() {
-        cancelAnimationFrame(rafId);
-        window.removeEventListener('resize', resize);
-      },
-      pause() { cancelAnimationFrame(rafId); rafId = 0; },
-      resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
-      reinit: resize,   // re-alloc buffer + rebuild with the current config
-      config,
-      params,
-    };
+  // Build the colormap once (C's cloudlife_init) and zero the cycle/tick counters;
+  // resize() only (re)allocates the grid + buffer, leaving these alone — the C
+  // keeps cycles/colorindex/colors across window-size changes.
+  buildColors();
+  cycles = 0;
+  colorIndex = 0;
+  colorTimer = 0;
+
+  window.addEventListener('resize', resize);
+  resize();
+  rafId = requestAnimationFrame(frame);
+
+  return {
+    stop() {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', resize);
+    },
+    pause() { cancelAnimationFrame(rafId); rafId = 0; },
+    resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
+    reinit: resize,   // re-alloc grid + buffer with the current config
+    config,
+    params,
+  };
 }
