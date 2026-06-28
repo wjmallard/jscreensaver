@@ -50,8 +50,8 @@ export function start(canvas) {
   // (the cosilines toggle). `ncolors` is added for parity with the other ports;
   // the C hardcodes a 32-entry blue->green->red->violet ramp.
   const config = {
-    delay: 10000,      // µs between steps (the C/xml stock default: ~100 steps/sec,
-                       // the signature fast rush toward the screen).
+    delay: 20000,      // µs between steps. Calmer than the C's stock 10000 default
+                       // -- the stock fast rush reads as overwhelming here.
     speed: 0.10,       // per-step spin rate, 0.0001..0.2 (--speed / "Density"); the
                        // C/xml stock default. Sets rotsizeX = (int)(2/speed+1) groups.
     random: true,      // true = smooth cosi-lines, false = random splats (--random)
@@ -59,7 +59,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'speed', label: 'Density', type: 'range', min: 0.0001, max: 0.2, step: 0.0001, default: 0.10, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'random', label: 'Smooth lines', type: 'checkbox', default: true, live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 32, lowLabel: 'few', highLabel: 'many', live: false },
