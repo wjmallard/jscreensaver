@@ -8,13 +8,16 @@
 // The Barry-Martin "hopalong" strange attractor: iterate a 2D map (one of 11
 // formulas — Martin/sqrt, EJK1..6, RR, Popcorn, Jong, Sine), plotting one point
 // per iteration. Thousands of points accumulate into a lacy fractal; one solid
-// colour per frame, advancing through the hue cycle so the whole image is a
-// smooth rainbow. After `cycles` frames the image clears and a fresh attractor
-// (new random formula + parameters) begins.
+// colour per frame, walking a make_smooth_colormap palette one entry per frame
+// so the figure builds up in bands of evolving (often muted) colour. After
+// `cycles` frames the image clears and a fresh attractor (new random formula +
+// parameters) begins.
 //
 // Rendering: point plotting, thousands per frame, so the BLIT path — accumulate
 // into a persistent Uint32 ImageData buffer and putImageData once per frame
 // (like sierpinski / binaryring), not per-point fillRect.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'hopalong';
 
@@ -32,7 +35,7 @@ export function start(canvas) {
   //             frame, so more points per frame = fewer colour changes per
   //             point: the xml labels this "Color contrast" for that reason.
   //   cycles  — frames before the image clears and a new attractor begins.
-  //   ncolors — size of the hue cycle.
+  //   ncolors — size of the make_smooth_colormap palette walked once/frame.
   const config = {
     delay: 10000,    // µs between frames (--delay)
     cycles: 2500,    // frames before clear + new attractor (--cycles)
@@ -48,7 +51,7 @@ export function start(canvas) {
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Duration', type: 'range', min: 100, max: 100000, step: 100, default: 2500, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'count', label: 'Color contrast', type: 'range', min: 100, max: 10000, step: 100, default: 1000, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'formula', label: 'Formula', type: 'select', default: 'random', live: false, options: [
         { value: 'random',  label: 'random' },
         { value: 'martin',  label: 'Martin' },
@@ -81,41 +84,40 @@ export function start(canvas) {
     ejk4: OP.EJK4, ejk5: OP.EJK5, ejk6: OP.EJK6,
   };
 
-  const BLACK = 0xFF000000;
+  const BLACK = 0xFF000000;       // opaque black, little-endian 0xAABBGGRR
+  const WHITE = 0xFFFFFFFF;       // opaque white (MI_WHITE_PIXEL; used when ncolors <= 2)
   const PI = Math.PI;
 
   let W, H, S, cx, cy, dot;
   let imageData, pixels;
-  let colorsU;                 // ncolors packed-RGBA rainbow entries
+  let colorsU;                 // palette: packed-RGBA make_smooth_colormap (or [WHITE])
   let op, a, b, c, d, ii, jj;  // attractor state (i/j renamed ii/jj)
   let inc, pix, time;
 
   const rnd = Math.random;            // [0,1)
   const signed = () => rnd() * 2 - 1; // [-1,1)
 
-  // HSL (h deg, s/l in [0,1]) -> little-endian 0xAABBGGRR, matching ImageData.
-  function hslToUint(h, s, l) {
-    const k = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h / 60;
-    const x = k * (1 - Math.abs(hp % 2 - 1));
-    let r = 0, g = 0, bl = 0;
-    if (hp < 1)      { r = k; g = x; }
-    else if (hp < 2) { r = x; g = k; }
-    else if (hp < 3) { g = k; bl = x; }
-    else if (hp < 4) { g = x; bl = k; }
-    else if (hp < 5) { r = x; bl = k; }
-    else             { r = k; bl = x; }
-    const m = l - k / 2;
-    const R = Math.round((r + m) * 255);
-    const G = Math.round((g + m) * 255);
-    const B = Math.round((bl + m) * 255);
-    return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
-  }
-
+  // Palette: a faithful make_smooth_colormap (utils/colors.c, via colormap.js) --
+  // 2-5 random HSV anchors interpolated into a closed loop, OFTEN muted/pastel,
+  // NOT a vivid spectral rainbow. The STANDALONE C builds this ONCE at startup
+  // (#define SMOOTH_COLORS -> color_scheme_smooth in xlockmore.c) and init_hop
+  // never rebuilds it, so a single palette serves the whole run, walked by `pix`
+  // (one entry per frame); we build it once per init() to match that cadence.
+  // When ncolors <= 2 the framework falls to MONO and draw_hop skips the colour
+  // path, drawing in MI_WHITE_PIXEL (its `if (MI_NPIXELS(mi) > 2)` gate), so we
+  // use a single white entry there.
   function buildColors() {
     const n = Math.max(1, Math.round(config.ncolors));
-    colorsU = new Array(n);
-    for (let i = 0; i < n; i++) colorsU[i] = hslToUint((i * 360 / n) % 360, 1, 0.55);
+    if (n > 2) {
+      const map = makeSmoothColormapRGB(n);
+      colorsU = new Uint32Array(n);
+      for (let i = 0; i < n; i++) {
+        const [r, g, b] = map[i];
+        colorsU[i] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
+      }
+    } else {
+      colorsU = new Uint32Array([WHITE]);
+    }
   }
 
   // Plot a dot-sized square (dot scales with dpr) at integer (x, y).
@@ -132,11 +134,13 @@ export function start(canvas) {
     }
   }
 
-  // Pick a new attractor (formula + parameters) and clear the buffer.
-  // Faithful to init_hop(): `range` sets the parameter scale, `inc` a random
-  // integer offset. `inc` and `range` are scaled by dpr so the figure keeps its
-  // proportions on retina (the C leaves the math in raw pixels and only bumps
-  // the dot size). The map state i/j is already in screen-pixel units.
+  // Pick a new attractor (formula + parameters) and clear the buffer. Faithful
+  // to init_hop(): `range` sets the parameter scale (derived from the device-px
+  // centre, so a,b,c,d scale with the canvas and the figure fills it at any dpr)
+  // and `inc` is a random integer offset. The C keeps the whole iteration in raw
+  // pixels; we leave inc UNSCALED too (faithful, and its per-frame ++ drift
+  // swamps the tiny initial value) and only bump the dot SIZE on dense displays
+  // (see init()). The map state i/j is already in screen-pixel units.
   function startover() {
     op = config.formula === 'random'
       ? OPS[(rnd() * OPS.length) | 0]
@@ -146,8 +150,7 @@ export function start(canvas) {
     const range = Math.sqrt(cx * cx + cy * cy) / (1.0 + rnd());
     ii = 0.0;
     jj = 0.0;
-    inc = ((rnd() * 200) | 0) - 100;   // [-100, 100), scaled into pixel space below
-    inc *= S;
+    inc = ((rnd() * 200) | 0) - 100;   // C: (int)((LRAND()/MAXRAND)*200) - 100 -> [-100,99]
 
     switch (op) {
       case OP.MARTIN:
@@ -196,7 +199,7 @@ export function start(canvas) {
         a = 0.0;
         b = 0.0;
         c = signed() * 0.24 + 0.25;
-        inc = 100;   // the C overrides inc here (no dpr scaling — popcorn is unit-free)
+        inc = 100;   // C overrides inc; popcorn reuses it as a 0..99 frame counter
         break;
       case OP.JONG:
         a = signed() * PI;
@@ -232,61 +235,61 @@ export function start(canvas) {
           jj = a - ii;
           ii = oldj + ((ii < 0) ? Math.sqrt(Math.abs(b * oldi - c))
                                 : -Math.sqrt(Math.abs(b * oldi - c)));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.EJK1:
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - ((ii > 0) ? (b * oldi - c) : -(b * oldi - c));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.EJK2:
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - ((ii < 0) ? Math.log(Math.abs(b * oldi - c))
                                 : -Math.log(Math.abs(b * oldi - c)));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.EJK3:
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - ((ii > 0) ? Math.sin(b * oldi) - c : -Math.sin(b * oldi) - c);
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.EJK4:
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - ((ii > 0) ? Math.sin(b * oldi) - c
                                 : -Math.sqrt(Math.abs(b * oldi - c)));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.EJK5:
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - ((ii > 0) ? Math.sin(b * oldi) - c : -(b * oldi - c));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.EJK6:
           oldi = ii + inc;
           jj = a - ii;
           // C: asin((b*oldi) - (long)(b*oldi)) — fractional part via trunc.
           ii = oldj - Math.asin((b * oldi) - Math.trunc(b * oldi));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.RR:   // RR1
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - ((ii < 0) ? -Math.pow(Math.abs(b * oldi - c), d)
                                 : Math.pow(Math.abs(b * oldi - c), d));
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
         case OP.POPCORN: {
           const HVAL = 0.05;
@@ -302,25 +305,28 @@ export function start(canvas) {
           }
           const tempi = ii - HVAL * Math.sin(jj + Math.tan(3.0 * jj));
           const tempj = jj - HVAL * Math.sin(ii + Math.tan(3.0 * ii));
-          x = cx + (W / 40 * tempi);
-          y = cy + (H / 40 * tempj);
+          // C: MI_WIDTH/40 and MI_HEIGHT/40 are INTEGER divisions, then (int)(.)
+          x = cx + Math.trunc(Math.trunc(W / 40) * tempi);
+          y = cy + Math.trunc(Math.trunc(H / 40) * tempj);
           ii = tempi;
           jj = tempj;
           break;
         }
         case OP.JONG:
-          oldi = (cx > 0) ? ii + 4 * inc / cx : ii;
+          // C: oldi = i + 4*inc/centerx with INTEGER division (all ints) -- the
+          // term stays 0 until 4*inc exceeds centerx, then drifts by a small int.
+          oldi = (cx > 0) ? ii + Math.trunc(4 * inc / cx) : ii;
           jj = Math.sin(c * ii) - Math.cos(d * jj);
           ii = Math.sin(a * oldj) - Math.cos(b * oldi);
-          x = cx + (cx * (ii + jj) / 4.0);
-          y = cy - (cy * (ii - jj) / 4.0);
+          x = cx + Math.trunc(cx * (ii + jj) / 4.0);
+          y = cy - Math.trunc(cy * (ii - jj) / 4.0);
           break;
         case OP.SINE:   // MARTIN2
           oldi = ii + inc;
           jj = a - ii;
           ii = oldj - Math.sin(oldi);
-          x = cx + (ii + jj);
-          y = cy - (ii - jj);
+          x = cx + Math.trunc(ii + jj);
+          y = cy - Math.trunc(ii - jj);
           break;
       }
       plot(x, y, color);
