@@ -463,6 +463,30 @@ function closeAbout() { about.classList.remove('open'); }
 function openHelp() { closeConfig(); closeAbout(); closeInfo(); help.classList.add('open'); }
 function closeHelp() { help.classList.remove('open'); }
 
+// Append `text` to `el`, turning http(s) URLs into <a> links; the non-URL runs
+// stay text nodes so the surrounding white-space: pre-wrap still renders their
+// line breaks. URL is matched up to whitespace (so consecutive split URLs each
+// link separately); trailing sentence punctuation is left out of the href.
+function appendLinkified(el, text) {
+  const re = /https?:\/\/[^\s]+/g;
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    let url = m[0], trail = '';
+    const punct = url.match(/[.,;:!?]+$/);
+    if (punct) { trail = punct[0]; url = url.slice(0, -trail.length); }
+    if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const a = document.createElement('a');
+    a.href = url;
+    a.textContent = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    el.appendChild(a);
+    if (trail) el.appendChild(document.createTextNode(trail));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+
 // Info box: the running hack's blurb (jwz's verbatim xml <_description>, baked
 // into the catalog) plus an em-dash author/year credit, read straight from its
 // catalog entry (no module load), shown read-only. The blurb carries blank-line
@@ -479,7 +503,7 @@ function openInfo() {
     for (const para of meta.description.split(/\n{2,}/)) {
       const p = document.createElement('p');
       p.className = 'info-desc';
-      p.textContent = para;
+      appendLinkified(p, para);
       body.appendChild(p);
     }
     const credit = document.createElement('div');

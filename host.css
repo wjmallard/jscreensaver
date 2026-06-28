@@ -134,7 +134,7 @@ canvas { display: block; touch-action: none; }
 .about-body p:last-child { margin-bottom: 0; }
 .about-body a { color: var(--phosphor-bright); text-decoration: none; border-bottom: 1px dotted #2f7a4a; }
 .about-body a:hover { color: var(--phosphor-hi); }
-.info-desc { margin: 0 0 10px; white-space: pre-wrap; }
+.info-desc { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: break-word; }
 .info-credit { margin-top: 14px; color: var(--phosphor-dim); }
 .about-hint {
   padding: 9px 16px; border-top: 1px solid var(--phosphor-divider);
