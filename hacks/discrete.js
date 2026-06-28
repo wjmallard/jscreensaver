@@ -10,14 +10,17 @@
 // "Bird in a Thornbush", an inverse Julia-set iteration (AILUJ), plus Trig,
 // Cubic and Henon maps — seeds it with random coefficients, then iterates the
 // map thousands of times, plotting one tiny point per iteration. Points
-// accumulate into a persistent image, the plot colour cycling through the
-// rainbow; after `cycles` frames the screen clears and a fresh map begins.
+// accumulate into a persistent image, the plot colour stepping once per inner
+// frame through a make_smooth_colormap palette (random, often muted — not a
+// vivid rainbow); after `cycles` frames the screen clears and a fresh map begins.
 //
 // Rendering: tens of thousands of points accumulate per frame, so this uses the
 // BLIT path — a persistent Uint32 ImageData buffer that we write pixels into and
 // putImageData once per frame, like hopalong / thornbird (its sibling, which is
 // the BIRDIE map of this very hack pulled out into its own screenhack).
 // See [[hopalong]] and [[thornbird]].
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'discrete';
 
@@ -38,7 +41,7 @@ export function start(canvas) {
     delay: 50000,   // microseconds between frames (--delay)
     cycles: 2500,   // frames before the screen clears + a new map begins (--cycles)
     count: 4096,    // points plotted per inner frame (DEFAULTS *count, "Points")
-    ncolors: 100,   // size of the rainbow palette (--ncolors)
+    ncolors: 100,   // size of the make_smooth_colormap palette (--ncolors)
   };
 
   // live: true  -> the loop reads config[key] every frame, applies instantly.
@@ -47,7 +50,7 @@ export function start(canvas) {
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Timeout', type: 'range', min: 100, max: 10000, step: 100, default: 2500, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'count', label: 'Points', type: 'range', min: 512, max: 8192, step: 256, default: 4096, lowLabel: 'few', highLabel: 'many', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // The map types. Only these seven are reachable: the C enum also defines
@@ -75,7 +78,7 @@ export function start(canvas) {
 
   let W, H, S, cx, cy, dot;     // canvas size (device px), dpr, centre, point size
   let imageData, pixels;        // persistent Uint32 accumulation buffer
-  let palette;                  // ncolors packed-ABGR rainbow values
+  let palette;                  // ncolors packed-ABGR smooth-colormap values
 
   // Discrete-map state (names mirror the C struct).
   let op;                       // current map type
@@ -87,30 +90,22 @@ export function start(canvas) {
   let frameCount;              // inner frames since this map began (vs. cycles)
   let sqrtSign, stdSign;       // toggles for the per-frame reseed of SQRT/STANDARD
 
-  // HSL (h deg, s/l in [0,1]) -> little-endian 0xAABBGGRR, matching ImageData.
-  function hslToUint(h, s, l) {
-    const k = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h / 60;
-    const x = k * (1 - Math.abs(hp % 2 - 1));
-    let r = 0, g = 0, bl = 0;
-    if (hp < 1)      { r = k; g = x; }
-    else if (hp < 2) { r = x; g = k; }
-    else if (hp < 3) { g = k; bl = x; }
-    else if (hp < 4) { g = x; bl = k; }
-    else if (hp < 5) { r = x; bl = k; }
-    else             { r = k; bl = x; }
-    const m = l - k / 2;
-    const R = Math.round((r + m) * 255);
-    const G = Math.round((g + m) * 255);
-    const B = Math.round((bl + m) * 255);
-    return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
-  }
-
+  // Build the colour table once per init via make_smooth_colormap (utils/colors.c,
+  // ported faithfully in colormap.js). The C compiles discrete with SMOOTH_COLORS,
+  // so the xlockmore wrapper builds ONE random smooth colormap at startup
+  // (2-5 HSV anchors, min-separation + min-avg-sat/val retries — frequently
+  // muted/pastel, NOT a vivid rainbow) and never rebuilds it for the session. We
+  // mirror that: built here in init(), NOT in newAttractor(), so every map in a
+  // session shares the same palette exactly as the C does; draw_discrete_1 only
+  // walks the index through it. Pack each [r,g,b] (0..255) into the little-endian
+  // 0xAABBGGRR Uint32 the blit path expects.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
     palette = new Uint32Array(n);
+    const map = makeSmoothColormapRGB(n);
     for (let p = 0; p < n; p++) {
-      palette[p] = hslToUint((p * 360 / n) % 360, 1, 0.55);
+      const [r, g, b] = map[p];
+      palette[p] = ((0xff << 24) | (b << 16) | (g << 8) | r) >>> 0;
     }
   }
 
@@ -129,9 +124,9 @@ export function start(canvas) {
   }
 
   // init_discrete(): pick a new map, seed its coefficients + iterate, clear the
-  // buffer, reset the counters. (Called at start, on a cycles timeout, and as a
-  // divergence guard.) All geometry is in device pixels (maxx == W, maxy == H),
-  // so the figure fills the device-res canvas directly, like hopalong.
+  // buffer, reset the counters. (Called at start and on a cycles timeout.) All
+  // geometry is in device pixels (maxx == W, maxy == H), so the figure fills the
+  // device-res canvas directly, like hopalong.
   function newAttractor() {
     const maxx = W, maxy = H;
     op = BIAS[(rnd() * BIAS.length) | 0];
@@ -238,9 +233,11 @@ export function start(canvas) {
     pixels.fill(BLACK);
   }
 
-  // draw_discrete_1(): advance colour + inc, iterate the map `count` times,
-  // plotting each point. Returns true if the iterate went non-finite (the
-  // divergence guard the brief mandates — e.g. the cubic map can blow up).
+  // draw_discrete_1(): advance colour + inc, then iterate the map `count` times,
+  // plotting each point. The C has NO divergence guard / early reset; a non-finite
+  // or far-off-screen coordinate is simply skipped by plot() (X11 clips it the
+  // same way), so a (rare) escaping orbit just stops drawing until the cycles
+  // timeout reseeds. In practice none of the seeded maps go non-finite.
   function mapStep() {
     inc++;
 
@@ -317,30 +314,23 @@ export function start(canvas) {
           break;
       }
 
-      if (!isFinite(i) || !isFinite(j)) return true;
-
       // attractor units -> screen pixels (C: (int) truncation toward zero).
+      // Non-finite / off-screen (x, y) are skipped inside plot(), matching X11 clip.
       const x = cx + Math.trunc((i - ic) * iscale);
       const y = cy - Math.trunc((j - jc) * jscale);
       plot(x, y, color);
     }
-
-    return false;
   }
 
-  // draw_discrete(): run INNER inner frames, then either reseed (divergence or
-  // cycles timeout) or just blit the accumulated buffer.
+  // draw_discrete(): run INNER inner frames, then reseed on the cycles timeout
+  // (the C's `if (hp->count > cycles) init_discrete()`), else blit the buffer.
   function step() {
-    let diverged = false;
     for (let f = 0; f < INNER; f++) {
-      if (mapStep()) {
-        diverged = true;
-        break;
-      }
+      mapStep();
       frameCount++;
     }
 
-    if (diverged || frameCount > Math.max(2, Math.round(config.cycles))) {
+    if (frameCount > Math.max(2, Math.round(config.cycles))) {
       newAttractor();   // clears the buffer + picks a fresh map
     }
 

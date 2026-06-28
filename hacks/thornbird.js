@@ -12,12 +12,17 @@
 // slowly-tumbling viewpoint. A rolling ring buffer keeps the last `cycles`
 // frames of points alive — the oldest frame is erased each step — so the figure
 // leaves persistent trails whose length (the "Thickness" knob) is that buffer
-// depth. The plot colour cycles through the rainbow as the bird tumbles.
+// depth. The plot colour steps through a fixed palette of random BRIGHT colours
+// (the C's make_random_colormap, bright variant — random hue, high saturation
+// and value), jumping to a new colour every 1 + cycles/3 steps as the bird
+// tumbles. It is NOT a smooth rainbow.
 //
 // Rendering: thousands of points accumulate over time (cycles * count, e.g.
 // 400 * 100 = 40k live points), so this uses the BLIT path — a persistent Uint32
 // ImageData buffer that we draw/erase individual pixels into and putImageData
 // once per frame, rather than tens of thousands of per-point fillRect calls.
+
+import { makeRandomColormapRGB } from './colormap.js';
 
 export const title = 'thornbird';
 
@@ -30,28 +35,28 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/thornbird.xml so the config box maps
-  // 1:1 to the original. (`ncolors` isn't in the stock thornbird UI — it
-  // hardcodes 64 — but we expose it for parity with the other ports.)
+  // Defaults/ranges mirror hacks/config/thornbird.xml 1:1 (delay/count/cycles).
+  // thornbird.xml exposes NO ncolors slider; the stock hack hardcodes ncolors=64
+  // via its DEFAULTS, so we mirror that as a fixed internal constant (NCOLORS)
+  // rather than inventing a UI control the original lacks.
   const config = {
     delay: 10000,   // µs between steps (--delay)
     count: 100,     // points plotted per step (--count, "Points")
     cycles: 400,    // frames of trail kept alive (--cycles, "Thickness")
-    ncolors: 64,    // size of the rainbow palette (--ncolors)
   };
 
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Points', type: 'range', min: 10, max: 1000, step: 10, default: 100, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'cycles', label: 'Thickness', type: 'range', min: 2, max: 1000, step: 1, default: 400, lowLabel: 'thin', highLabel: 'thick', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   const BLACK = 0xFF000000;
+  const NCOLORS = 64;   // stock thornbird DEFAULTS *ncolors (not a UI resource)
 
-  let W, H, S;                // canvas size (device px) and devicePixelRatio
+  let W, H;                   // canvas size (device px)
   let imageData, pixels;      // persistent Uint32 accumulation buffer
-  let palette;                // ncolors packed-ABGR rainbow values
+  let palette;                // NCOLORS packed-ABGR random bright colours
 
   // The thornbird map state and the slowly-drifting free parameters.
   let a, b, c, i, j;          // map params + iterate state (a, c vary; b couples)
@@ -65,9 +70,11 @@ export function start(canvas) {
   let theta, dtheta, phi, dphi;
 
   // Ring buffer of the last `cycles` frames; each entry is an Int32Array of
-  // packed pixel indices (y*W + x) for the `count` points plotted that frame,
-  // so we can erase exactly those pixels when the frame ages out.
-  let frames;                 // Array(cycles) of Int32Array(count) | null
+  // interleaved (x, y) pairs (length 2*count) for the `count` points plotted that
+  // frame, so we can erase exactly those points when the frame ages out. Coords
+  // are stored RAW (possibly off-screen) and plot() clips them, exactly as the C
+  // stores raw shorts and lets X clip the XFillRectangles.
+  let frames;                 // Array(cycles) of Int32Array(2*count) | null
   let nbuffers;               // == cycles (captured at init)
   let batch;                  // == count (captured at init)
 
@@ -76,34 +83,20 @@ export function start(canvas) {
     return Math.random() * v - v / 2;
   }
 
+  // make_random_colormap(bright_p = True) via colormap.js: NCOLORS INDEPENDENT
+  // random "bright" colours — random hue, saturation 30%-99%, value 66%-99% —
+  // NOT a smooth rainbow ramp. As the plot index cycles, the colour jumps to a
+  // fresh random bright colour. Built ONCE per run (the C builds the colormap at
+  // startup and only rotates the index); distribution-faithful via Math.random
+  // since the map is re-rolled each run (only the distribution matters).
   function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Uint32Array(n);
-    for (let p = 0; p < n; p++) {
-      // hsl(h,100%,50%) -> packed 0xFFBBGGRR (little-endian ImageData layout).
-      const [r, g, b2] = hslToRgb(p / n, 1, 0.5);
+    const rgb = makeRandomColormapRGB(NCOLORS, true);   // bright variant
+    palette = new Uint32Array(NCOLORS);
+    for (let p = 0; p < NCOLORS; p++) {
+      const [r, g, b2] = rgb[p];
+      // packed 0xFFBBGGRR (little-endian ImageData layout).
       palette[p] = (0xff << 24 | b2 << 16 | g << 8 | r) >>> 0;
     }
-  }
-
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255.
-  function hslToRgb(h, s, l) {
-    const c2 = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c2 * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c2 / 2;
-    let r = 0, g = 0, b2 = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c2; g = x; }
-    else if (seg === 1) { r = x; g = c2; }
-    else if (seg === 2) { g = c2; b2 = x; }
-    else if (seg === 3) { g = x; b2 = c2; }
-    else if (seg === 4) { r = x; b2 = c2; }
-    else { r = c2; b2 = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b2 + m) * 255),
-    ];
   }
 
   // Paint a scale-by-scale block at (px,py) with packed colour `value`.
@@ -137,11 +130,15 @@ export function start(canvas) {
     const sint = Math.sin(theta), cost = Math.cos(theta);
     const sinp = Math.sin(phi), cosp = Math.cos(phi);
 
-    // Iterate the attractor `count` times, projecting each point to the screen
-    // and recording its pixel index in this frame's slot.
-    const buf = (frames[current] && frames[current].length === batch)
+    // Integer half-extents, matching the C's `maxx / 2` / `maxy / 2` (int div).
+    const cx = (W / 2) | 0;
+    const cy = (H / 2) | 0;
+
+    // Iterate the attractor `count` times, projecting each point through the
+    // tumbling view and recording its raw (x, y) in this frame's slot.
+    const buf = (frames[current] && frames[current].length === batch * 2)
       ? frames[current]
-      : (frames[current] = new Int32Array(batch));
+      : (frames[current] = new Int32Array(batch * 2));
 
     for (let k = 0; k < batch; k++) {
       const oldj = j;
@@ -152,49 +149,42 @@ export function start(canvas) {
       i = (1 - c) * Math.cos(Math.PI * a * oldj) + c * b;
       b = oldj;
 
-      // 3D -> 2D projection through the tumbling view (matches the C exactly).
-      let x = (W / 2 * (1 + sint * j + cost * cosp * i - cost * sinp * b)) | 0;
-      let y = (H / 2 * (1 - cost * j + sint * cosp * i - sint * sinp * b)) | 0;
-
-      // Clamp the top-left so a `scale`-sized block stays in bounds for indexing.
-      if (x < 0) x = 0; else if (x > W - scale) x = W - scale;
-      if (y < 0) y = 0; else if (y > H - scale) y = H - scale;
-
-      buf[k] = y * W + x;
+      // 3D -> 2D projection, then (short) truncation (| 0). Coords are kept RAW
+      // (not clamped); plot() clips off-screen points, exactly as the C relies on
+      // X to clip the XFillRectangles. (Clamping would pile points on the edges.)
+      const x = (cx * (1 + sint * j + cost * cosp * i - cost * sinp * b)) | 0;
+      const y = (cy * (1 - cost * j + sint * cosp * i - sint * sinp * b)) | 0;
+      buf[2 * k] = x;
+      buf[2 * k + 1] = y;
     }
 
     // Erase the frame that's about to be overwritten next step (paint black).
     const old = frames[erase];
     if (old) {
-      for (let k = 0; k < old.length; k++) {
-        const base = old[k];
-        const ex = base % W, ey = (base / W) | 0;
-        plot(ex, ey, BLACK);
-      }
+      for (let k = 0; k < batch; k++) plot(old[2 * k], old[2 * k + 1], BLACK);
     }
 
-    // Cycle the plot colour (C: every 1 + cycles/3 increments — "sooner" jwz).
+    // Pick THIS frame's colour, THEN advance the index for next time: the C sets
+    // the GC foreground to MI_PIXEL(pix) BEFORE the conditional `++pix` (jwz's
+    // "sooner" cadence: every 1 + cycles/3 steps). Mono (<=2 colours) -> white.
+    let value;
     if (palette.length > 2) {
+      value = palette[pix];
       if (((inc + 1) % (1 + ((nbuffers / 3) | 0))) === 0) {
         if (++pix >= palette.length) pix = 0;
       }
     } else {
-      pix = 0;
+      value = 0xFFFFFFFF;
     }
-    const value = palette.length > 2 ? palette[pix] : 0xFFFFFFFF;
 
     // Draw the current frame in the plot colour.
-    for (let k = 0; k < batch; k++) {
-      const base = buf[k];
-      plot(base % W, (base / W) | 0, value);
-    }
+    for (let k = 0; k < batch; k++) plot(buf[2 * k], buf[2 * k + 1], value);
 
     inc++;
     ctx.putImageData(imageData, 0, 0);
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 
@@ -244,6 +234,14 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the pace is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't fire a burst of steps on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead — see the framerate-calibration note). The
+  // live thornbird measures 41.7 fps (Load 58%, delay-bound = a portable target),
+  // but the port at the stock 10000 µs ran 100 steps/sec (2.4x fast). 10000 +
+  // 14000 = 24000 µs -> 41.7 steps/sec, matching the live binary. A calibration,
+  // not a tuning knob (the config slider still maps 1:1 to the xml delay).
+  const OVERHEAD = 14000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -254,7 +252,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
@@ -268,7 +266,7 @@ export function start(canvas) {
   }
 
   // Re-seed with the current config (clears the accumulation buffer because
-  // count/cycles/colors resize the ring and palette).
+  // count/cycles resize the ring buffer).
   function reinit() {
     init();
   }
