@@ -464,7 +464,9 @@ function openHelp() { closeConfig(); closeAbout(); closeInfo(); help.classList.a
 function closeHelp() { help.classList.remove('open'); }
 
 // Info box: the running hack's author / year / description, read straight from
-// its manifest entry (no module load needed), shown read-only.
+// its manifest entry (no module load needed), shown read-only. Hacks that
+// xscreensaver retired upstream get a small italic "Retired from xscreensaver
+// X.YZ" footnote at the bottom.
 function openInfo() {
   closeConfig(); closeAbout(); closeHelp();
   const ttl = document.getElementById('info-title');
@@ -480,6 +482,15 @@ function openInfo() {
     credit.textContent = `\u2014 ${meta.author}, ${meta.year}`;
     body.appendChild(desc);
     body.appendChild(credit);
+
+    // Hacks xscreensaver retired upstream (we kept them): a small italic footnote
+    // at the bottom. Present only when meta.retired is set (derived from the xml).
+    if (meta.retired) {
+      const retired = document.createElement('div');
+      retired.className = 'info-retired';
+      retired.textContent = `Retired from xscreensaver ${meta.retired}`;
+      body.appendChild(retired);
+    }
   } else {
     body.textContent = 'No info for this hack.';
   }

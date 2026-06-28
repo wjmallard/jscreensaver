@@ -135,6 +135,7 @@ canvas { display: block; touch-action: none; }
 .about-body a { color: var(--phosphor-bright); text-decoration: none; border-bottom: 1px dotted #2f7a4a; }
 .about-body a:hover { color: var(--phosphor-hi); }
 .info-credit { margin-top: 14px; color: var(--phosphor-dim); }
+.info-retired { margin-top: 10px; font-style: italic; font-size: 11.5px; color: var(--phosphor-dim); }
 .about-hint {
   padding: 9px 16px; border-top: 1px solid var(--phosphor-divider);
   font-size: 11px; letter-spacing: 0.02em; color: var(--phosphor-dim);
