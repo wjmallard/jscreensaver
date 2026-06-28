@@ -10,11 +10,19 @@ pause, resume, getStats, reinit, config, params }`. **No assets** -- everything 
 procedural (this is why gears, not pipes, was the right next geometry port: pipes
 needs the 3264-line `pipeobjs.c` factory models + teapot).
 
+## Shared gear geometry
+
+The involute gear bodies are built by **`hacks/involute.js`** (a faithful port of
+`hacks/glx/involute.c`), which `gears.js` and `moebiusgears.js` both import -- exactly
+as the C hacks share `involute.c`. The DoubleSide / vertex-color-diffuse choices live
+there. `gears.js` owns `gears.c`'s part: gear generation + placement, the planetary
+cluster + armature, the scene/lighting, the loop.
+
 ## Faithfulness (the rule: do NOT deviate from the algorithm)
 
 Transcribed from the `.c`, not approximated:
 
-- **`involute.c` geometry, verbatim:** `gear_teeth_geometry`'s `r[]`/`th[]` tooth
+- **`involute.c` geometry, verbatim (now `hacks/involute.js`):** `gear_teeth_geometry`'s `r[]`/`th[]` tooth
   profile and the per-size point sets (`SMALL`/`MEDIUM`/`LARGE`/`HUGE`, bucketed by
   on-screen tooth pixels = `tooth_h * canvasHeight`); `tooth_normals`' **area-weighted**
   vertex normals (un-normalized face-normal cross products, then averaged -- three
