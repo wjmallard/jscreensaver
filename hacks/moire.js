@@ -12,18 +12,22 @@
 // 20-row XShm chunks, then after `delay` seconds picks a fresh random centre and
 // redraws from scratch.
 //
-// Here we keep the grating math verbatim but (1) render the whole frame at once
-// — the row-chunking is an XShm artifact, not an aesthetic — (2) sum several
-// gratings so overlapping ring systems produce true moire interference fringes
-// (a single grating is just concentric rings; the moire effect needs >=2), and
-// (3) drift each centre slowly every frame so the fringes crawl instead of
-// snapping to a new still each `delay`. See Deviations in moire.md.
+// Here we keep the grating math verbatim and the C's behaviour: paint ONE
+// static zone plate per still (the C's row-by-row XShm reveal is collapsed into
+// a single repaint), HOLD it for `delay` seconds, then re-seed a fresh random
+// centre + ring factor + a fresh random 2-hue colour ramp and repaint. Nothing
+// drifts or cycles within a still. A single grating already gives the moire
+// (its rings alias against the pixel grid toward the periphery), so `centers`
+// defaults to 1 to match the C; 2+ sums gratings for crossing fringe systems.
+// See Deviations in moire.md.
 //
 // Rendering: pure per-pixel field (distance -> palette index), so it uses the
 // BLIT path — a Uint32 view over one ImageData, write every pixel, putImageData
-// once per frame. Cheap enough for the full backing store even on retina. See
+// once per repaint. Cheap enough for the full backing store even on retina. See
 // the closest twins [[greynetic]] (per-pixel canvas) and [[binaryring]]
 // (Uint32 ImageData blit), and the style reference [[squiral]].
+
+import { makeColorRampRGB } from './colormap.js';
 
 export const title = 'moire';
 
@@ -37,108 +41,97 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/moire.xml so the config box maps 1:1 to
-  // the original: `delay` is the redraw cadence (the xml calls it "Duration",
-  // 1-60 s); `ncolors` the colour-ramp size; `offset` the upper bound of the
-  // random ring-spacing factor (xml "Offset", small = tight rings). `centers`
-  // and `cycle` are added for the moire enhancement (the C's single static
-  // grating can't actually interfere) — see moire.md.
+  // the original: `delay` is the HOLD duration in seconds (the xml's "Duration",
+  // 1-60 s, default 5) each still is shown before snapping to a fresh one;
+  // `ncolors` the colour-ramp size; `offset` the upper bound of the random
+  // ring-spacing factor (xml "Offset", small = tight rings). `centers` is the
+  // one port extra: 1 = the C's single static zone plate, 2+ sums gratings for
+  // crossing fringe systems — see moire.md.
   const config = {
-    delay: 33000,     // \u00B5s between frames (drives the drift speed; calmer than stock)
+    delay: 5,         // seconds to HOLD each still before re-seeding (--delay, xml "Duration")
     ncolors: 64,      // size of the colour ramp (--ncolors)
     offset: 50,       // upper bound of the per-centre ring-spacing factor (--offset)
-    centers: 2,       // number of overlapping gratings (2+ = true moire fringes)
-    cycle: true,      // slowly rotate the palette so a near-still frame still shimmers
+    centers: 1,       // zone plates summed (1 = the C's single static grating; 2+ = fringes)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 33000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'centers', label: 'Gratings', type: 'range', min: 1, max: 5, step: 1, default: 2, lowLabel: 'rings', highLabel: 'moire', live: false },
+    { key: 'delay', label: 'Duration', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
+    { key: 'centers', label: 'Gratings', type: 'range', min: 1, max: 5, step: 1, default: 1, lowLabel: 'one', highLabel: 'many', live: false },
     { key: 'offset', label: 'Offset', type: 'range', min: 1, max: 200, step: 1, default: 50, lowLabel: 'tight', highLabel: 'loose', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'cycle', label: 'Color cycling', type: 'checkbox', default: true, live: true },
   ];
 
   let W, H, S;                // canvas size (device px) and devicePixelRatio
   let imageData, pixels;      // the frame buffer: Uint32 view over ImageData
-  let palette;                // ncolors packed-ABGR ring colours
-  let centers;                // [{ x, y, vx, vy, factor }, ...] in device px
-  let phase;                  // palette-cycle offset, advanced each frame
+  let palette;                // ncolors packed-ABGR ring colours (a 2-hue ramp)
+  let centers;                // [{ x, y, factor }, ...] in device px (static per still)
+  let heldMs = 0;             // wall-clock ms the current still has been shown
+  let lastTime = 0;           // last rAF timestamp (0 = (re)start the hold clock)
+  let rafId = 0;              // requestAnimationFrame handle
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255 (matches thornbird.js / the gallery).
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = x; }
-    else if (seg === 1) { r = x; g = c; }
-    else if (seg === 2) { g = c; b = x; }
-    else if (seg === 3) { g = x; b = c; }
-    else if (seg === 4) { r = x; b = c; }
-    else { r = c; b = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
+  // rgb_to_hsv (utils/hsv.c), line-for-line; r,g,b already normalized to [0,1].
+  // Returns h in degrees (truncated to int, like the C's `int *h`), s,v in [0,1].
+  function rgbToHsv(r, g, b) {
+    let cmax = r, cmin = g, imax = 1;
+    if (cmax < g) { cmax = g; cmin = r; imax = 2; }
+    if (cmax < b) { cmax = b; imax = 3; }
+    if (cmin > b) { cmin = b; }
+    const cmm = cmax - cmin;
+    const v = cmax;
+    let s = 0, h = 0;
+    if (cmm !== 0) {
+      s = cmm / cmax;
+      if      (imax === 1) h =       (g - b) / cmm;
+      else if (imax === 2) h = 2.0 + (b - r) / cmm;
+      else                 h = 4.0 + (r - g) / cmm;
+      if (h < 0) h += 6.0;
+    }
+    return { h: Math.trunc(h * 60.0), s, v };
   }
 
-  // A vivid rainbow ramp packed as 0xFFBBGGRR (little-endian ImageData layout),
-  // standing in for the C's foreground->background make_color_ramp (which by
-  // default ramps random hue to random hue). Index wraps mod ncolors, so the
-  // ring banding reads as a smooth repeating spectrum.
+  // The C's colour ramp (moire_init_1, default `random:true`): rgb_to_hsv a
+  // random foreground RGB and a random background RGB, then make_color_ramp
+  // between them as a CLOSED HSV loop (closed_p=True, writable_p=False — static,
+  // no cycling). This is a limited 2-hue ramp — frequently muted, different
+  // every still — NOT a fixed rainbow. Re-randomized on each re-seed (see snap).
+  // Packed 0xFFBBGGRR for the blit path.
   function buildPalette() {
     const n = Math.max(2, Math.round(config.ncolors));
+    const fg = rgbToHsv(Math.random(), Math.random(), Math.random());
+    const bg = rgbToHsv(Math.random(), Math.random(), Math.random());
+    const ramp = makeColorRampRGB(fg.h, fg.s, fg.v, bg.h, bg.s, bg.v, n, true);
     palette = new Uint32Array(n);
     for (let p = 0; p < n; p++) {
-      const [r, g, b] = hslToRgb(p / n, 1, 0.5);
+      const [r, g, b] = ramp[p];
       palette[p] = (0xff << 24 | b << 16 | g << 8 | r) >>> 0;
     }
   }
 
-  // Seed the grating centres. The C picks ONE centre offset uniformly in
-  // [-w/2, w/2) x [-h/2, h/2) (so the actual ring centre lands on/near screen)
-  // and a factor of random()%offset + 1. We do the same per centre, and give
-  // each a slow random drift velocity so the rings crawl frame to frame.
+  // Seed the zone-plate centre(s) for a new still. The C picks ONE centre offset
+  // draw_xo = random()%w - w/2 (so the ring centre, at -draw_xo, is uniform in
+  // (-w/2, w/2] — often near or just off the left/top edge) and a ring factor
+  // = random()%offset + 1. We do the same per centre, in device px; the factor
+  // is scaled by S^2 because the distance term is squared device px on retina,
+  // so the visible ring spacing matches dpr 1. No velocity: a still is static
+  // until the next re-seed.
   function seedCenters() {
     const n = Math.max(1, Math.round(config.centers));
     const off = Math.max(2, Math.round(config.offset));
     centers = new Array(n);
     for (let i = 0; i < n; i++) {
       centers[i] = {
-        // ring centre on/near the visible area (device px)
-        x: Math.random() * W,
-        y: Math.random() * H,
-        // slow drift: a fraction of a logical pixel per frame, scaled for retina
-        vx: (Math.random() * 2 - 1) * 0.6 * S,
-        vy: (Math.random() * 2 - 1) * 0.6 * S,
-        // ring spacing: bigger factor = wider-spaced rings (the C's draw_factor).
-        // Scale by S^2 because the distance term is squared device px on retina,
-        // so the visible ring spacing stays the same as at dpr 1.
-        factor: ((Math.random() * off) + 1) * S * S,
+        x: W / 2 - Math.floor(Math.random() * W),
+        y: H / 2 - Math.floor(Math.random() * H),
+        factor: (Math.floor(Math.random() * off) + 1) * S * S,
       };
     }
   }
 
-  // Drift the centres, bouncing off the edges so they never wander far off the
-  // visible area (the C keeps its single centre on/near screen by construction).
-  function moveCenters() {
-    for (const c of centers) {
-      c.x += c.vx;
-      c.y += c.vy;
-      if (c.x < 0) { c.x = 0; c.vx = -c.vx; }
-      else if (c.x > W) { c.x = W; c.vx = -c.vx; }
-      if (c.y < 0) { c.y = 0; c.vy = -c.vy; }
-      else if (c.y > H) { c.y = H; c.vy = -c.vy; }
-    }
-  }
-
-  // One frame: for every pixel sum each grating's ring value
-  // (dx^2 + dy^2) / factor, take that sum mod ncolors as the palette index, and
-  // write the packed colour. Summing quadratics from >=2 centres is what yields
-  // the moire interference fringes; `phase` rotates the palette for a slow
-  // shimmer. yy and dy^2 are hoisted per row so the inner loop is tight.
+  // Paint the whole still: for every pixel sum each grating's ring value
+  // (dx^2 + dy^2) / factor, take floor(sum) mod ncolors as the palette index,
+  // and write the packed colour. For the default single grating this is exactly
+  // the C's colors[((long)i) % ncolors]; summing >=2 centres adds crossing moire
+  // fringes. yy and dy^2 are hoisted per row so the inner loop is tight.
   function render() {
     const n = centers.length;
     const ncolors = palette.length;
@@ -166,8 +159,8 @@ export function start(canvas) {
           const dx = x - cx[k];
           sum += (dx * dx + dy2[k]) * inv[k];
         }
-        // floor(sum) mod ncolors, made positive, plus the cycling phase.
-        let ci = (Math.floor(sum) + phase) % ncolors;
+        // floor(sum) mod ncolors, made positive (matches colors[((long)i) % n]).
+        let ci = Math.floor(sum) % ncolors;
         if (ci < 0) ci += ncolors;
         pixels[idx++] = palette[ci];
       }
@@ -175,11 +168,12 @@ export function start(canvas) {
     ctx.putImageData(imageData, 0, 0);
   }
 
-  // One step == drift the centres, advance the palette phase (if cycling), and
-  // repaint the whole field.
-  function step() {
-    moveCenters();
-    if (config.cycle) phase = (phase + 1) % palette.length;
+  // A new still: fresh random colour ramp + fresh random centre(s)/factor, then
+  // one repaint. Mirrors moire_draw's draw_y==0 path (moire_init_1 rebuilds the
+  // ramp, then fresh draw_xo/yo/factor are chosen) — re-randomized every still.
+  function snap() {
+    buildPalette();
+    seedCenters();
     render();
   }
 
@@ -189,13 +183,12 @@ export function start(canvas) {
     H = canvas.height;
     imageData = ctx.createImageData(W, H);
     pixels = new Uint32Array(imageData.data.buffer);
-    phase = 0;
-    buildPalette();
-    seedCenters();
-    render();   // paint the first frame immediately so it looks right at t=0
+    heldMs = 0;
+    lastTime = 0;
+    snap();   // build + paint the first still immediately so t=0 looks right
   }
 
-  // reinit: fresh palette + fresh random centres, then a clean first frame.
+  // reinit: fresh palette + fresh random centres + a clean still, hold clock reset.
   function reinit() {
     init();
   }
@@ -209,30 +202,18 @@ export function start(canvas) {
     init();
   }
 
-  // Drive off requestAnimationFrame but keep the original pace: one step() per
-  // config.delay, banking leftover time so the speed is the same at any refresh
-  // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
-  const MAX_CATCHUP_STEPS = 8;
-  let lastTime = 0;
-  let lag = 0;
-  let rafId = 0;
-
+  // Drive off requestAnimationFrame, but the pattern is STATIC: hold the current
+  // still for `delay` seconds (the xml's "Duration"), then snap to a fresh one.
+  // Accumulate real elapsed time so the hold is wall-clock accurate at any
+  // refresh rate; pause/resume resets the clock (lastTime = 0) so it never jumps.
   function frame(now) {
     if (lastTime === 0) lastTime = now;
-    lag += now - lastTime;
+    heldMs += now - lastTime;
     lastTime = now;
 
-    // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
-    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
-
-    // The step counter bounds the loop even when delayMs is 0 (max frame rate),
-    // which would otherwise spin forever since lag never drops below 0.
-    let steps = 0;
-    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
-      step();
-      lag -= delayMs;
-      steps++;
+    if (heldMs >= Math.max(1, config.delay) * 1000) {
+      snap();
+      heldMs = 0;
     }
 
     rafId = requestAnimationFrame(frame);
