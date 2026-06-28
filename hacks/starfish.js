@@ -354,9 +354,18 @@ export function start(canvas) {
   }
 
   // blob mode runs delay*3 in the C (with elasticity/rotv also *3, applied in
-  // makeStarfish): chunkier, bigger per-frame steps at the same net real-time pace.
+  // makeStarfish): chunkier, bigger per-frame steps. OVERHEAD encodes the per-frame
+  // framework cost (sparse-vector draw + vsync/event handling) the C pays ON TOP of
+  // its usleep(delay): the live binary measures 55.6fps in zoom mode at the xml
+  // default delay 10000 (== 1e6/(10000+8000)), not the 100fps a bare 10ms sleep
+  // implies. Without it the port lays bands ~1.8x too fast, so zoom-mode rings wash
+  // out in half the wall-clock time (the live washes too, just half as fast). Added
+  // ONCE per frame (after the blob *3), matching the C's real frame period
+  // delay*[3] + overhead. See framerate-calibration; siblings dangerball/cubicgrid
+  // carry the same constant (theirs is larger: GL frames cost more than 2D vectors).
+  const OVERHEAD = 8000;   // us; calibrates xml delay 10000 -> measured ~55.6fps
   function effDelayMs() {
-    return (config.delay * (blobP ? 3 : 1)) / 1000;
+    return (config.delay * (blobP ? 3 : 1) + OVERHEAD) / 1000;
   }
 
   // One step: throb, spin, draw the swept band, then re-roll the shape after
