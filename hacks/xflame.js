@@ -1,27 +1,31 @@
-// xflame.js — xflame packaged as a mountable module.
+// xflame.js -- xflame packaged as a mountable module.
 // start(canvas) returns { stop, pause, resume, reinit, config, params }.
 //
 // Port of xscreensaver's xflame.c (Carsten Haitzler <raster@redhat.com>, 1996;
-// TrueColor + utility-routine + image-logo work by Rahul Jain, Daniel Zahn and
+// TrueColor + utility-routine + image-source work by Rahul Jain, Daniel Zahn and
 // jwz over 1996-2018). https://www.jwz.org/xscreensaver/
 //
 // A classic cellular fire effect. The flame lives in a small heat field at HALF
-// the image resolution. Each frame: (1) the bottom "active" row is re-seeded with
-// random hot values that drift over time (FlameActive); (2) heat propagates
-// UPWARD — processing the field bottom-to-top, every lit cell pushes a fraction
+// the image resolution. Each frame (xflame_draw): (1) the bottom "active" row is
+// re-seeded with random hot values that drift over time (FlameActive); (2) the
+// built-in fire SOURCE image ("Bob", bob.png) is pasted in -- its dark pixels add
+// random heat so the picture appears to burn (FlamePasteData); (3) heat propagates
+// UPWARD -- processing the field bottom-to-top, every lit cell pushes a fraction
 // of its value into the three cells above it (vspread straight up, hspread to the
 // two diagonals) and keeps a `residual` fraction itself (FlameAdvance). The stock
-// constants are tuned so vspread + 2*hspread == 256 - residual (157 == 157): the
-// flame is marginally stable, so heat neither dies nor explodes and the fire
-// licks tall, with the random seed making the tips flicker. The half-res field is
-// then 2x-upscaled with bilinear interpolation into the image (Flame2Image), and
-// each cell value indexes a black->red->orange->yellow->white fire LUT.
+// constants make vspread + 2*hspread + residual == 256 (97 + 60 + 99): heat is
+// conserved as it rises, so the fire neither dies nor saturates and licks tall,
+// with the random seed flickering the tips. The half-res field is then 2x-upscaled
+// with bilinear-ish interpolation into the image (Flame2Image), each cell value
+// indexing a black->red->orange->yellow->white fire LUT built analytically from
+// the foreground colour (InitColors -- NOT a make_*_colormap palette).
 //
-// Rendering: dense per-pixel HEAT field -> the BLIT path. We compute the field at
-// (capped) LOGICAL resolution into an offscreen canvas (Uint32 ImageData), then
-// ctx.drawImage-upscale to the device-res canvas, so the per-frame cost doesn't
-// scale with devicePixelRatio (the marbling/metaballs idiom). See [[eruption]]
-// for the same Uint32 fire-palette blit and [[flame]] for the accumulation idiom.
+// Rendering: dense per-pixel HEAT field -> the BLIT path. The field runs at half the
+// LOGICAL resolution (the C's window/2; the flame dynamics are tuned to that cell
+// size, so it is NOT scaled by devicePixelRatio), 2x-upscaled into an offscreen
+// Uint32 ImageData (Flame2Image), then drawImage-upscaled to the device canvas. See
+// [[eruption]]
+// for the same Uint32 fire-palette blit.
 
 export const title = 'xflame';
 
@@ -31,50 +35,50 @@ export const info = {
   year: 1996,
 };
 
+// bob.png -- the built-in fire SOURCE image (xflame.c's *bitmap: (default)), the
+// iconic 64x64 "Bob" face. Copied verbatim from xscreensaver-6.15/hacks/images/
+// bob.png into hacks/images/, loaded relative to this module (the xanalogtv.js
+// asset idiom) so the default look (a picture on fire) stays faithful.
+const BOB_PNG = new URL('./images/bob.png', import.meta.url).href;
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults from xflame.c's xflame_defaults / xflame_options. The xml only
-  // surfaces delay + bloom; the spread/residual/variance knobs are the C's
-  // command-line resources, exposed here so the fire stays tunable.
-  //   delay     — µs between frames (--delay).
-  //   vspread   — heat pushed straight UP per cell, /256 (--vspread).
-  //   hspread   — heat pushed to each diagonal-up cell, /256 (--hspread).
-  //   residual  — fraction of its own heat a cell keeps each frame, /256 (--residual).
-  //   variance  — width of the random seed jitter on the active row (--variance).
-  //   vartrend  — bias subtracted from that jitter; higher = cooler (--vartrend).
-  //   bloom     — occasional random surges of the spread/residual values (--bloom).
+  // Config mirrors hacks/config/xflame.xml 1:1 -- the only resources the original
+  // surfaces are `delay` (frame interval) and `bloom`. xflame.c ALSO has
+  // command-line-only knobs (hspread/vspread/residual/variance/vartrend); those
+  // are NOT in the xml, so this port fixes them at the stock defaults (the I*
+  // constants below) rather than exposing them as sliders.
+  //   delay -- microseconds between frames (--delay; xml "Frame rate", inverted).
+  //   bloom -- occasional random surges of the spread/residual values (--bloom).
   const config = {
     delay: 10000,      // µs between frames (xml default 10000)
-    vspread: 97,       // vertical spread (--vspread)
-    hspread: 30,       // horizontal spread (--hspread)
-    residual: 99,      // self-retention (--residual)
-    variance: 50,      // seed jitter width (--variance)
-    vartrend: 20,      // seed jitter bias / cooling (--vartrend)
-    bloom: true,       // enable random blooming surges (--bloom)
+    bloom: true,       // random blooming surges (xml default True)
   };
 
-  // live: true  -> the loop reads config[key] every frame, applies (near-)instantly.
-  //               (the spread/residual knobs are eased toward their config value a
-  //                little each frame, matching the C's relaxation, so they're live.)
-  // None of these resize a buffer, so reinit() is only ever a manual clear+reseed.
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'vspread', label: 'Flame height', type: 'range', min: 0, max: 255, step: 1, default: 97, lowLabel: 'short', highLabel: 'tall', live: true },
-    { key: 'hspread', label: 'Flame spread', type: 'range', min: 0, max: 255, step: 1, default: 30, lowLabel: 'narrow', highLabel: 'wide', live: true },
-    { key: 'residual', label: 'Persistence', type: 'range', min: 0, max: 255, step: 1, default: 99, lowLabel: 'brief', highLabel: 'lasting', live: true },
-    { key: 'variance', label: 'Turbulence', type: 'range', min: 1, max: 255, step: 1, default: 50, lowLabel: 'calm', highLabel: 'wild', live: true },
-    { key: 'vartrend', label: 'Cooling', type: 'range', min: 0, max: 255, step: 1, default: 20, lowLabel: 'hot', highLabel: 'cool', live: true },
-    { key: 'bloom', label: 'Blooming', type: 'checkbox', default: true, live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'bloom', label: 'Enable blooming', type: 'checkbox', default: true, live: true },
   ];
 
-  const MAX_VAL = 255;   // C: heat clamp ceiling
+  // xflame.c's stock resource defaults (xflame_defaults). These are the immutable
+  // BASE values; residual/hspread/vspread additionally have eased CURRENT values
+  // (residualCur etc.) that bloom perturbs and that relax 10%/frame back toward
+  // the base. variance/vartrend are used directly (the C never eases them).
+  const IHSPREAD = 30;     // --hspread: heat to each diagonal-up cell, /256
+  const IVSPREAD = 97;     // --vspread: heat straight UP, /256
+  const IRESIDUAL = 99;    // --residual: fraction of own heat a cell keeps, /256
+  const VARIANCE = 50;     // --variance: width of the active-row random seed
+  const VARTREND = 20;     // --vartrend: bias subtracted from the seed (cooling)
+  const BASELINE = 20;     // --baseline: fire-source offset above the bottom
+  const MAX_VAL = 255;     // C: heat clamp ceiling
+
   const BLACK = 0xFF000000;
 
   // Cap the internal heat-field cell count so per-frame work is bounded on ANY
-  // display (a full 4K field would be millions of cells/frame). At/below this the
-  // field runs at native logical resolution; above it we shrink + bilinear-upscale.
-  // 540000 keeps a 1080p screen at native size and only shrinks 1440p/4K.
+  // display. The field runs at LOGICAL/2 resolution (the live binary's cell size --
+  // see init), so cost does not scale with devicePixelRatio. 540000 keeps a 1080p
+  // logical window native; larger windows shrink the field a touch then upscale.
   const MAX_CELLS = 540000;
 
   let S = 1;               // devicePixelRatio
@@ -87,11 +91,15 @@ export function start(canvas) {
   let stride;              // fwidth + 2 (padded row length)
   let top;                 // topmost row with content (C's perf bound for advance)
   let ctab;                // Uint32Array(256) packed-ABGR fire LUT
-  let residualCur, hspreadCur, vspreadCur;   // eased current spread values (C: residual/hspread/vspread)
+  let residualCur, hspreadCur, vspreadCur;   // eased current values (C: residual/hspread/vspread)
 
-  function clamp(v, lo, hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-  }
+  // The built-in fire source ("Bob"), decoded once then re-fit per field size.
+  const bobImg = new Image();
+  let bobReady = false;
+  let theim = null;        // Uint8Array grayscale heat-source (C: st->theim)
+  let theimx = 0, theimy = 0;
+  let pasteWarned = false;
+
   function clamp255(v) {
     return v < 0 ? 0 : v > 255 ? 255 : v;
   }
@@ -103,6 +111,8 @@ export function start(canvas) {
   // InitColors(): the C builds ctab[j] from (2j - (255 - fg))*3 per channel,
   // clamped 0..255, where fg is the foreground (#FFAF5F by default), giving a
   // black->red->orange->yellow->white fire ramp. We bake in the default fg.
+  // (This is a hand-rolled analytic ramp, NOT make_smooth_colormap/make_color_ramp,
+  // so colormap.js does not apply.)
   function buildCtab() {
     ctab = new Uint32Array(256);
     const red = 0;       // 255 - 0xFF
@@ -119,15 +129,12 @@ export function start(canvas) {
   }
 
   // FlameActive(): re-seed the bottom (active) row with drifting random heat, then
-  // (optionally) bloom and ease the spread/residual values toward their config base.
+  // (optionally) bloom and ease the spread/residual values toward their base.
   function flameActive() {
-    const variance = clamp(Math.round(config.variance), 1, 255);
-    const vartrend = clamp(Math.round(config.vartrend), 0, 255);
-
-    let base = (fheight + 1) * stride;   // bottom padded row, col 0 (incl. gutters)
+    const base = (fheight + 1) * stride;   // bottom padded row, col 0 (incl. gutters)
     for (let x = 0; x < fwidth + 2; x++) {
       let v1 = flame[base + x];
-      v1 += randInt(variance) - vartrend;
+      v1 += randInt(VARIANCE) - VARTREND;
       // C: *ptr1 = (unsigned char)(v1 % 255). JS % matches C's truncation, and the
       // Uint8Array store reproduces the unsigned-char wrap for negative results.
       flame[base + x] = v1 % 255;
@@ -140,10 +147,33 @@ export function start(canvas) {
       else if (v === 30) vspreadCur += randInt(20);
     }
 
-    // Relax toward the (live) config base: 10% new base + 90% current, int division.
-    residualCur = Math.floor((config.residual * 10 + residualCur * 90) / 100);
-    hspreadCur = Math.floor((config.hspread * 10 + hspreadCur * 90) / 100);
-    vspreadCur = Math.floor((config.vspread * 10 + vspreadCur * 90) / 100);
+    // Relax toward the base: 10% base + 90% current, integer division (matches C).
+    residualCur = Math.floor((IRESIDUAL * 10 + residualCur * 90) / 100);
+    hspreadCur = Math.floor((IHSPREAD * 10 + hspreadCur * 90) / 100);
+    vspreadCur = Math.floor((IVSPREAD * 10 + vspreadCur * 90) / 100);
+  }
+
+  // FlamePasteData(): inject the fire source's heat into the field each frame.
+  // For every source pixel with value >= 24, add random()%(val/24) to the matching
+  // field cell, so the picture's bright (post-inversion: dark) regions keep burning.
+  function flamePasteData(d, dw, dh, xx, yy) {
+    if (xx < 0) xx = 0;
+    if (yy < 0) yy = 0;
+    if (xx >= 0 && yy >= 0 && xx + dw <= fwidth && yy + dh <= fheight) {
+      let p = 0;
+      for (let y = 0; y < dh; y++) {
+        let i1 = 1 + xx + ((yy + y) * stride);
+        for (let x = 0; x < dw; x++) {
+          const q = (d[p] / 24) | 0;       // C: *ptr2 / 24 (integer division)
+          if (q) flame[i1] += randInt(q);  // Uint8Array store wraps like the uchar
+          i1++;
+          p++;
+        }
+      }
+    } else if (!pasteWarned) {
+      pasteWarned = true;
+      console.warn('xflame: window too small for the fire source; not pasted.');
+    }
   }
 
   // FlameAdvance(): propagate heat UPWARD. Processing bottom-to-top means a hot
@@ -151,22 +181,9 @@ export function start(canvas) {
   // the cell above and hspread/256 into the two cells above-left/right, then keeps
   // residual/256 of itself. `top` tracks the highest non-empty row (a perf bound).
   function flameAdvance() {
-    let vs = clamp(vspreadCur, 0, 4096);   // guard the >>8 (products stay < 2^31)
-    let hs = clamp(hspreadCur, 0, 4096);
-    let rs = clamp(residualCur, 0, 4096);
-
-    // Keep the automaton at/below marginal stability. The per-step heat
-    // multiplier is (vs + 2*hs + rs)/256: a sum above 256 AMPLIFIES heat every
-    // frame, so the field runs away to a solid white-hot block (what raising
-    // "Flame height"/vspread past the default balance did). Renormalize down to
-    // the 256 budget so any slider combo stays a live flame; the ratio (hence
-    // the look) is preserved, and the stock 97 + 2*30 + 99 == 256 is a no-op.
-    const heatSum = vs + 2 * hs + rs;
-    if (heatSum > 256) {
-      vs = Math.floor(vs * 256 / heatSum);
-      hs = Math.floor(hs * 256 / heatSum);
-      rs = Math.floor(rs * 256 / heatSum);
-    }
+    const vs = vspreadCur;
+    const hs = hspreadCur;
+    const rs = residualCur;
 
     let newtop = top;
     for (let y = fheight + 1; y >= top; y--) {
@@ -229,13 +246,88 @@ export function start(canvas) {
     }
   }
 
-  // One frame == one xflame_draw (minus the optional bitmap "logo" paste, dropped).
+  // gaussian_blur (xflame.c), line-for-line. Softens the fire source after it has
+  // been pixel-doubled up to screen scale. r == blur_steps * 1.7.
+  function gaussianBlur(inp, w, h, r) {
+    const out = new Uint8Array(w * h);
+    const rs = Math.trunc(r * 2.57 + 0.5);
+    const twoRR = 2 * r * r;
+    const denom = Math.PI * twoRR;
+    for (let i = 0; i < h; i++) {
+      for (let j = 0; j < w; j++) {
+        let val = 0, wsum = 0;
+        for (let iy = i - rs; iy < i + rs + 1; iy++) {
+          for (let ix = j - rs; ix < j + rs + 1; ix++) {
+            const x = Math.min(w - 1, Math.max(0, ix));
+            const y = Math.min(h - 1, Math.max(0, iy));
+            const dsq = (ix - j) * (ix - j) + (iy - i) * (iy - i);
+            const wght = Math.exp(-dsq / twoRR) / denom;
+            val += inp[y * w + x] * wght;
+            wsum += wght;
+          }
+        }
+        out[i * w + j] = val / wsum;   // Uint8Array store truncates like the C uchar
+      }
+    }
+    return out;
+  }
+
+  // loadBitmap() + double_ximage(): build the grayscale heat-source from the
+  // decoded "Bob" image, fitted to the current field. Pixel-double (nearest, like
+  // double_ximage) until the image reaches ~1/10 of the field, convert to grayscale
+  // with a vertical flip + contrast bump + inversion (dark image pixels -> hot),
+  // then gaussian-blur if it was enlarged.
+  function buildTheim() {
+    if (!bobReady || !imgW) { theim = null; return; }
+
+    let bw = bobImg.naturalWidth;
+    let bh = bobImg.naturalHeight;
+    let blur = 0;
+    const w10 = Math.trunc(imgW / 10);   // C: st->width / 10 (integer division)
+    const h10 = Math.trunc(imgH / 10);
+    while (bw < w10 && bh < h10) {        // C: image < st->width/10 && st->height/10
+      bw *= 2;
+      bh *= 2;
+      blur++;
+    }
+
+    const c = document.createElement('canvas');
+    c.width = bw;
+    c.height = bh;
+    const cx = c.getContext('2d');
+    cx.imageSmoothingEnabled = false;   // nearest-neighbour == repeated double_ximage
+    cx.drawImage(bobImg, 0, 0, bw, bh);
+    const src = cx.getImageData(0, 0, bw, bh).data;
+
+    let t = new Uint8Array(bw * bh);
+    let o = 0;
+    for (let y = 0; y < bh; y++) {
+      for (let x = 0; x < bw; x++) {
+        const p = (y * bw + x) * 4;   // top-down: canvas getImageData is already row-0-top
+        const a = src[p + 3];
+        let gray = (a === 0) ? 255 : ((src[p] + src[p + 1] + src[p + 2]) / 3) | 0;
+        if (gray < 96) gray = (gray / 2) | 0;    // a little more contrast
+        t[o++] = 255 - gray;                     // invert: dark image -> hot heat
+      }
+    }
+    if (blur > 0) t = gaussianBlur(t, bw, bh, blur * 1.7);
+
+    theim = t;
+    theimx = bw;
+    theimy = bh;
+  }
+
+  // One frame == one xflame_draw: seed, paste the fire source, advance, render.
   function step() {
     flameActive();
+    if (theim)
+      flamePasteData(theim, theimx, theimy,
+                     Math.trunc((fwidth - theimx) / 2),
+                     fheight - theimy - BASELINE);
     flameAdvance();
     flame2Image();
     offCtx.putImageData(imageData, 0, 0);
-    ctx.drawImage(off, 0, 0, W, H);   // bilinear upscale offscreen -> device res
+    ctx.drawImage(off, 0, 0, W, H);   // upscale offscreen (logical-res) -> device canvas
   }
 
   function init() {
@@ -243,7 +335,14 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
 
-    // Image at LOGICAL resolution (even dims, as the C forces), capped by cells.
+    // The C runs the heat field at HALF the window's pixel resolution, then
+    // Flame2Image 2x-upscales it back. The flame DYNAMICS (bloom amplification,
+    // flame height, startup ramp) are tuned to that cell size, so the field must run
+    // at the LOGICAL resolution the live binary uses (innerWidth/innerHeight), NOT
+    // device px -- computing at device res on a retina screen puts ~2x more rows in
+    // each column, which over-amplifies the bloom into a white-hot flare. The
+    // CSS-res image is then drawImage-upscaled to the device canvas (the same
+    // softness the live binary has when the OS scales its window to a hidpi display).
     let lw = Math.max(2, Math.round(W / S));
     let lh = Math.max(2, Math.round(H / S));
     let fw = lw >> 1;
@@ -272,10 +371,12 @@ export function start(canvas) {
 
     buildCtab();
 
-    // InitFlame() seeds the eased spread values from the config bases.
-    residualCur = config.residual;
-    hspreadCur = config.hspread;
-    vspreadCur = config.vspread;
+    // InitFlame() seeds the eased spread values from the base defaults.
+    residualCur = IRESIDUAL;
+    hspreadCur = IHSPREAD;
+    vspreadCur = IVSPREAD;
+
+    buildTheim();   // (re)fit the fire source to the new field size
   }
 
   function resize() {
@@ -322,6 +423,9 @@ export function start(canvas) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     init();
   }
+
+  bobImg.onload = () => { bobReady = true; buildTheim(); };
+  bobImg.src = BOB_PNG;
 
   window.addEventListener('resize', resize);
   resize();
