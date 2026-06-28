@@ -183,6 +183,7 @@ export const HACK_TAXONOMY = {
   hexplasma: { dimension: '3d', categories: ['plasma'] },
   hypnowheel: { dimension: '3d', categories: ['optical', 'geometry'] },
   logarithmiccircles: { dimension: '3d', categories: ['optical', 'geometry'] },
+  moebiusgears: { dimension: '3d', categories: ['geometry'] },
   neongravity: { dimension: '3d', categories: ['plasma'] },
   neontriangulator: { dimension: '3d', categories: ['geometry'] },
   noxfire: { dimension: '3d', categories: ['plasma'] },

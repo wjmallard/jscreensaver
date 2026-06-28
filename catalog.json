@@ -898,6 +898,17 @@
       "description": "2D meta-balls: overlapping and merging balls with fuzzy edges.\n\nhttps://en.wikipedia.org/wiki/Metaballs"
     },
     {
+      "title": "moebiusgears",
+      "module": "./hacks/moebiusgears.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2007,
+      "description": "An interlinked loop of rotating gears."
+    },
+    {
       "title": "moire",
       "module": "./hacks/moire.js",
       "dim": "2d",
