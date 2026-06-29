@@ -28,7 +28,11 @@ How they're ported (mirrors the C's file split):
 - **`hacks/lwo.js`** -- faithful port of `buildlwo.c`'s `BuildLWO` state machine
   (`pols` = `[K, idx0..idx_{K-1}, surface#]` records, one FACE normal per polygon =
   flat shading; fan-triangulated). Returns a cached `{pos,nor}` triangle soup; `addLWO`
-  bakes it into the segment `Builder` at the current `MStack` matrix.
+  bakes it into the segment `Builder` at the current `MStack` matrix. The LWO models are
+  **CW-front** (pipes.c draws every `glCallList` under `glFrontFace(GL_CW)`); three is
+  CCW-front, so each triangle is wound to AGREE with its outward face normal. Without
+  that, `DoubleSide` flips the (outward) normals inward -> `N·L<0` -> the gadgets render
+  as flat dark gray (only the emissive shows). [Fixed 2026-06-28.]
 - **`hacks/teapot.js`** + **`hacks/teapot-data.js`** -- `teapot-data.js` is the verbatim
   Newell control net (`tools/convert-teapot.mjs` from `teapot.c`); `teapot.js` ports
   `unit_teapot`'s `HAVE_GLMAP` path: the 10 base patches reflected across y (and x, for
