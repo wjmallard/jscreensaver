@@ -36,9 +36,11 @@ Transcribed from the `.c`, not approximated:
   child's teeth up with its parent so they visibly **MESH** -- the no-overlap collision
   test, `planetary_gears` + `armature` (a faithful `unit_tube`/`unit_cone` port from
   `tube.c`, placed by the `tube()` transform, plus `arm()`).
-- **Lighting, verbatim:** one white directional light from `(1,1,1)`, **ambient 0** (so
-  unlit side walls go dark, as in the original), material specular = the light's cyan
-  `{0,1,1}`, shininess 128.
+- **Lighting, verbatim:** one white directional light from `(1,1,1)`; material specular =
+  the light's cyan `{0,1,1}`, shininess 128; plus a `0.2*color` ambient floor -- GL's
+  DEFAULT light-model ambient (0.2) x involute.c's `AMBIENT_AND_DIFFUSE` (= the gear
+  color), added as `THREE.AmbientLight(white, 0.2*PI)` -- so unlit side walls are dim
+  color, not pure black (matches gears.jpg). [Added 2026-06-28; I'd wrongly used 0.]
 - **`draw_gears` modelview:** position (rotator) -> rotation with the fixed
   `x-=0.14, y-=0.06` tilt (this is what gives the classic receding-train view even with
   `-no-spin`) -> bbox center + fit to 10 units -> per-gear translate + `Rz(th)`.

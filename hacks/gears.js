@@ -342,14 +342,17 @@ export function start(hostCanvas, opts = {}) {
   camera.up.set(0, 1, 0);
   camera.lookAt(0, 0, 0);
 
-  // One white directional light from (1,1,1) (GL pos {1,1,1,0}, w=0 => parallel),
-  // ambient 0 (so unlit side walls go dark). intensity PI cancels three's 1/PI
-  // diffuse normalization (same as dangerball). The GL light's cyan {0,1,1}
-  // SPECULAR is folded onto the material specular below (three has no separate
-  // light-specular color); the highlight is light.color * material.specular.
+  // One white directional light from (1,1,1) (GL pos {1,1,1,0}, w=0 => parallel).
+  // intensity PI cancels three's 1/PI diffuse normalization (same as dangerball). The
+  // GL light's cyan {0,1,1} SPECULAR is folded onto the material specular below (three
+  // has no separate light-specular color); the highlight is light.color *
+  // material.specular. Plus the GL DEFAULT light-model ambient (0.2) * the material's
+  // AMBIENT_AND_DIFFUSE (= the gear color, set by involute.c) = a 0.2*color floor, so
+  // unlit side walls are dim color rather than pure black (matches gears.jpg).
   const light = new THREE.DirectionalLight(0xffffff, Math.PI);
   light.position.set(1, 1, 1);
   scene.add(light);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.2 * Math.PI));
 
   // Single shared material; diffuse comes from per-vertex colors (color/color2),
   // specular = the light's cyan, shininess 128 (draw_involute_gear).
