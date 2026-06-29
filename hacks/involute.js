@@ -16,8 +16,10 @@
 //   * draw_gear_teeth (outer rim = teeth, inner rim = hole, top/bottom annulus);
 //   * draw_gear_interior (inset disc / raised lip / third disc, or spokes);
 //   * draw_gear_nubs; the inverted_p (internal-tooth ring) paths.
-//   (coax_p / wobble are never set by the consuming hacks, so the coax axle-tube
-//   block is omitted and wobble is a no-op -- matching their actual behavior.)
+//   * draw_gear_interior's coax_p==1 axle-tube (used by pinion's bound gear pairs;
+//     gears/moebiusgears never set coax_p, so it's inert for them).
+//   (wobble is applied by the caller at the mesh level -- draw_involute_gear wraps
+//   the gear in glRotatef(wobble,1,0,0), equivalent to an Rx on the mesh.)
 //
 // CULLING: triangles are emitted with faithful winding (GL vertex order, the
 // per-block glFrontFace tracked, reversed when it was GL_CW), so the caller's
@@ -370,6 +372,20 @@ function drawGearInterior(B, g) {
     drawRing(B, steps, rb, za, zb, g.tooth_slope, true, col);    // ring facing in
     drawDisc(B, steps, s1 * ra, s1 * rb, za, true, col);
     drawDisc(B, steps, s2 * ra, s2 * rb, zb, false, col);
+  }
+
+  // axle tube: coax_p==1 is the gear of a bound (coaxial) pair that draws the
+  // shared axle connecting the two gear planes. (pinion only; coax_p is 0/unset
+  // for gears/moebiusgears.)
+  if (g.coax_p === 1) {
+    const capHeight = g.coax_thickness / 3;
+    const ra = (g.inner_r3 ? g.inner_r3 : g.inner_r2 ? g.inner_r2 : g.inner_r);
+    const za = -(g.thickness / 2 + capHeight);
+    const zb = g.coax_thickness / 2 + g.coax_displacement + capHeight;
+    const col = g.colLin;
+    drawRing(B, steps, ra, za, zb, g.tooth_slope, false, col);   // axle wall, facing out
+    drawDisc(B, steps, 0, ra, za, true, col);                    // top plate
+    drawDisc(B, steps, 0, ra, zb, false, col);                   // bottom plate
   }
 }
 
