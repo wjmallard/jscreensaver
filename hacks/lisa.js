@@ -25,6 +25,8 @@
 // See lisa.md for the deviations; see [[lissie]] (sibling Lissajous worm) and
 // [[xspirograph]] (same dashed-rainbow-polyline idiom).
 
+import { makeUniformColormapRGB } from './colormap.js';
+
 export const title = 'lisa';
 
 export const info = {
@@ -36,11 +38,12 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/lisa.xml (1:1 with the original).
-  // `additive` is a stock lisa option (-/+additive, default on) absent from the
-  // xml UI; exposed here as a checkbox since it materially changes the shapes.
+  // Defaults/ranges mirror lisa.c's DEFAULTS (lisa has no .xml -- it was removed
+  // from xscreensaver in 5.08, so config comes from the C #defines). `additive`
+  // is a stock lisa option (-/+additive, default on); exposed here as a checkbox
+  // since it materially changes the shapes.
   const config = {
-    delay: 25000,      // microseconds between steps (--delay)
+    delay: 17000,      // microseconds between steps (stock *delay; --delay)
     cycles: 768,       // nsteps: points per loop / frames per precession (--cycles)
     ncolors: 64,       // size of the hue cycle (--ncolors)
     size: 500,         // figure radius cap in logical px (--size)
@@ -51,7 +54,7 @@ export function start(canvas) {
   // live: true  -> the loop reads config every step (applies instantly).
   // live: false -> the value sizes loops/colours/buffers, so a change re-runs init().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 17000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Steps', type: 'range', min: 1, max: 1000, step: 1, default: 768, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'size', label: 'Size', type: 'range', min: 10, max: 500, step: 10, default: 500, lowLabel: 'small', highLabel: 'large', live: true },
@@ -105,7 +108,7 @@ export function start(canvas) {
 
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
-  let palette;        // ncolors smooth-rainbow CSS strings
+  let palette;        // ncolors uniform-colormap CSS strings (full hue ramp)
   let loops;          // active lissajous figures
   let loopcount;      // frames since the last change (the C's lc->loopcount)
   let nsteps;         // points per loop (config.cycles), fixed per seed
@@ -118,9 +121,15 @@ export function start(canvas) {
 
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 1 (the C's mono path).
-    for (let i = 0; i < n; i++) palette[i] = n > 1 ? `hsl(${i * 360 / n}, 100%, 60%)` : '#fff';
+    // lisa.c is UNIFORM_COLORS -> make_uniform_colormap: a full hue ramp at one
+    // per-run S,V (each 66%-100%), so it is a rainbow but usually a touch
+    // muted, and varies run to run -- not the fixed max-vivid hsl() the first
+    // port used. ncolors <= 2 -> white (the C's MONO / MI_WHITE_PIXEL path).
+    if (n <= 2) {
+      palette = new Array(n).fill('#fff');
+      return;
+    }
+    palette = makeUniformColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // The C's CHECK_RADIUS: clamp the figure radius to `size` if it fits, else to
@@ -396,6 +405,13 @@ export function start(canvas) {
   // Fixed-timestep rAF loop (squiral/lissie-style): one step() per config.delay,
   // banking leftover time so the speed is the same at any refresh rate. Cap
   // catch-up so a backgrounded tab can't burst. render() runs once per frame.
+  //
+  // OVERHEAD: the live binary's *delay (17000) is a sleep floor; its real per-
+  // frame cost is higher. Measured live lisa = 39.8 fps (Load 32%, delay-bound),
+  // i.e. a ~25126 us period, so OVERHEAD = 1e6/39.8 - 17000 = 8126 us. Adding it
+  // to the step delay makes the port precess/drift at the original's pace while
+  // config.delay still maps 1:1 to the stock resource. See framerate-calibration.
+  const OVERHEAD = 8126;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -406,8 +422,9 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // config.delay is microseconds (the stock resource); add the measured
+    // framework OVERHEAD, then convert to the rAF clock's milliseconds.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
