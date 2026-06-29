@@ -108,12 +108,15 @@ export function start(hostCanvas, opts = {}) {
   camera.up.set(0, 1, 0);
   camera.lookAt(0, 0, 0);
 
-  // One white directional light from (1,1,1), ambient 0 (unlit walls go dark).
-  // intensity PI cancels three's 1/PI diffuse; the GL light's cyan {0,1,1} specular
-  // is folded onto the material specular (highlight = light.color * material.specular).
+  // One white directional light from (1,1,1). intensity PI cancels three's 1/PI
+  // diffuse; the GL light's cyan {0,1,1} specular is folded onto the material specular
+  // (highlight = light.color * material.specular). Plus the GL default light-model
+  // ambient (0.2) * the material's AMBIENT_AND_DIFFUSE (= the gear color, via
+  // involute.c) = a 0.2*color floor, so unlit walls are dim color, not pure black.
   const light = new THREE.DirectionalLight(0xffffff, Math.PI);
   light.position.set(1, 1, 1);
   scene.add(light);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.2 * Math.PI));
 
   const material = new THREE.MeshPhongMaterial({
     color: 0xffffff,
