@@ -600,6 +600,17 @@
       "description": "Interlocking gears."
     },
     {
+      "title": "geodesicgears",
+      "module": "./hacks/geodesicgears.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2014,
+      "description": "A set of meshed gears arranged on the surface of a sphere."
+    },
+    {
       "title": "gimbalharmonics",
       "module": "./hacks/gimbalharmonics.js",
       "dim": "3d",
