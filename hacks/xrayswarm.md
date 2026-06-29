@@ -57,8 +57,24 @@ This keeps the trail length fixed (memory/draw cost is constant).
 
 ## Deviations from the C
 
-- **GXxor / XOR:** none. This hack draws with `GXcopy` only; the fade is a colour
-  ramp, so no XOR emulation is needed.
+- **Config mirrors the .xml (only `delay`).** `xrayswarm.xml` exposes a single
+  user resource, `delay` ("Frame rate", 0..100000, default 20000, inverted),
+  plus a debug `--fps` toggle we omit. Earlier port revisions added
+  `count`/`targets`/`trail`/`scheme`/`changeProb` sliders; those have been
+  **removed** as invented controls the original never had. The C auto-manages all
+  of them and the port now does too: counts and trail length are auto-randomized
+  in `initBugs` (the C's `-1` sentinels), `colorScheme` starts at `COLOR_TRAILS`
+  (the C's `xrayswarm_init` default of 2) and auto-cycles via `randomSmallChange`
+  case 9, and the mutation rate is the C's hardcoded `changeProb = 0.08`.
+- **GXxor / XOR / additive:** none. This hack draws with `GXcopy` only (no
+  `GXxor`, no additive blend); the "x-ray" look comes purely from the fade colour
+  ramp (bright head -> dark tail) on black, redrawn each frame. The port strokes
+  opaque (`source-over`) on a cleared canvas, matching `GXcopy`. **No** additive
+  / `globalCompositeOperation='lighter'` accumulation is used or wanted.
+- **No anti-aliasing in the C.** The C disables AA on every GC
+  (`jwxyz_XSetAntiAliasing False`); canvas 2D has no way to disable line AA, so
+  the port's thin trail lines are slightly softer than the original's hard pixels.
+  Cosmetic; class B (platform).
 - **`closest` is an index, not a pointer.** The C stores `bug->closest` as a
   `bug*` into `targets[]` and the bug<->target `mutateBug` shuffles structs with
   `memcpy` and pointer comparisons. The port stores an integer index and
@@ -68,38 +84,51 @@ This keeps the trail length fixed (memory/draw cost is constant).
 - **FPS level-of-detail dropped.** The C uses `gettimeofday` to auto-tune `delay`
   and, when slow, drop trail length / bug count to hold a frame-rate band
   (`MAX_FPS`/`MIN_FPS`). The browser uses the standard rAF lag-accumulator with
-  an exposed **Frame rate** slider instead, so that adaptive-detail logic and the
-  `--fps` / `showfps` overlay are omitted.
+  the `delay` **Frame rate** slider instead, so that adaptive-detail logic and the
+  `--fps` / `showfps` overlay are omitted. (Most of that branch is `if (0)`
+  dead code in the C anyway; only the trail-length reduction is live, and the
+  browser never needs it.)
 - **`dt` consistency.** With `delay > 0` the C runs at `dt = DESIRED_DT/2 = 0.1`
   but only recomputes `halfDtSq`/`dtInv` from it on the next parameter mutation,
   so there's a brief startup transient where those derived constants lag `dt`.
   The port uses `dt = 0.1` and computes the derived constants consistently from
   the first frame (i.e. the C's steady state). The affected term
   (`acc * halfDtSq`) is a tiny second-order position correction.
-- **Pacing.** The C does two `dt=0.1` sub-steps per drawn frame; the port does
-  one `step()` per `config.delay` (lag-accumulator), defaulting `delay` to
-  **24000 us** (calmer than the stock 20000) and keeping
-  per-step motion small for smooth trails.
-- **Colour scheme is selectable.** The C cycles its scheme via mutation; the port
-  defaults to `Auto (cycle)` (faithful) but also lets you lock any of the six
-  schemes. When locked, the live `getScheme()` uses the chosen scheme while the
-  internal auto value keeps mutating harmlessly. Colours are emitted as `rgb()`
+- **Pacing.** The C does two `dt=0.1` sub-steps per drawn frame (`draw_cnt=2`
+  when `delay>0`); the port does one `step()` per `config.delay` via a
+  lag-accumulator. The default `delay` is **24000 us** rather than the xml's
+  nominal 20000: with the C's per-frame overhead the original's effective step
+  rate is ~40/s, and 24000 us gives ~42 steps/s here — a closer effective-speed
+  match than the nominal value (see the framerate-calibration notes). `delay` is
+  the only pace knob; it is a tunable, not a strict fidelity item.
+- **Colour scheme: auto-cycles (faithful).** The C starts at `COLOR_TRAILS`
+  (default scheme 2) and changes scheme only via `randomSmallChange` case 9; the
+  port does exactly this, with **no** scheme selector (an earlier revision added
+  one — removed, see the config note above). Colours are emitted as `rgb()`
   strings built byte-for-byte from the C's `initCMap` (gray/red/blue ramps plus
-  the chained pseudo-random ramp).
-- **Counts exposed.** `count`/`targets`/`trail` are surfaced as sliders where
-  `0 = the C's auto-random`; the stock UI only exposed `delay`.
-- **Trail reseed on spawn/relocate (fixes an upstream bug).** A `seedHist(entity)`
-  helper fills an entity's whole history ring with its current position, called in
-  `initBugs()` for every entity and right after the position reset in
-  `mutateBug(0)`. The C's `mutateBug(0)` `memcpy`s a whole bug (including its
-  `hist[][]` trail) into the new target and then overwrites only `pos`, so it
-  draws a long straight line from the old bug location to the new random target
-  position for ~`trailLen` frames — most visible as a burst of corner-running
-  lines in the first seconds (the init parameter-shake fires `mutateBug` while the
-  trails are still the `memset(0)` from `initBugs`). Reseeding the ring removes the
-  artifact; normal trail growth is unchanged (ring slots ahead of `head` are never
-  drawn until overwritten). Full write-up + a suggested C patch in
-  `docs/xrayswarm-upstream-bug.md`.
+  the chained pseudo-random ramp) — a hardcoded table, **not** a `make_*_colormap`
+  rainbow, so there is no muted-vs-vivid palette deviation to fix.
+- **Trail reseed on spawn/relocate (DELIBERATE deviation — the port is LESS
+  faithful here).** A `seedHist(entity)` helper fills an entity's whole history
+  ring with its current position, called in `initBugs()` for every entity and
+  right after the position reset in `mutateBug(0)`. The C's `mutateBug(0)`
+  `memcpy`s a whole bug (including its `hist[][]` trail) into the new target and
+  then overwrites only `pos`, so the original **draws a long straight line** from
+  the old bug location to the new random target position for ~`trailLen` frames —
+  most visible as a burst of corner-running lines in the first seconds (the init
+  parameter-shake fires `mutateBug` while trails are still the `memset(0)` from
+  `initBugs`). Reseeding the ring removes that artifact. This is an aesthetic
+  bug-fix, not a faithful transcription: a strictly faithful port would keep the
+  jump-lines. Kept because the artifact is jarring and it was a prior, documented,
+  deliberate choice (full write-up + a suggested C patch in
+  `docs/xrayswarm-upstream-bug.md`); flag for the main session if strict fidelity
+  to the original's jump-lines is preferred.
+- **Batched stroke order.** The C draws segments interleaved tail->head (bugs then
+  targets per trail position), so higher segments paint over lower ones. The port
+  batches all segments by colour-map index into one `Path2D` each and strokes once
+  per index, so where 1px trails overlap the topmost colour can differ slightly
+  from the C. Per-segment colours are identical; only overlap layering shifts.
+  Negligible on black with thin lines; a performance adaptation.
 
 ## Correctness self-review
 
@@ -136,10 +165,12 @@ This keeps the trail length fixed (memory/draw cost is constant).
 
 - Frame 1 should already show scattered short streaks across the screen that
   immediately start swirling toward moving target points.
-- Trails should fade head->tail; the default `Color` look is blue bug trails with
-  red target trails. `Auto (cycle)` should occasionally switch schemes; the
-  `schizo` schemes shimmer (colours shift along the trail each frame).
+- Trails should fade head->tail; the start-up look is `COLOR_TRAILS` — blue bug
+  trails with red target trails. Over time the auto-cycle should occasionally
+  switch schemes (gray / red+random / the `schizo` variants that shimmer as
+  colours shift along the trail each frame).
 - Nothing should pile up at the edges, freeze, or blink to a blank screen
   (a `randomBigChange` reseed briefly empties trails, then they rebuild).
-- Bumping **Bugs**/**Trail length** should cleanly clear and re-seed (reinit);
-  with ~100 bugs and a long trail it is the heaviest case to watch for jank.
+- The **Frame rate** slider is the only control; lowering it (longer delay)
+  should visibly slow the swarm. With the auto-rolled ~100 bugs and a long trail
+  it is the heaviest case to watch for jank.

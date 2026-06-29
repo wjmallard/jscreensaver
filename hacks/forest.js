@@ -31,17 +31,17 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/forest.xml. `delay` is microseconds
-  // (one tree per step); `ncolors` is the palette size (4 trunk shades + leaf
-  // hues). The stock delay is 500000; ours is a touch brisker so a forest fills
-  // in ~8 s rather than feeling stalled. Both xml sliders are kept.
+  // between trees (one tree per step), xml default 500000; `ncolors` is the
+  // palette size (4 trunk shades + up to 16 seasonal leaf hues). Both xml
+  // sliders are kept; `delay` is live, so the grow can be sped up at will.
   const config = {
-    delay: 250000,     // microseconds between trees (--delay)
+    delay: 500000,     // microseconds between trees (--delay; xml default 500000)
     ncolors: 20,       // palette size, max 20 (--ncolors)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 3000000, step: 10000, default: 250000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 20, step: 1, default: 20, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 3000000, step: 10000, default: 500000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 20, step: 1, default: 20, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // The C's seasonal palette: colorM is a 12-hue rainbow, colorV a matching
@@ -187,17 +187,20 @@ export function start(canvas) {
 
   // draw_trees: one frame == one tree (or a step of the linger state machine).
   function step() {
+    // draw_trees' state machine, transcribed exactly: pause==1 reseeds AND falls
+    // through to draw this frame's tree (the C does NOT return there); pause>1
+    // holds the finished forest; otherwise --todo, and when it hits 0 arm a
+    // 6-frame linger. After a reseed the first tree drawn has todo==25, whose
+    // root sits above the top edge (y<0) and grows upward -- off-screen, exactly
+    // as in the C (only todo 24..1 are ever visible).
     if (pauseCount === 1) {
-      // End of the linger: reset for a fresh forest (the C re-runs init_trees).
-      pauseCount = 0;
-      seedForest();
-      return;
-    }
-    if (pauseCount > 1) {
+      pauseCount--;     // -> 0
+      seedForest();     // init_trees: clear, new season + palette, todo=25
+      // fall through and draw this frame's tree (todo stays 25)
+    } else if (pauseCount > 1) {
       pauseCount--;
       return;
-    }
-    if (--todo === 0) {
+    } else if (--todo === 0) {
       pauseCount = 6;   // forest complete; linger before reseeding
       return;
     }

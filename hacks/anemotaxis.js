@@ -15,12 +15,21 @@
 // Either way the searcher is reborn at the right edge. Models moths tracking
 // pheromone plumes (odor-modulated anemotaxis).
 //
-// Rendering: SPARSE vector drawing with a FULL REPAINT each frame. The C clears
-// its back buffer on every draw, then redraws every source dot, every drifting
+// FIDELITY: a close transcription of anemotaxis.c. It boots exactly as
+// anemotaxis_init does — a SINGLE source, NO searchers — and lets the field fill
+// in over time via the C's own spawn probabilities, so it tracks the live binary
+// at every point (warm-up included). The palette is the C's
+// make_random_colormap(bright_p=True): random hues at S 30-100% / V 66-100%,
+// built ONCE and never cycled (the X visual is non-writable). See anemotaxis.md.
+//
+// Rendering: SPARSE vector drawing with a FULL REPAINT each step. The C clears
+// its back buffer every draw, then redraws every source blob, every drifting
 // particle, and each searcher's whole trajectory as a polyline — so there is no
-// persistent canvas / ring buffer here. Trails live in each searcher's history
-// list and are re-stroked from scratch each frame. Contrast [[grav]] and
-// [[whirlwindwarp]], which use a persistent canvas + erase-old/draw-new instead.
+// persistent canvas / ring buffer here; trails live in each searcher's history
+// list and are re-stroked from scratch. Contrast [[grav]] and [[whirlwindwarp]],
+// which use a persistent canvas + erase-old/draw-new instead.
+
+import { makeRandomColormapRGB } from './colormap.js';
 
 export const title = 'anemotaxis';
 
@@ -33,16 +42,16 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/anemotaxis.xml so the tuning UI maps 1:1
-  // to the original. `colors` is the stock hack's --colors option (default 20 in
-  // anemotaxis_defaults, not shown in the xml UI); we expose it as a palette size
-  // like grav/squiral do.
+  // Defaults/ranges mirror hacks/config/anemotaxis.xml: delay (Frame rate,
+  // inverted), distance (lattice size), sources, searchers. The xml exposes no
+  // colour control, so neither do we. delay's stock value is 20000 µs; we
+  // default to 50000 as a calmer pace / frame-rate calibration (the slider still
+  // spans the xml's 0..100000 range) — a deliberate pace choice, not fidelity.
   const config = {
-    delay: 50000,     // µs between steps (--delay)
+    delay: 50000,     // µs between steps (--delay; xml stock 20000)
     distance: 40,     // size of the lattice (--distance)
     sources: 25,      // number of odor sources (--sources)
     searchers: 25,    // number of searchers (--searchers)
-    ncolors: 20,      // size of the rainbow palette (--colors)
   };
 
   const params = [
@@ -50,7 +59,6 @@ export function start(canvas) {
     { key: 'distance', label: 'Distance', type: 'range', min: 10, max: 250, step: 1, default: 40, lowLabel: 'near', highLabel: 'far', live: false },
     { key: 'sources', label: 'Sources', type: 'range', min: 1, max: 100, step: 1, default: 25, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'searchers', label: 'Searchers', type: 'range', min: 1, max: 100, step: 1, default: 25, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 20, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // Lattice / emission constants, verbatim from anemotaxis.c.
@@ -58,6 +66,11 @@ export function start(canvas) {
   const MIN_DIST = 10;
   const MAX_INV_RATE = 5;
   const TAU = Math.PI * 2;
+
+  // Palette size: the C reads --colors (default 20) then does ncolors++ (a spare
+  // cell), so make_random_colormap actually fills 21 entries. anemotaxis.xml has
+  // no colour slider, so this is a fixed internal constant.
+  const ncolors = 20 + 1;
 
   // Searcher state machine (the C's enum {UP_LEFT, UP_RIGHT, LEFT, RIGHT, DONE});
   // only the names matter, never the numeric values.
@@ -67,21 +80,20 @@ export function start(canvas) {
   const RIGHT = 3;
   const DONE = 4;
 
-  let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
 
   let maxDist;          // lattice size (clamped distance)
   let maxSrc;           // number of source slots
   let maxSearcher;      // number of searcher slots
-  let ncolors;          // palette length
 
-  // Screen mapping (the C's X()/Y() macros, bx = by = 0): lattice -> device px.
-  let ax, ay;           // scale factors
-  let dx, dy;           // small x/y jitter spans (also drive line width)
+  // Screen mapping (the C's X()/Y() macros, bx = by = 0) and draw metrics, all
+  // in device px (dpr folds in through W/H — counts/rates stay in absolute px).
+  let ax, ay;           // lattice -> px scale factors
+  let dx, dy;           // small x/y jitter spans (RND(dx)/RND(dy)); dx drives line width
   let lineWidth;        // trajectory stroke width (the C's dx/3 + 1)
-  let dotSize, dotHalf; // particle / searcher marker size in device px
+  let partSize;         // particle disc diameter (the C's 4, or 8 on a >2560 px store)
 
-  let colors;           // rainbow palette of hsl() strings
+  let colors;           // bright random colormap as rgb() strings
   let sources;          // array of Source | null
   let searchers;        // array of Searcher | null
   let needRender;       // force one repaint after init/reseed even with no step
@@ -273,12 +285,12 @@ export function start(canvas) {
       if (searchers[i] !== null && searchers[i].state === DONE) {
         searchers[i] = null;
       }
-      // Respawn into a free slot. The C uses 1 / (maxDist * maxSearcher), which
-      // makes the *total* spawn rate independent of the slider -- equilibrium is
-      // ~5 searchers no matter how many you ask for, so the field looks empty and
-      // the Searchers control does almost nothing. We use 1 / (maxDist * 4) so
-      // the slider genuinely scales the population and the fans stay lively. See md.
-      if (searchers[i] === null && RND(maxDist * 4) === 0) {
+      // Respawn into a free slot at the C's rate, 1 / (maxDist * maxSearcher).
+      // This makes the total spawn rate near-independent of the slider, so the
+      // slider's effect on the steady-state count is sublinear/saturating — the
+      // stock behaviour. The drifting plumes (sources fill toward maxSrc) carry
+      // the visual density, so the field never looks empty once warmed up.
+      if (searchers[i] === null && RND(maxDist * maxSearcher) === 0) {
         searchers[i] = newSearcher();
       }
       if (searchers[i] === null) continue;
@@ -289,7 +301,8 @@ export function start(canvas) {
       // Found a source, or walked off the left edge? (The C only tests the
       // off-edge case inside the per-source loop, so it is skipped when no
       // source is active; we hoist it out so a searcher that leaves the field is
-      // always retired -- otherwise its history could grow without bound. See md.)
+      // always retired -- otherwise its history could grow without bound. When
+      // >=1 source is active this matches the C exactly. See md.)
       if (m.rx < 0) {
         m.state = DONE;
       } else {
@@ -299,7 +312,7 @@ export function start(canvas) {
           if (s.y === m.ry && s.x === m.rx) {
             m.state = DONE;
             s.inv_rate = 0;          // source disappears (drains, then reaped)
-            m.color = '#ffffff';     // flash white on success
+            m.color = '#ffffff';     // flash white on success (WhitePixel)
             break;
           }
         }
@@ -324,35 +337,42 @@ export function start(canvas) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    // Sources: a filled blob whose size grows with emission rate, then the
-    // drifting particles as small jittered squares (the C nudges each particle
-    // off-lattice by RND(dx)/RND(dy) every frame, so the plumes shimmer).
+    // Sources: a filled disc whose size grows with emission rate, then the
+    // drifting particles as small jittered discs (the C nudges each particle
+    // off-lattice by RND(dx)/RND(dy) every draw, so the plumes shimmer). Both
+    // the blob and the particles are the source colour, so they batch into one
+    // path + fill per source. The C draws them with XFillArc (circles).
+    const pr = partSize / 2;
     for (let i = 0; i < maxSrc; i++) {
       const s = sources[i];
       if (s === null) continue;
 
       ctx.fillStyle = s.color;
+      ctx.beginPath();
 
       if (s.inv_rate > 0) {
         const sx = X(s.x);
         const sy = Y(s.y);
         let j = Math.floor(dx * (MAX_INV_RATE + 1 - s.inv_rate) / (2 * MAX_INV_RATE));
         if (j === 0) j = 1;
-        ctx.beginPath();
+        ctx.moveTo(sx + j, sy);
         ctx.arc(sx, sy, j, 0, TAU);
-        ctx.fill();
       }
 
       for (let k = 0; k < s.n; k++) {
         if (s.yvV[k] === 2) continue;
         const px = X(s.x + 1 + k) + RND(dx);
         const py = Y(s.y + s.yvY[k]) + RND(dy);
-        ctx.fillRect(px - dotHalf, py - dotHalf, dotSize, dotSize);
+        ctx.moveTo(px + pr, py);
+        ctx.arc(px, py, pr, 0, TAU);
       }
+
+      ctx.fill();
     }
 
-    // Searchers: a marker at the head, then the whole trajectory as one polyline
-    // (current position back through history, newest first, matching the C).
+    // Searchers: a 4x4 square marker at the head (the C's XFillRectangle), then
+    // the whole trajectory as one polyline (current position back through
+    // history, newest first, matching the C's draw_searcher).
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.lineWidth = lineWidth;
@@ -366,7 +386,7 @@ export function start(canvas) {
 
       const hx = X(m.rx) + m.rs;
       const hy = Y(m.ry);
-      ctx.fillRect(hx - dotHalf, hy - dotHalf, dotSize, dotSize);
+      ctx.fillRect(hx - 2, hy - 2, 4, 4);
 
       if (m.hist.length > 0) {
         ctx.beginPath();
@@ -382,7 +402,6 @@ export function start(canvas) {
   // ----- init / seeding ------------------------------------------------------
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 
@@ -393,47 +412,26 @@ export function start(canvas) {
 
     maxSrc = Math.max(1, Math.round(config.sources));
     maxSearcher = Math.max(1, Math.round(config.searchers));
-    ncolors = Math.max(1, Math.round(config.ncolors));
 
-    // Screen mapping in device px (dpr folds in through W/H).
+    // Screen mapping + draw metrics in device px (the C's anemotaxis_init).
     ax = W / maxDist;
     ay = H / (2 * maxDist);
     dx = Math.floor(W / (2 * maxDist)) || 1;
     dy = Math.floor(H / (4 * maxDist)) || 1;
     lineWidth = Math.floor(dx / 3) + 1;
-    dotSize = Math.max(1, Math.round(4 * S));
-    dotHalf = dotSize / 2;
+    partSize = (W > 2560 || H > 2560) ? 8 : 4;   // the C's Retina bump
 
-    // Vivid rainbow palette (the C uses a random colormap; we prefer hues).
-    colors = [];
-    for (let i = 0; i < ncolors; i++) {
-      colors.push(`hsl(${Math.round(i * 360 / ncolors)}, 100%, 55%)`);
-    }
+    // The C's palette: make_random_colormap(bright_p=True) — random hues at
+    // S 30-100% / V 66-100%, built ONCE and never cycled. Sources/searchers
+    // later pick colors[RND(ncolors)]; the white success-flash uses WhitePixel.
+    colors = makeRandomColormapRGB(ncolors, true).map(([r, g, b]) => `rgb(${r},${g},${b})`);
 
-    // Seed a populated first frame. The C starts with a single source and no
-    // searchers and lets them fill in over ~20 s; we instead seed several plumes
-    // (pre-evolved so their particle streams already reach across the lattice)
-    // and one searcher per slot, each advanced a random way in so the fans are
-    // already spread between the right edge and the source. See md.
+    // Boot exactly like anemotaxis_init: ONE source, NO searchers. The field
+    // fills in over time via step()'s spawn probabilities, so the port tracks
+    // the live binary at every point (warm-up included). No ad-hoc pre-seeding.
     sources = new Array(maxSrc).fill(null);
-    const seedSources = Math.min(maxSrc, 5);
-    for (let i = 0; i < seedSources; i++) {
-      sources[i] = newSource();
-      for (let e = 0; e < sources[i].n; e++) evolveSource(sources[i]);
-    }
-
+    sources[0] = newSource();
     searchers = new Array(maxSearcher).fill(null);
-    for (let i = 0; i < maxSearcher; i++) {
-      const m = newSearcher();
-      const targetX = RND(maxDist);   // distribute heads across the lattice
-      let guard = 0;
-      while (m.rx > targetX && m.rx > 0 && guard < 20000) {
-        m.c = 0;                      // pure cone walk during seeding (no plume)
-        moveSearcher(m);
-        guard++;
-      }
-      searchers[i] = m;
-    }
 
     needRender = true;
   }
@@ -481,7 +479,7 @@ export function start(canvas) {
     rafId = requestAnimationFrame(frame);
   }
 
-  // Re-seed with the current config (distance/counts/colors may differ).
+  // Re-seed with the current config (distance/counts may differ).
   function reinit() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);

@@ -10,13 +10,16 @@
 // drawing short segments scaled down by a big divisor so each vine stays a
 // small, curvy whorl. Vines accumulate one per frame; after a random budget
 // (30..129) the screen clears and a fresh batch begins. Each vine is a single
-// random palette colour.
+// colour drawn at random from a fixed make_random_colormap palette (white when
+// ncolors <= 2, the C's mono fallback).
 //
 // Rendering: genuinely line-shaped (one XDrawLine per segment in the C), so
 // this uses canvas VECTOR ops — each vine's up-to-~18k segments are batched
 // into one Path2D and stroked once in that vine's colour (one stroke/frame).
 //
 // See [[squiral]] for the shared skeleton; technique twin of [[ccurve]].
+
+import { makeRandomColormapRGB } from './colormap.js';
 
 export const title = 'vines';
 
@@ -53,7 +56,7 @@ export function start(canvas) {
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
   let pscale;                // retina density factor (the C's fp->pscale)
-  let palette;               // ncolors smooth-rainbow CSS strings
+  let palette;               // fixed make_random_colormap CSS strings (null if <=2)
   let currentColor;          // this vine's colour
 
   // Current-vine state (mirrors the C's vinestruct fields; all ints, so we hold
@@ -67,16 +70,24 @@ export function start(canvas) {
   let ang;                   // per-step turn factor
   let centerx, centery;      // this vine's screen origin
 
+  // The C's colormap: xlockmore gives vines color_scheme_default (it defines no
+  // SMOOTH/BRIGHT/UNIFORM macro), i.e. make_random_colormap(bright_p = False) —
+  // `ncolors` INDEPENDENT, fully-random RGB colours (each channel random/0xFFFF),
+  // NOT a smooth ramp and NOT a saturated rainbow. Built ONCE per run (color
+  // setup lives in xlockmore_init), not rebuilt per batch. ncolors <= 2 takes the
+  // C's MONO path (white only), so we hold no palette there.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; the C falls back to white when the display has <= 2 colours.
-    for (let c = 0; c < n; c++) palette[c] = `hsl(${Math.floor(c * 360 / n)}, 100%, 55%)`;
+    palette = n > 2
+      ? makeRandomColormapRGB(n, false).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`)
+      : null;
   }
 
   // The C's init_vines: pick the per-batch retina factor, reset the counters,
   // and clear the window. Called on start/resize and again whenever a batch's
-  // iteration budget runs out (the screen-full reset).
+  // iteration budget runs out (the screen-full reset). NOTE: the colormap is
+  // built ONCE (see buildPalette / start), NOT here — the C's color setup lives
+  // in xlockmore_init, while init_vines only clears + resets counters.
   function init() {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
@@ -88,13 +99,11 @@ export function start(canvas) {
     if (W > 2560 || H > 2560) pscale *= 2;
 
     // The C's XSetLineAttributes (CapRound/JoinRound, width=pscale) is commented
-    // out, so the original draws 1px lines. We keep ~1 CSS px, scaled by dpr so
-    // they read on retina (as ccurve does); pscale only affects vine length here.
+    // out, so the original draws 1px lines with the GC defaults (butt cap, miter
+    // join) — which are the canvas defaults too, so we leave cap/join alone. We
+    // keep ~1 CSS px, scaled by dpr so they read on retina (as ccurve does);
+    // pscale only affects vine length here, as in the C.
     ctx.lineWidth = Math.max(1, S);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    buildPalette();
 
     i = 0;
     length = 0;
@@ -129,7 +138,8 @@ export function start(canvas) {
       x2 = 1;
       y2 = 0;
 
-      currentColor = config.ncolors > 2 ? palette[rand(palette.length)] : '#fff';
+      // C: MI_NPIXELS > 2 -> a random colormap entry, else the MONO white fallback.
+      currentColor = palette ? palette[rand(palette.length)] : '#fff';
     }
 
     let count = i + COUNT;
@@ -199,13 +209,15 @@ export function start(canvas) {
     rafId = requestAnimationFrame(frame);
   }
 
-  // Rebuild after a non-live config change (clears the canvas; ncolors resizes
-  // the palette), then re-seed via init().
+  // Rebuild after a non-live config change: ncolors resizes the fixed palette
+  // (the only rebuild outside startup), then clear + re-seed via init().
   function reinit() {
+    buildPalette();
     init();
   }
 
   window.addEventListener('resize', resize);
+  buildPalette();   // built once for the whole run (the C's one-time color setup)
   resize();
   rafId = requestAnimationFrame(frame);
 

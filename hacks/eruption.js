@@ -16,12 +16,15 @@
 // hack its name. The heat value at each pixel indexes a black->blue->red->yellow
 // ->white palette, so the fountain reads as molten sparks fading through embers.
 //
-// Rendering: dense per-pixel HEAT field (a Uint8Array the size of the screen,
+// Rendering: dense per-pixel HEAT field (a Uint8Array at LOGICAL resolution,
 // re-smeared and re-coloured every frame) -> the BLIT path. Heat indexes a packed
-// Uint32 palette written into a persistent ImageData that we putImageData once per
-// frame, exactly like the C's XImage fast paths (it avoids hundreds of thousands
-// of per-pixel canvas calls). See [[thornbird]] for the same Uint32-blit idiom
-// and [[pyro]] for the cached spherical-burst velocity distribution.
+// Uint32 palette written into a persistent ImageData on an offscreen canvas, which
+// is then drawImage-upscaled (smoothing OFF) to the device canvas -- honouring the
+// C's ".lowrez: true" default (coarse fire on Retina, part of the look). This
+// mirrors the C's XImage fast paths while avoiding hundreds of thousands of
+// per-pixel canvas calls. See [[xflame]]/[[moire2]] for the same lowrez upscale
+// idiom, [[thornbird]] for the Uint32-blit, and [[pyro]] for the cached
+// spherical-burst velocity distribution.
 
 export const title = 'eruption';
 
@@ -35,9 +38,10 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/eruption.xml so the config box maps 1:1
-  // to the original. (The xml's "showfps" boolean is host chrome, not ported.)
+  // to the original, except `delay` defaults calmer than stock (see below). (The
+  // xml's "showfps" boolean is host chrome, not ported.)
   const config = {
-    delay: 50000,      // µs between steps (--delay), inverted "Frame rate"
+    delay: 20000,      // µs/step; calmer than the xml stock 10000 (pace knob)
     ncolors: 256,      // size of the heat palette (--ncolors)
     nparticles: 300,   // particles per eruption (--particles)
     cooloff: 2,        // convolution cooling offset, pre-shift (--cooloff)
@@ -51,7 +55,7 @@ export function start(canvas) {
   // live: false -> the value sizes the palette/particle pool/heat buffer, so a
   //                change re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 16, max: 256, step: 1, default: 256, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'nparticles', label: 'Number of particles', type: 'range', min: 100, max: 2000, step: 10, default: 300, lowLabel: 'little', highLabel: 'many', live: false },
     { key: 'cooloff', label: 'Cooling factor', type: 'range', min: 0, max: 10, step: 1, default: 2, lowLabel: 'slow', highLabel: 'fast', live: true },
@@ -69,8 +73,9 @@ export function start(canvas) {
   const BLACK = 0xFF000000;
 
   let S = 1;              // devicePixelRatio
-  let W, H;               // canvas size, device px
-  let imageData, pixels;  // persistent Uint32 blit buffer (ABGR)
+  let W, H;               // heat-field size, LOGICAL px (the C's lowrez window)
+  let off, offCtx;        // offscreen canvas at WxH, upscaled to the device canvas
+  let imageData, pixels;  // persistent Uint32 blit buffer over `off` (ABGR)
   let fire;               // Uint8Array heat field, (W + 2*X_PAD) x (H + 2*Y_PAD)
   let firePitch;          // W + 2*X_PAD (row stride of `fire`)
   let palette;            // Uint32Array(iColorCount) packed-ABGR heat gradient
@@ -297,7 +302,13 @@ export function start(canvas) {
       line2 += firePitch;
     }
 
-    ctx.putImageData(imageData, 0, 0);
+    // Blit the logical-resolution fire onto the offscreen canvas, then upscale it
+    // to the device canvas with smoothing OFF (nearest-neighbour) -- the crisp,
+    // coarse look the C gets from ".lowrez: true" on Retina.
+    offCtx.putImageData(imageData, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    if (S === 1) ctx.drawImage(off, 0, 0);
+    else ctx.drawImage(off, 0, 0, W, H, 0, 0, canvas.width, canvas.height);
   }
 
   // Clamp helpers matching the C's resource ranges (live params, re-read/step).
@@ -312,12 +323,25 @@ export function start(canvas) {
 
   function init() {
     S = window.devicePixelRatio || 1;
-    W = canvas.width;
-    H = canvas.height;
 
-    imageData = ctx.createImageData(W, H);
+    // The heat field runs at LOGICAL resolution (device px / dpr); the offscreen
+    // canvas is then upscaled to the device canvas (smoothing off). This honours
+    // the C's ".lowrez: true" default -- the original renders the fire coarse on
+    // Retina, and the chunky pixels are part of the look. Particle count and the
+    // burst velocity scale are therefore in logical px, matching the live binary.
+    W = Math.max(1, Math.round(canvas.width / S));
+    H = Math.max(1, Math.round(canvas.height / S));
+
+    off = document.createElement('canvas');
+    off.width = W;
+    off.height = H;
+    offCtx = off.getContext('2d');
+    imageData = offCtx.createImageData(W, H);
     pixels = new Uint32Array(imageData.data.buffer);
     pixels.fill(BLACK);
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     firePitch = W + X_PAD * 2;
     fire = new Uint8Array((H + Y_PAD * 2) * firePitch);
@@ -330,8 +354,9 @@ export function start(canvas) {
     // Derive the burst velocity scale from the window size (triangular-number
     // summation in the C). ydelta grows until the running triangular sum clears
     // half the screen height; xdelta until it clears an eighth of the width.
-    // These run in *device* px, so a burst covers the same fraction of the
-    // screen (and rises to the same apparent height) on retina as on 1x.
+    // These run in LOGICAL px (the field resolution), exactly as the C computes
+    // them from its lowrez window, so a burst rises to the same apparent height
+    // and covers the same screen fraction as the live binary.
     ydelta = 0;
     let sum = 0;
     while (sum < (H >> 1) - SPREAD) {

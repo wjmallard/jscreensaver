@@ -20,6 +20,8 @@
 // coloured glow) -- same look, far fewer ops. See [[ccurve]] / [[forest]] for the
 // recursive-subdivision twins; the fixed-timestep loop is the [[squiral]] one.
 
+import { makeRandomColormapRGB } from './colormap.js';
+
 export const title = 'lightning';
 
 export const info = {
@@ -34,9 +36,10 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/lightning.xml (1:1 with the original).
   // `delay` is microseconds; each step() advances ONE tick of the C's stage
   // machine, and a single drawn frame spans ~9 ticks (1 draw + 7 hold + 1 clear),
-  // so the bolt crackles ~once per 9*delay. `ncolors` sizes the random glow hue
-  // (the C's MI_NPIXELS -> st->color); <=2 colours draws white bolts (the C's
-  // mono fallback). Both xml sliders are kept; defaults match the stock values.
+  // so the bolt crackles ~once per 9*delay. `ncolors` is MI_NPIXELS: the size of
+  // the run's BRIGHT_COLORS colormap (make_random_colormap, built once), into
+  // which each storm picks one random glow colour (st->color); <=2 colours draws
+  // white bolts (the C's mono fallback). Both xml sliders kept; stock defaults.
   const config = {
     delay: 10000,      // microseconds between stage ticks (--delay)
     ncolors: 64,       // glow-hue palette size (--ncolors)
@@ -84,6 +87,7 @@ export function start(canvas) {
   let S = 1;            // devicePixelRatio
   let W = 0, H = 0;     // canvas size, device px
   let ncolors = 64;     // effective glow-palette size, 1..255
+  let colors = null;    // the run's BRIGHT_COLORS map ([r,g,b] x ncolors); null = mono
   let promptNext = true; // make the first storm after init strike promptly
   let storm = null;     // the Storm struct (bolts + stage machine)
 
@@ -305,12 +309,16 @@ export function start(canvas) {
     }
   }
 
-  // st->color = NRAND(MI_NPIXELS): a random bright hue (the C builds BRIGHT_COLORS).
-  // <=2 colours -> white bolts, matching the C's MI_NPIXELS<=2 mono fallback.
+  // st->color = NRAND(MI_NPIXELS): pick a random entry of the run's colormap, once
+  // per storm. The C builds that colormap ONCE at startup (the xlockmore layer:
+  // BRIGHT_COLORS -> color_scheme_bright -> make_random_colormap(bright_p=True),
+  // i.e. ncolors INDEPENDENT random colours -- hue 0-360 but saturation 30%-100% /
+  // value 66%-100%, vivid but NOT full-saturation) and then only rotates this
+  // index. <=2 colours -> white bolts (the C's MI_NPIXELS<=2 mono fallback).
   function pickColor() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    if (n <= 2) return WHITE;
-    return `hsl(${(nrand(n) / n) * 360}, 100%, 65%)`;
+    if (!colors) return WHITE;
+    const c = colors[nrand(colors.length)];
+    return `rgb(${c[0]},${c[1]},${c[2]})`;
   }
 
   function clear() {
@@ -362,6 +370,11 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
     ncolors = Math.min(255, Math.max(1, Math.round(config.ncolors)));
+    // make_random_colormap(bright_p=True): ncolors fixed random bright colours,
+    // built ONCE per run like the C (stage 0 only re-picks an index into it).
+    // <=2 colours -> mono white bolts. Re-rolled on each init (reinit/resize), so
+    // Math.random's order is fine -- only the bright distribution must match.
+    colors = ncolors <= 2 ? null : makeRandomColormapRGB(ncolors, true);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     promptNext = true;

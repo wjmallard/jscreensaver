@@ -32,43 +32,18 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Only `delay` is in the stock xrayswarm UI (hacks/config/xrayswarm.xml). The
-  // C auto-randomizes bug/target/trail counts and cycles its colour scheme; we
-  // expose those as tunables (0 = the C's auto behaviour) plus a "Restlessness"
-  // for the C's changeProb. See xrayswarm.md.
+  // The stock xrayswarm UI (hacks/config/xrayswarm.xml) exposes only `delay`
+  // (plus a debug --fps toggle we omit). Bug/target/trail counts, the colour
+  // scheme, and the mutation rate are all auto-managed by the C and never were
+  // user resources, so we do NOT surface them as sliders. See xrayswarm.md.
   const config = {
     delay: 24000,      // microseconds between sim steps (--delay; xml default 20000)
-    count: 0,          // bugs; 0 = auto (the C's random 25..100)
-    targets: 0,        // targets; 0 = auto (the C's random 2..10)
-    trail: 0,          // trail length; 0 = auto (the C's random 24..60)
-    scheme: 'auto',    // colour scheme; 'auto' cycles like the C
-    changeProb: 0.08,  // chance/0.5s of a parameter mutation (the C's changeProb)
   };
 
-  // live: true  -> read every frame, applies instantly.
-  // live: false -> sizes the swarm/trail buffers, so a change re-runs init().
+  // Mirrors the only stock resource: `delay`, the usleep interval in
+  // microseconds (the xml's "Frame rate", inverted so high = faster).
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 24000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Bugs (0 = auto)', type: 'range', min: 0, max: 100, step: 1, default: 0, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'targets', label: 'Targets (0 = auto)', type: 'range', min: 0, max: 10, step: 1, default: 0, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'trail', label: 'Trail length (0 = auto)', type: 'range', min: 0, max: 60, step: 1, default: 0, lowLabel: 'short', highLabel: 'long', live: false },
-    {
-      key: 'scheme',
-      label: 'Color scheme',
-      type: 'select',
-      default: 'auto',
-      live: true,
-      options: [
-        { value: 'auto', label: 'Auto (cycle)' },
-        { value: 'gray', label: 'Grayscale' },
-        { value: 'grayschizo', label: 'Grayscale schizo' },
-        { value: 'color', label: 'Color' },
-        { value: 'random', label: 'Random' },
-        { value: 'randomschizo', label: 'Random schizo' },
-        { value: 'colorschizo', label: 'Color schizo' },
-      ],
-    },
-    { key: 'changeProb', label: 'Restlessness', type: 'range', min: 0, max: 0.5, step: 0.01, default: 0.08, lowLabel: 'calm', highLabel: 'wild', live: true },
   ];
 
   // Hard-coded counts from the C (#define).
@@ -76,9 +51,12 @@ export function start(canvas) {
   const MAX_BUGS = 100;
   const MAX_TARGETS = 10;
   const DESIRED_DT = 0.2;
+  const CHANGE_PROB = 0.08;   // the C's hardcoded st->changeProb (never a resource)
 
   // Colour schemes (the C's #defines). NUM_SCHEMES=6 but the trailing two are
-  // "too many schizos" and the C uses them less often.
+  // "too many schizos" and the C uses them less often. colorScheme starts at
+  // COLOR_TRAILS (the C's xrayswarm_init default of 2) and auto-cycles via
+  // randomSmallChange case 9 -- the port follows the C, with no scheme selector.
   const GRAY_TRAILS = 0;
   const GRAY_SCHIZO = 1;
   const COLOR_TRAILS = 2;
@@ -86,14 +64,6 @@ export function start(canvas) {
   const RANDOM_SCHIZO = 4;
   const COLOR_SCHIZO = 5;
   const NUM_SCHEMES = 6;
-  const SCHEME_MAP = {
-    color: COLOR_TRAILS,
-    colorschizo: COLOR_SCHIZO,
-    gray: GRAY_TRAILS,
-    grayschizo: GRAY_SCHIZO,
-    random: RANDOM_TRAILS,
-    randomschizo: RANDOM_SCHIZO,
-  };
 
   // Preallocated entity pools (the C uses fixed-size arrays). Each entity holds
   // realspace pos/vel and a ring buffer of past pixel positions; `closest` is an
@@ -131,7 +101,7 @@ export function start(canvas) {
 
   let nbugs, ntargets, trailLen;
   let head, tail, checkIndex;
-  let colorScheme;      // internal scheme used when config.scheme === 'auto'
+  let colorScheme;      // active scheme (starts COLOR_TRAILS, auto-cycles like the C)
   let rscDepth, rbcDepth;
 
   function frand(x) {
@@ -535,7 +505,7 @@ export function start(canvas) {
   // Resolve the active colour scheme into the index tables / start offsets the
   // C's updateColorIndex picks (targets and bugs can differ).
   function getScheme() {
-    const s = config.scheme === 'auto' ? colorScheme : SCHEME_MAP[config.scheme];
+    const s = colorScheme;   // the C switches on st->colorScheme (auto-cycled)
     switch (s) {
       case GRAY_TRAILS:
         return { tIdx: grayIndex, tci0: 0, tnc: trailLen, cIdx: grayIndex, ci0: 0, nc: trailLen };
@@ -628,25 +598,25 @@ export function start(canvas) {
     maxAcc = 0.03;
     noise = 0.01;
     minVelMultiplier = 0.5;
-    colorScheme = config.scheme === 'auto' ? COLOR_TRAILS : SCHEME_MAP[config.scheme];
+    colorScheme = COLOR_TRAILS;   // the C's xrayswarm_init default (2); then auto-cycles
     rscDepth = 0;
     rbcDepth = 0;
     checkIndex = 0;
 
-    // 0 = the C's auto (-1 sentinel); otherwise clamp the user's count.
-    nbugs = config.count > 0 ? Math.min(MAX_BUGS, Math.max(2, Math.round(config.count))) : -1;
-    ntargets = config.targets > 0 ? Math.min(MAX_TARGETS, Math.max(1, Math.round(config.targets))) : -1;
-    trailLen = config.trail > 0 ? Math.min(MAX_TRAIL_LEN, Math.max(2, Math.round(config.trail))) : -1;
+    // -1 sentinels: initBugs() auto-randomizes counts/trail exactly like the C
+    // (the C never exposed these as resources).
+    nbugs = -1;
+    ntargets = -1;
+    trailLen = -1;
 
     initCMap();
     computeConstants();
     initBugs();
     computeColorIndices();
 
-    // Initial parameter shake (the C's init loop of random%5+5 small changes).
-    if (config.changeProb > 0) {
-      for (let i = irand(5) + 5; i >= 0; i--) randomSmallChange();
-    }
+    // Initial parameter shake (the C's init loop of random%5+5 small changes;
+    // the C gates this on changeProb > 0, which is always true at 0.08).
+    for (let i = irand(5) + 5; i >= 0; i--) randomSmallChange();
 
     // Pre-run a few steps so the very first drawn frame already shows short
     // trails (a single stored point draws nothing), then paint that frame.
@@ -694,8 +664,8 @@ export function start(canvas) {
     if (changeTimer === 0) changeTimer = now;
     if (now - changeTimer >= 500) {
       changeTimer = now;
-      if (frand(1) < config.changeProb) randomSmallChange();
-      if (frand(1) < config.changeProb * 0.3) randomBigChange();
+      if (frand(1) < CHANGE_PROB) randomSmallChange();
+      if (frand(1) < CHANGE_PROB * 0.3) randomBigChange();
     }
 
     if (stepped) draw();
