@@ -1,20 +1,31 @@
-// sierpinski.js — sierpinski packaged as a mountable module.
-// start(canvas) returns { stop, reinit, config, params }.
+// sierpinski.js -- sierpinski packaged as a mountable module.
+// start(canvas) returns { stop, pause, resume, reinit, config, params }.
 //
-// Port of xscreensaver's sierpinski.c by Desmond Daignault (1996).
-// https://www.jwz.org/xscreensaver/
+// Port of xscreensaver's sierpinski.c by Desmond Daignault (1996),
+// jwz-compatible since 1997. https://www.jwz.org/xscreensaver/
 //
-// The "chaos game": from a random point, repeatedly jump halfway toward one of
-// N randomly-placed vertices and plot where you land, colouring each dot by the
-// vertex it jumped to. 3 vertices (Triangle) draw the Sierpinski
-// triangle; 4 (Square) are the original's "4 corners" — the same midpoint game,
-// but a fourth attractor just fills a fuzzy square with no fractal structure.
-// The default, Random, rolls a
-// fresh 3-or-4 each round, as stock does with --size unset. Points accumulate
-// into a Uint32
-// pixel buffer (one blit per frame — point plotting, so a blit, not fillRect);
-// after `cycles` frames the dish clears and restarts with fresh vertices and
-// colours. (The first dots land "wrong" then focus — as intended.)
+// The "chaos game": pick N random vertices (3 = Sierpinski triangle, 4 = the
+// original's "4 corners" square fill), start at a random point, then repeatedly
+// jump HALFWAY toward a randomly-chosen vertex and plot where you land,
+// colouring each dot by the vertex it jumped to. With 3 vertices the Sierpinski
+// gasket emerges from the noise; with 4 the same midpoint game just fills a
+// fuzzy quad. Dots ACCUMULATE across frames; after `cycles` frames the window is
+// cleared and a fresh round begins with new vertices and colours. (Early dots
+// land "wrong" then "focus" -- this is correct behavior, per the .c.)
+//
+// Colour: the C defines BRIGHT_COLORS, so the xlockmore framework builds an
+// ncolors-entry (default 64) make_random_colormap in its BRIGHT variant --
+// random hue, high saturation/value, NOT a smooth rainbow. Each round picks
+// 3-or-4 colour INDICES spaced around that map with the exact NRAND offsets from
+// sierpinski.c. The map is built ONCE per run; only the indices are re-picked
+// each round. (MI_NPIXELS <= 2 falls back to white, the .c's mono path.)
+//
+// Rendering: points accumulate, so this uses the BLIT path -- a persistent
+// Uint32 ImageData buffer we plot into and putImageData once per frame (per the
+// perf playbook: points -> blit, not per-dot fillRect). Dots are round(dpr) px
+// so a point stays ~1 CSS px on retina; startover wipes the buffer.
+
+import { makeRandomColormapRGB } from './colormap.js';
 
 export const title = 'sierpinski';
 
@@ -27,44 +38,55 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
+  // Defaults/ranges mirror hacks/config/sierpinski.xml 1:1 (delay/count/cycles/
+  // ncolors). `corners` maps to the stock --size resource (3 or 4): the .c reads
+  // it via MI_SIZE, but it is NOT a slider in the xml GUI, so it is exposed here
+  // as a Shape select whose default (Random) reproduces the stock fallback
+  // (size unset -> (LRAND() & 1) + 3, picked once at init).
   const config = {
-    corners: 0,    // 0 = random each round (default); 3 = triangle; 4 = square
-    count: 2000,   // points plotted per frame
-    cycles: 150,   // frames before the dish clears and restarts
-    delay: 100,    // ms per frame (orig 400; halved from 50 for calmer cycling)
+    delay: 400000,   // us between frames (--delay; xml default 400000)
+    corners: 0,      // 0 = Random 3-or-4 at init; 3 = Triangle; 4 = Square (--size)
+    count: 2000,     // points plotted per frame (--count, "Points")
+    cycles: 100,     // frames before the window clears and restarts (--cycles)
+    ncolors: 64,     // colormap size (--ncolors); <= 2 draws white (mono)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 400, step: 1, default: 100, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 1000000, step: 10000, default: 400000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'corners', label: 'Shape', type: 'select', options: [{ label: 'Random', value: 0 }, { label: 'Triangle', value: 3 }, { label: 'Square', value: 4 }], default: 0, live: false },
-    { key: 'count', label: 'Points / frame', type: 'range', min: 200, max: 8000, step: 100, default: 2000, live: true },
-    { key: 'cycles', label: 'Density', type: 'range', min: 20, max: 500, step: 10, default: 150, live: true },
+    { key: 'count', label: 'Points', type: 'range', min: 10, max: 10000, step: 10, default: 2000, lowLabel: 'few', highLabel: 'many', live: true },
+    { key: 'cycles', label: 'Timeout', type: 'range', min: 0, max: 1000, step: 10, default: 100, lowLabel: 'small', highLabel: 'large', live: true },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   const BLACK = 0xFF000000;
+  const WHITE = 0xFFFFFFFF;
 
   let W, H, dot;
   let imageData, pixels;
-  let vx, vy, colorsU;
+  let palette;                 // Uint32 bright colormap (null when mono)
+  let vx, vy, colorsU;         // vertices + per-vertex packed plot colour
   let px, py, time, activeCorners;
 
-  // HSL (h deg, s/l in [0,1]) packed little-endian 0xAABBGGRR for the buffer.
-  function hslToUint(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const hp = h / 60;
-    const x = c * (1 - Math.abs(hp % 2 - 1));
-    let r = 0, g = 0, b = 0;
-    if (hp < 1)      { r = c; g = x; }
-    else if (hp < 2) { r = x; g = c; }
-    else if (hp < 3) { g = c; b = x; }
-    else if (hp < 4) { g = x; b = c; }
-    else if (hp < 5) { r = x; b = c; }
-    else             { r = c; b = x; }
-    const m = l - c / 2;
-    const R = Math.round((r + m) * 255);
-    const G = Math.round((g + m) * 255);
-    const B = Math.round((b + m) * 255);
-    return ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0;
+  // NRAND(n): integer in [0, n).
+  function nrand(n) {
+    return Math.floor(Math.random() * n);
+  }
+
+  // Pack an [r,g,b] 0..255 triple into 0xAABBGGRR (little-endian ImageData).
+  function pack(rgb) {
+    return (0xff << 24 | rgb[2] << 16 | rgb[1] << 8 | rgb[0]) >>> 0;
+  }
+
+  // make_random_colormap(bright_p = True) via colormap.js -- ncolors INDEPENDENT
+  // bright colours (random hue, sat 30-100%, value 66-100%), NOT a rainbow ramp.
+  // Built once per run (the C builds the colormap at startup; startover only
+  // re-picks indices). Re-rolled each run, so Math.random's order is fine -- only
+  // the distribution must match the C.
+  function buildPalette(ncolors) {
+    const rgb = makeRandomColormapRGB(ncolors, true);
+    palette = new Uint32Array(ncolors);
+    for (let i = 0; i < ncolors; i++) palette[i] = pack(rgb[i]);
   }
 
   function plotDot(x, y, color) {
@@ -79,60 +101,64 @@ export function start(canvas) {
     }
   }
 
-  // New round: random vertices + spread vivid colours, random start point, wipe
-  // the buffer. (The clear only shows on the next blit, so the finished fractal
-  // is visible for one frame first, matching the original's same-frame clear.)
+  // startover() (sierpinski.c): re-pick the 3/4 plot-colour indices spaced around
+  // the colormap, scatter the vertices fully at random across the window, pick a
+  // random start point, reset the frame counter, and clear the buffer.
   function startover() {
-    // 3 = triangle, 4 = square; the "Random" default (any other value) rolls a
-    // fresh 3-or-4 each round. step() reads the resolved count via activeCorners.
-    activeCorners = (config.corners === 3 || config.corners === 4) ? config.corners : (Math.random() < 0.5 ? 3 : 4);
     const n = activeCorners;
-    const base = Math.random() * 360;
-    colorsU = [];
-    for (let i = 0; i < n; i++) {
-      const h = (base + i * 360 / n + (Math.random() * 30 - 15) + 360) % 360;
-      colorsU[i] = hslToUint(h, 1, 0.55);
+    const np = palette ? palette.length : 2;   // MI_NPIXELS
+
+    colorsU = new Array(n);
+    if (np > 2) {
+      // Exact NRAND colour-index spacing from sierpinski.c (3- and 4-corner
+      // variants); idx[] are indices into the bright colormap. Integer division
+      // matches C's `np / 7`, `2 * np / 7`, etc. via `| 0`.
+      const idx = new Array(n);
+      if (n === 3) {
+        idx[0] = nrand(np);
+        idx[1] = (idx[0] + ((np / 7) | 0) + nrand(((2 * np / 7) | 0) + 1)) % np;
+        idx[2] = (idx[0] + ((4 * np / 7) | 0) + nrand(((2 * np / 7) | 0) + 1)) % np;
+      } else {
+        idx[0] = nrand(np);
+        idx[1] = (idx[0] + ((np / 7) | 0) + nrand(((np / 7) | 0) + 1)) % np;
+        idx[2] = (idx[0] + ((3 * np / 7) | 0) + nrand(((np / 7) | 0) + 1)) % np;
+        idx[3] = (idx[0] + ((5 * np / 7) | 0) + nrand(((np / 7) | 0) + 1)) % np;
+      }
+      for (let i = 0; i < n; i++) colorsU[i] = palette[idx[i]];
+    } else {
+      // MI_NPIXELS <= 2: draw every point white (the .c's mono path).
+      for (let i = 0; i < n; i++) colorsU[i] = WHITE;
     }
 
-    // N vertices inset from the edge, with a minimum pairwise spread so the set
-    // isn't a degenerate sliver (a small deviation from the C's fully-random
-    // vertices). 3 vertices draw the Sierpinski triangle; a 4th attractor turns
-    // the same midpoint game into the original's confusing square fill.
-    const margin = Math.min(W, H) * 0.06;
-    const minDist2 = (Math.min(W, H) * 0.28) ** 2;
-    for (let tries = 0; ; tries++) {
-      vx = [];
-      vy = [];
-      for (let i = 0; i < n; i++) {
-        vx[i] = margin + Math.random() * (W - 2 * margin) | 0;
-        vy[i] = margin + Math.random() * (H - 2 * margin) | 0;
-      }
-      let ok = true;
-      for (let i = 0; i < n && ok; i++) {
-        for (let j = i + 1; j < n; j++) {
-          const dx = vx[i] - vx[j], dy = vy[i] - vy[j];
-          if (dx * dx + dy * dy < minDist2) { ok = false; break; }
-        }
-      }
-      if (ok || tries >= 40) break;
+    // Fully-random vertices across the whole window, exactly as the .c
+    // (NRAND(width)/NRAND(height)) -- no margin inset, no min-distance retry.
+    vx = new Array(n);
+    vy = new Array(n);
+    for (let i = 0; i < n; i++) {
+      vx[i] = nrand(W);
+      vy[i] = nrand(H);
     }
-    px = Math.random() * W | 0;
-    py = Math.random() * H | 0;
+    px = nrand(W);
+    py = nrand(H);
     time = 0;
     pixels.fill(BLACK);
   }
 
   function step() {
     const count = Math.max(1, Math.round(config.count));
+    const cycles = Math.max(1, Math.round(config.cycles));
     const n = activeCorners;
     for (let i = 0; i < count; i++) {
-      const v = Math.random() * n | 0;
+      const v = nrand(n);
       px = (px + vx[v]) >> 1;
       py = (py + vy[v]) >> 1;
       plotDot(px, py, colorsU[v]);
     }
+    // ++time >= cycles -> clear + new round (sierpinski.c). The clear lands in
+    // THIS frame's single blit, so the reset frame shows black -- matching the
+    // .c's MI_CLEARWINDOW, which blanks the window at the end of the reset frame.
+    if (++time >= cycles) startover();
     ctx.putImageData(imageData, 0, 0);
-    if (++time >= Math.max(1, Math.round(config.cycles))) startover();
   }
 
   function init() {
@@ -142,7 +168,21 @@ export function start(canvas) {
     H = canvas.height;
     imageData = ctx.createImageData(W, H);
     pixels = new Uint32Array(imageData.data.buffer);
+
+    // corners resolved ONCE here: the .c sets sp->corners in init_sierpinski and
+    // never changes it (startover keeps the same shape). Random (0, or anything
+    // not 3/4) -> a fresh 3-or-4 per init, like the stock size-unset fallback.
+    activeCorners = (config.corners === 3 || config.corners === 4)
+      ? config.corners
+      : (nrand(2) + 3);
+
+    // Colormap built once per init from ncolors; <= 2 -> mono (white, palette null).
+    const nc = Math.max(1, Math.min(255, Math.round(config.ncolors)));
+    if (nc > 2) buildPalette(nc);
+    else palette = null;
+
     startover();
+    ctx.putImageData(imageData, 0, 0);   // show the cleared (black) window at once
   }
 
   function resize() {
@@ -154,6 +194,9 @@ export function start(canvas) {
     init();
   }
 
+  // rAF lag-accumulator paced by config.delay (us): run one step() per delay,
+  // banking leftover time so the pace is identical at any refresh rate. (The
+  // stock delay is 400000 us, ~2.5 fps -- already calm, so no overhead fudge.)
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -164,12 +207,12 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delay = Math.max(1, config.delay);
-    lag = Math.min(lag, delay * MAX_CATCHUP_STEPS);
+    const delayMs = Math.max(1, config.delay / 1000);
+    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
     let steps = 0;
-    while (lag >= delay && steps < MAX_CATCHUP_STEPS) {
+    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
       step();
-      lag -= delay;
+      lag -= delayMs;
       steps++;
     }
 
@@ -187,7 +230,7 @@ export function start(canvas) {
     },
     pause() { cancelAnimationFrame(rafId); rafId = 0; },
     resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
-    reinit: init,   // new buffer + fresh round with the current config
+    reinit: init,   // new buffer + colormap + fresh round with the current config
     config,
     params,
   };
