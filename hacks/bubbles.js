@@ -1,27 +1,43 @@
 // bubbles.js — bubbles packaged as a mountable module.
 // start(canvas) returns { stop, pause, resume, reinit, config, params }.
 //
-// Port of xscreensaver's bubbles.c (James Macnicol, 1995-1996).
-// https://www.jwz.org/xscreensaver/
+// Port of xscreensaver's bubbles.c + bubbles-default.c (James Macnicol,
+// 1995-1996; default image set by Jamie Zawinski). https://www.jwz.org/xscreensaver/
 //
-// Soft-drink / boiling-water fizz: small bubbles appear, rise with buoyancy,
-// and when two touch they MERGE — their areas add, the survivor moves to the
-// area-weighted mean of the two centres, and its radius grows to match the new
-// area. A bubble pops when it rises off the top edge (rise mode), or — in float
-// mode — when a merge would push it past the maximum size. The C divides the
-// screen into a square mesh and only searches a bubble's own cell plus the eight
-// neighbours for collisions; we keep that spatial mesh (rebuilt each step).
+// Frying-pan / soft-drink fizz: tiny bubbles appear all over the screen and,
+// where they touch, MERGE into bigger ones (areas add); big bubbles eventually
+// pop. Area — not radius — is the conserved quantity: calc_bubble_area(r) =
+// 10*PI*r^2 (the 2D path), so a bubble's radius follows from its area.
 //
-// We port ONLY the procedural "simple" / drawn-circle path. The default fancy
-// mode blits a big embedded PNG sprite per bubble (the bulk of the 1467-line C
-// file is that bitmap); a browser has no use for it, so it is dropped — see the
-// .md. Each circle is drawn as a radial-gradient disc so the highlight reads as
-// a rounded 3D bubble.
+// TWO RENDER MODES, faithful to the C:
+//  - FANCY (default): each bubble is a pre-rendered 3D-shaded sphere PNG, sized
+//    to one of 11 fixed steps. bubbles-default.c picks ONE of four sprite sets
+//    (blood / blue / glass / jade) at random per run (random() % 4); each set is
+//    11 sprites of fixed pixel sizes (10..72 px). The sprite's own size sets the
+//    bubble radius (radius = max(w,h)/2), and a 12th EXTRA step is extrapolated
+//    beyond the largest sprite as the pop ceiling so the biggest bubble "hangs
+//    around and doesn't pop immediately". We bundle all four sets under
+//    hacks/images/bubbles/ and blit the step-appropriate sprite (its alpha is the
+//    round mask). This is the demo-video look.
+//  - SIMPLE (-simple): plain white (foreground) circle OUTLINES (XDrawArc) on
+//    black, with the radius a screen fraction (0.006 .. 0.045 of min(W,H)).
 //
-// Rendering: filled gradient circles via ctx.arc — canvas VECTOR ops, FULL
-// REPAINT each frame (clear to black, draw every bubble). The C draws/erases
-// each bubble incrementally with X11 GCs; a straight clear-and-redraw is the
-// canvas equivalent and avoids erase "turds".
+// MOTION IS INSERT-DRIVEN, exactly as in the C. There is no "move every bubble"
+// pass: motion happens only inside insert_new_bubble(), run once per spawned
+// bubble (bubbles_draw spawns 5 per frame). A new bubble touching nothing sits
+// still; one that touches merges (cascading) and then — in rise/drop mode only —
+// travels one droppage step, re-checks, and keeps going while it finds bubbles to
+// eat, or (when near maximum size) while a coin-flip lets it. In FLOAT mode (the
+// xml default) there is no directional travel: bubbles only appear, merge, and
+// pop when a merge would exceed the maximum area. So most of the field is static,
+// with the occasional large bubble making a run across the screen.
+//
+// Collision search uses the C's square mesh: a bubble is bucketed into a cell of
+// side (2*largest_radius + 3), and get_closest_bubble only scans the bubble's own
+// cell plus the eight neighbours; the mesh is maintained incrementally.
+//
+// We CLEAR AND REDRAW every bubble each frame (the C draws/erases incrementally
+// with X11 GCs); a full repaint on a double-buffered canvas is the equivalent.
 
 export const title = 'bubbles';
 
@@ -31,325 +47,431 @@ export const info = {
   year: 1996,
 };
 
+// The four pre-rendered sprite sets (bubbles-default.c), each 11 numbered PNGs.
+const BUBBLE_SETS = ['blood', 'blue', 'glass', 'jade'];
+const SPRITES_PER_SET = 11;
+function bubbleSpriteURL(set, i) {
+  return new URL('./images/bubbles/' + set + i + '.png', import.meta.url).href;
+}
+
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/bubbles.xml. `delay` is a touch calmer
-  // than the stock 10000 us by feel. `mode` is the xml's "gravity" select; we
-  // default to "rise" (the xml defaults to "float") because rising fizz is the
-  // nicer look and matches this hack's classic soft-drink description. The
-  // stock UI's "simple" toggle is gone (we only draw circles), and "broken"
-  // (don't erase popped bubbles) is meaningless under a full repaint — both are
-  // dropped; `spacing`-free `spawnRate`, `sizeScale`, and `ncolors` are added.
+  // Defaults/ranges mirror hacks/config/bubbles.xml so the config box maps 1:1
+  // to the original: simple (--simple, default off = fancy sprites), delay
+  // (frame rate, inverted slider), mode (the xml's "gravity" select, default
+  // float), trails. The fancy-only "broken" toggle ("don't hide popped bubbles")
+  // is dropped — it is meaningless under a full repaint — and "showfps" is a
+  // framework control. The C HARD-CODES 5 new bubbles per frame, so there is
+  // deliberately no spawn-rate / size / colour slider.
+  //
+  // delay: the xml stock is 10000us (nominal ~100fps). xscreensaver's effective
+  // frame rate is roughly HALF nominal because of per-frame overhead (the
+  // project's frame-rate calibration); 20000us here reproduces the C's effective
+  // 5-bubbles-per-frame cadence instead of running about 2x too fast. It is a
+  // pace knob, not a fidelity item — the slider exposes the full xml range.
   const config = {
-    delay: 32000,      // \u00B5s between steps (--delay; stock 10000)
-    mode: 'rise',      // 'rise' | 'float' | 'drop' (--mode)
-    spawnRate: 3,      // new bubbles per step (the C adds 5/frame)
-    sizeScale: 1,      // multiplies the screen-derived min/max radius
-    ncolors: 64,       // size of the rainbow hue cycle
-    trails: false,     // big rising bubbles shed a small one behind (--trails)
+    simple: false,     // --simple: draw circles instead of bubble images
+    delay: 20000,      // µs between steps (--delay; xml stock 10000, see above)
+    mode: 'float',     // 'rise' | 'float' | 'drop' (--mode; xml default 'float')
+    trails: false,     // big bubbles shed a small one behind them (--trails)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 32000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'mode', label: 'Motion', type: 'select', default: 'rise', live: true, options: [
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'mode', label: 'Motion', type: 'select', default: 'float', live: true, options: [
         { value: 'rise', label: 'Bubbles rise' },
         { value: 'float', label: 'Bubbles float' },
         { value: 'drop', label: 'Bubbles fall' },
       ] },
-    { key: 'spawnRate', label: 'Bubble rate', type: 'range', min: 1, max: 20, step: 1, default: 3, lowLabel: 'few', highLabel: 'many', live: true },
-    { key: 'sizeScale', label: 'Bubble size', type: 'range', min: 0.4, max: 3, step: 0.1, default: 1, lowLabel: 'small', highLabel: 'large', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'simple', label: 'Draw circles instead of bubble images', type: 'checkbox', default: false, live: false },
     { key: 'trails', label: 'Leave trails', type: 'checkbox', default: false, live: true },
   ];
 
   // Constants from bubbles.c / bubbles.h.
-  // calc_bubble_area(r) = 10*PI*r^2 (the 2D path); area is monotonic in r so the
-  // C's radius lookup table is exactly r = sqrt(area / AREA_K). MAX_DROPPAGE is
-  // the largest rise step (px) the C gives the biggest bubble; we tune the rise
-  // range a little calmer (MIN_RISE..MAX_RISE) and add a small floor so the
-  // smallest bubbles still drift instead of freezing (the C gives radius==min a
-  // droppage of 0). TOUCH_LEEWAY is the C's "+2" so circles never quite overlap.
-  const AREA_K = 10 * Math.PI;
-  const MIN_RISE = 1.5;
-  const MAX_RISE = 12;       // stock MAX_DROPPAGE is 20; calmer here
-  const TOUCH_LEEWAY = 2;
-  const MERGE_GUARD = 100000; // belt-and-braces cap on a single merge cascade
+  const AREA_K = 10 * Math.PI;     // calc_bubble_area(r) = 10*PI*r^2
+  const MAX_DROPPAGE = 20;         // bubbles.h
+  const TOUCH_LEEWAY = 2;          // the C's "+2" so circles never quite overlap
 
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
-  let minR, maxR;     // bubble radius range, device px (screen-fraction sized)
-  let minArea, maxArea;
-  let meshLength;     // cell side, device px
-  let meshW, meshH;   // mesh dimensions in cells
-  let meshCells;      // meshW * meshH
-  let mesh;           // per-cell array of bubble indices (rebuilt each step)
-  let maxBubbles;     // hard cap so the pool can never overflow
-  let bubbles;        // { x, y, r, area, hue, dead }
 
-  // frand(x) = uniform float in [0, x), like the C.
+  // Simple-mode sizing (screen-fraction radii).
+  let minR, maxR, minArea, maxArea, nearMaxArea;
+
+  // Fancy-mode sizing (fixed sprite steps). stepImages[i] is the sprite for
+  // step i (0..10); stepRadii / stepAreas include an extra index 11 (the
+  // extrapolated ceiling, no sprite); stepDroppage is per draw step (0..10).
+  let loadedImages = null;   // Image[] for the chosen set (unsorted, as loaded)
+  let stepImages, stepRadii, stepAreas, stepDroppage, maxStep, ceilingArea;
+
+  let meshLength, meshW, meshH, meshCells, mesh, count, cap;
+  let drop, dropDir;         // st->drop / st->drop_dir (float = no movement)
+  let ready = false;         // sim runnable? (simple = at once; fancy = once decoded)
+  let booting = false;
+
+  // frand(x) = uniform float in [0, x), like the C's random() % x.
   function frand(x) {
     return Math.random() * x;
   }
 
-  function clamp(v, lo, hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-  }
-
-  // Invert calc_bubble_area, clamped to the radius range.
+  // Invert calc_bubble_area, clamped to the simple-mode radius range.
   function radiusFromArea(a) {
-    return clamp(Math.sqrt(a / AREA_K), minR, maxR);
+    const r = Math.sqrt(a / AREA_K);
+    return r < minR ? minR : r > maxR ? maxR : r;
   }
 
-  // How far a bubble of radius r rises per step (device px), bigger = faster.
-  function risePixels(r) {
-    const t = clamp((r - minR) / (maxR - minR), 0, 1);
-    return (MIN_RISE + (MAX_RISE - MIN_RISE) * t) * S;
+  // st->drop / st->drop_dir, derived from the mode (live). float: no movement.
+  function applyMode() {
+    if (config.mode === 'rise') { drop = true; dropDir = -1; }
+    else if (config.mode === 'drop') { drop = true; dropDir = 1; }
+    else { drop = false; dropDir = -1; }   // float
   }
 
-  function randomHue() {
-    const nc = Math.max(1, Math.round(config.ncolors));
-    return Math.floor(Math.random() * nc) * 360 / nc;
+  // --- per-mode bubble behaviour -------------------------------------------
+  // Is the bubble at (near) maximum size? simple: area >= areas[max-1];
+  // fancy: step >= the largest draw step. Gates trails and the keep-travelling
+  // coin-flip, exactly as the C does per mode.
+  function nearMax(b) {
+    return config.simple ? (b.area >= nearMaxArea) : (b.step >= maxStep);
   }
 
-  // The mesh cell holding (x, y); clamped so it can never index out of bounds
-  // even if a bubble is sitting exactly on an edge.
-  function cellOf(x, y) {
-    const cx = clamp(Math.floor(x / meshLength), 0, meshW - 1);
-    const cy = clamp(Math.floor(y / meshLength), 0, meshH - 1);
+  // bubble_droppages[r] (simple, ramped 0..MAX_DROPPAGE by radius) /
+  // step_pixmaps[step]->droppage (fancy, MAX_DROPPAGE*step/11). Device px (S).
+  function droppageOf(b) {
+    if (config.simple) return MAX_DROPPAGE * ((b.radius - minR) / (maxR - minR)) * S;
+    return stepDroppage[b.step];
+  }
+
+  // Recompute radius (and, fancy, step) after an area change. Steps/radii only
+  // grow (the C never shrinks a bubble).
+  function growToArea(b) {
+    if (config.simple) {
+      b.radius = radiusFromArea(b.area);
+    } else {
+      while (b.step < maxStep && b.area > stepAreas[b.step + 1]) b.step++;
+      b.radius = stepRadii[b.step];
+    }
+  }
+
+  // --- mesh (spatial hash) --------------------------------------------------
+  function meshIndex(x, y) {
+    let cx = Math.floor(x / meshLength);
+    let cy = Math.floor(y / meshLength);
+    if (cx < 0) cx = 0; else if (cx >= meshW) cx = meshW - 1;
+    if (cy < 0) cy = 0; else if (cy >= meshH) cy = meshH - 1;
     return cy * meshW + cx;
   }
 
-  // Add one bubble. `initial` seeds the opening field (spread over the whole
-  // screen, varied sizes) so frame 1 already looks mid-rise; ongoing spawns
-  // start at min radius near the entry edge (bottom for rise, top for drop,
-  // anywhere for float).
-  function spawnBubble(initial) {
-    let x, y, r;
-    if (initial) {
-      x = frand(W);
-      y = frand(H);
-      r = minR + frand(maxR - minR);
-    } else {
-      r = minR;
-      x = frand(W);
-      if (config.mode === 'rise') {
-        y = H - 1 - frand(maxR * 2);
-      } else if (config.mode === 'drop') {
-        y = frand(maxR * 2);
-      } else {
-        y = frand(H);
-      }
-    }
-    bubbles.push({
-      x: clamp(x, 0, W - 1),
-      y: clamp(y, 0, H - 1),
-      r,
-      area: AREA_K * r * r,
-      hue: randomHue(),
-      dead: false,
-    });
+  function meshAdd(b) {
+    b.cellIndex = meshIndex(b.x, b.y);
+    mesh[b.cellIndex].push(b);
   }
 
-  // A big rising bubble occasionally sheds a small one behind it (leave_trail).
-  function leaveTrail(b, dir, out) {
-    const y = clamp(b.y + (b.r + 10 * S) * dir, 0, H - 1);
-    out.push({
-      x: b.x,
-      y,
-      r: minR,
-      area: minArea,
-      hue: b.hue,
-      dead: false,
-    });
+  function meshRemove(b) {
+    const cellArr = mesh[b.cellIndex];
+    const i = cellArr.indexOf(b);
+    if (i >= 0) cellArr.splice(i, 1);
   }
 
-  // Bucket every live bubble into its mesh cell. Rebuilt from scratch each step
-  // (O(n)), which sidesteps the C's incremental list bookkeeping on every move.
-  function buildMesh() {
-    mesh = new Array(meshCells);
-    for (let i = 0; i < meshCells; i++) mesh[i] = [];
-    for (let i = 0; i < bubbles.length; i++) {
-      const b = bubbles[i];
-      if (b.dead) continue;
-      mesh[cellOf(b.x, b.y)].push(i);
+  // Re-bucket a bubble after it has moved (delete_bubble_in_mesh KEEP + add).
+  function reindex(b) {
+    const mi = meshIndex(b.x, b.y);
+    if (mi !== b.cellIndex) {
+      meshRemove(b);
+      b.cellIndex = mi;
+      mesh[mi].push(b);
     }
   }
 
-  // Closest bubble touching `b`, searching only its cell + 8 neighbours
-  // (get_closest_bubble). touchdist = rA + rB + leeway, like the C's "+2".
-  function findClosestTouching(b) {
-    const cx = clamp(Math.floor(b.x / meshLength), 0, meshW - 1);
-    const cy = clamp(Math.floor(b.y / meshLength), 0, meshH - 1);
-    let best = null;
-    let bestD2 = Infinity;
+  // new_bubble: smallest step at a RANDOM position over the WHOLE screen (this
+  // is the C — the entry edge plays no part; "rise"/"float"/"drop" only affect
+  // motion, never where bubbles appear). Adds to the mesh and bumps the count.
+  function spawnAt(x, y) {
+    const b = config.simple
+      ? { x, y, radius: minR, area: minArea, step: 0, cellIndex: -1 }
+      : { x, y, radius: stepRadii[0], area: stepAreas[0], step: 0, cellIndex: -1 };
+    meshAdd(b);
+    count++;
+    return b;
+  }
+
+  function killBubble(b) {
+    meshRemove(b);
+    count--;
+  }
+
+  // get_closest_bubble: nearest OTHER bubble touching b, searching b's cell + 8
+  // neighbours; touchdist = r_a + r_b + 2 (the C's leeway). Squared throughout.
+  function getClosestBubble(b) {
+    let cx = Math.floor(b.x / meshLength);
+    let cy = Math.floor(b.y / meshLength);
+    if (cx < 0) cx = 0; else if (cx >= meshW) cx = meshW - 1;
+    if (cy < 0) cy = 0; else if (cy >= meshH) cy = meshH - 1;
+    let rv = null;
+    let closest2 = Infinity;
     for (let dy = -1; dy <= 1; dy++) {
       const ny = cy + dy;
       if (ny < 0 || ny >= meshH) continue;
       for (let dx = -1; dx <= 1; dx++) {
         const nx = cx + dx;
         if (nx < 0 || nx >= meshW) continue;
-        const cell = mesh[ny * meshW + nx];
-        for (let k = 0; k < cell.length; k++) {
-          const o = bubbles[cell[k]];
-          if (o === b || o.dead) continue;
+        const cellArr = mesh[ny * meshW + nx];
+        for (let k = 0; k < cellArr.length; k++) {
+          const o = cellArr[k];
+          if (o === b) continue;
           const ex = o.x - b.x;
           const ey = o.y - b.y;
           const sep2 = ex * ex + ey * ey;
-          const td = o.r + b.r + TOUCH_LEEWAY * S;
-          if (sep2 <= td * td && sep2 < bestD2) {
-            best = o;
-            bestD2 = sep2;
+          const td = o.radius + b.radius + TOUCH_LEEWAY * S;
+          if (sep2 <= td * td && sep2 < closest2) {
+            rv = o;
+            closest2 = sep2;
           }
         }
       }
     }
-    return best;
+    return rv;
   }
 
-  // Two touching bubbles merge (merge_bubbles + bubble_eat): the bigger eats the
-  // smaller (a tie is broken at random). The survivor takes the area-weighted
-  // mean position, its area gains the food's area, and its radius is recomputed.
-  // In rise/drop mode the area is clamped at the maximum (the bubble keeps going
-  // until it leaves the screen); in float mode an over-max merge pops it.
-  // Returns the surviving bubble, or null if it popped.
-  function mergePair(a, o) {
-    let diner, food;
-    if (a.area > o.area) {
-      diner = a;
-      food = o;
-    } else if (a.area < o.area) {
-      diner = o;
-      food = a;
-    } else if (Math.random() < 0.5) {
-      diner = a;
-      food = o;
-    } else {
-      diner = o;
-      food = a;
-    }
-
+  // bubble_eat: the diner moves to the area-weighted mean of the two centres,
+  // gains the food's area, and the food is deleted. In rise/drop mode an over-max
+  // area is CLAMPED at the ceiling (the bubble keeps going until it leaves the
+  // screen); in float mode an over-ceiling merge POPS the diner. Returns true if
+  // the diner survives.
+  function bubbleEat(diner, food) {
     const total = diner.area + food.area;
     diner.x = (diner.x * diner.area + food.x * food.area) / total;
     diner.y = (diner.y * diner.area + food.y * food.area) / total;
     diner.area = total;
-    food.dead = true;
+    killBubble(food);
 
-    if (config.mode === 'float') {
-      if (diner.area > maxArea) {
-        diner.dead = true;
-        return null;
+    const ceiling = config.simple ? maxArea : ceilingArea;
+    if (drop) {
+      if (diner.area > ceiling) diner.area = ceiling;
+    } else {
+      if (diner.area > ceiling) {
+        killBubble(diner);
+        return false;
       }
-    } else if (diner.area > maxArea) {
-      diner.area = maxArea;
     }
-    diner.r = radiusFromArea(diner.area);
-    return diner;
+    growToArea(diner);
+    reindex(diner);
+    return true;
   }
 
-  // One simulation step: spawn, move (+ off-screen pop), then merge.
+  // merge_bubbles: the bigger eats the smaller (a tie is broken at random).
+  // Returns 1 (b1 ate and survived), 2 (b2 ate and survived), or 0 (popped).
+  function mergeBubbles(b1, b2) {
+    const s1 = b1.area;
+    const s2 = b2.area;
+    if (s1 > s2) return bubbleEat(b1, b2) ? 1 : 0;
+    if (s1 < s2) return bubbleEat(b2, b1) ? 2 : 0;
+    if (Math.random() < 0.5) return bubbleEat(b1, b2) ? 1 : 0;
+    return bubbleEat(b2, b1) ? 2 : 0;
+  }
+
+  // leave_trail: a near-max travelling bubble drops a fresh smallest bubble
+  // BEHIND it (y - (r + 10)*dir), then runs the full insert cascade on it.
+  function leaveTrail(b) {
+    if (count >= cap) return;
+    const t = spawnAt(b.x, b.y - (b.radius + 10 * S) * dropDir);
+    insertNewBubble(t);
+  }
+
+  // drop_bubble: shift one droppage step; pop (delete, return -1) if the centre
+  // runs off the top/bottom edge; otherwise re-cell and maybe leave a trail.
+  function dropBubble(b) {
+    b.y += droppageOf(b) * dropDir;
+    if (b.y < 0 || b.y > H) {
+      killBubble(b);
+      return -1;
+    }
+    reindex(b);
+    if (config.trails && nearMax(b) && Math.random() < 0.5) {
+      leaveTrail(b);
+    }
+    return 0;
+  }
+
+  // insert_new_bubble: resolve a freshly added bubble. If it touches nothing it
+  // stays put. Otherwise: merge every touching neighbour (cascading); then, in
+  // rise/drop mode, travel one step and repeat while there is something to eat,
+  // continuing across empty space only if near-max-size and a coin-flip wins.
+  function insertNewBubble(nb) {
+    let nextbub = nb;
+    let touch = getClosestBubble(nextbub);
+    if (!touch) return;
+
+    for (;;) {
+      // Merge all bubbles currently touching nextbub.
+      while (touch) {
+        const r = mergeBubbles(nextbub, touch);
+        if (r === 2) nextbub = touch;       // touch ate nextbub and survived
+        else if (r === 0) nextbub = null;   // somebody exploded
+        // r === 1: nextbub ate touch and survived (unchanged)
+        if (!nextbub) break;
+        touch = getClosestBubble(nextbub);
+      }
+      if (!nextbub) break;
+
+      // Shift down/up one step (rise/drop only). Stop if it runs off-screen.
+      if (drop) {
+        if (dropBubble(nextbub) === -1) break;
+      }
+
+      touch = getClosestBubble(nextbub);
+      if (!touch) {
+        // Big bubbles keep travelling across empty space ~half the time.
+        if (drop && nearMax(nextbub) && Math.random() < 0.5) continue;
+        break;
+      }
+    }
+  }
+
+  // One frame of bubbles_draw: spawn 5 new smallest bubbles at random positions
+  // and run each through the insert cascade.
   function step() {
-    // 1. Spawn, never past the cap (so the pool can never overflow).
-    const rate = Math.max(1, Math.round(config.spawnRate));
-    for (let i = 0; i < rate && bubbles.length < maxBubbles; i++) {
-      spawnBubble(false);
+    applyMode();
+    for (let i = 0; i < 5 && count < cap; i++) {
+      insertNewBubble(spawnAt(frand(W), frand(H)));
     }
-
-    // 2. Rise/drop and pop anything that has left the screen. (float = no move.)
-    const dir = config.mode === 'rise' ? -1 : config.mode === 'drop' ? 1 : 0;
-    if (dir !== 0) {
-      const trails = [];
-      const n = bubbles.length;
-      for (let i = 0; i < n; i++) {
-        const b = bubbles[i];
-        if (b.dead) continue;
-        b.y += risePixels(b.r) * dir;
-        if (b.y < -b.r || b.y > H + b.r) {
-          b.dead = true;
-          continue;
-        }
-        if (config.trails && b.r >= maxR * 0.95 && Math.random() < 0.5 &&
-            bubbles.length + trails.length < maxBubbles) {
-          leaveTrail(b, dir, trails);
-        }
-      }
-      for (let i = 0; i < trails.length; i++) bubbles.push(trails[i]);
-    }
-
-    // 3. Merge every touching pair, cascading like insert_new_bubble: each merge
-    //    kills one bubble, so a cascade is finite (the guard is pure paranoia).
-    buildMesh();
-    for (let i = 0; i < bubbles.length; i++) {
-      const b = bubbles[i];
-      if (b.dead) continue;
-      let cur = b;
-      let closest = findClosestTouching(cur);
-      let guard = 0;
-      while (closest && guard++ < MERGE_GUARD) {
-        const survivor = mergePair(cur, closest);
-        if (survivor === null) break;
-        cur = survivor;
-        closest = findClosestTouching(cur);
-      }
-    }
-
-    // 4. Drop the dead in one pass.
-    bubbles = bubbles.filter((b) => !b.dead);
   }
 
-  // Full repaint: clear, then draw each bubble as a radial-gradient disc with an
-  // offset highlight (upper-left) so it reads as a rounded 3D bubble, plus a
-  // thin rim. The canvas is double-buffered, so this is flicker-free.
+  // Full repaint. Fancy: blit the step-appropriate sprite centred on each
+  // bubble (its alpha is the round mask). Simple: stroke white circle outlines
+  // (the C's XDrawArc), all in one shared path + stroke.
   function draw() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
-    const rim = Math.max(1, 1.2 * S);
-    ctx.lineWidth = rim;
-    for (let i = 0; i < bubbles.length; i++) {
-      const b = bubbles[i];
-      const h = b.hue;
-      const hx = b.x - b.r * 0.35;
-      const hy = b.y - b.r * 0.35;
-      const grad = ctx.createRadialGradient(hx, hy, b.r * 0.05, b.x, b.y, b.r);
-      grad.addColorStop(0, `hsla(${h}, 100%, 92%, 0.95)`);
-      grad.addColorStop(0.25, `hsla(${h}, 95%, 70%, 0.5)`);
-      grad.addColorStop(0.85, `hsla(${h}, 90%, 50%, 0.18)`);
-      grad.addColorStop(1, `hsla(${h}, 85%, 45%, 0.06)`);
-      ctx.fillStyle = grad;
+    if (config.simple) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = Math.max(1, Math.round(S));
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = `hsla(${h}, 80%, 80%, 0.55)`;
+      for (let c = 0; c < meshCells; c++) {
+        const cellArr = mesh[c];
+        for (let k = 0; k < cellArr.length; k++) {
+          const b = cellArr[k];
+          ctx.moveTo(b.x + b.radius, b.y);
+          ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        }
+      }
       ctx.stroke();
+    } else {
+      for (let c = 0; c < meshCells; c++) {
+        const cellArr = mesh[c];
+        for (let k = 0; k < cellArr.length; k++) {
+          const b = cellArr[k];
+          const r = b.radius;
+          ctx.drawImage(stepImages[b.step], b.x - r, b.y - r, 2 * r, 2 * r);
+        }
+      }
     }
   }
 
-  // Size everything off the device-px canvas. Radii are screen fractions (the
-  // C's 0.006 / 0.045 of the smaller dimension), so they already scale with dpr;
-  // sizeScale is an extra user multiplier.
+  // make_pixmap_array: sort the loaded sprites by radius (radius = max(w,h)/2),
+  // build the area/droppage tables, and extrapolate the extra ceiling step.
+  // Radii are scaled to device px by S. Returns the largest draw radius (for the
+  // mesh cell size).
+  function buildStepTable() {
+    const steps = loadedImages.map((img) => ({
+      img,
+      nativeR: Math.max(img.naturalWidth, img.naturalHeight) / 2,
+    }));
+    steps.sort((a, b) => a.nativeR - b.nativeR);
+    const n = steps.length;                       // 11
+    stepImages = steps.map((s) => s.img);
+    stepRadii = steps.map((s) => s.nativeR * S);
+    stepAreas = stepRadii.map((r) => AREA_K * r * r);
+    stepDroppage = [];
+    for (let i = 0; i < n; i++) stepDroppage.push(MAX_DROPPAGE * i / n * S);
+    maxStep = n - 1;                              // 10
+    // Extra ceiling step (index n): extrapolate the radius past the largest.
+    const extraR = (steps[n - 1].nativeR + (steps[n - 1].nativeR - steps[n - 2].nativeR)) * S;
+    stepRadii.push(extraR);
+    stepAreas.push(AREA_K * extraR * extraR);
+    ceilingArea = stepAreas[n];
+    return stepRadii[maxStep];
+  }
+
+  // Size everything off the device-px canvas, then set up an EMPTY mesh: the C
+  // creates no bubbles at init — the field fills in over the first second from
+  // bubbles_draw. Simple radii are screen fractions (so they scale with dpr);
+  // fancy radii are fixed sprite pixels, scaled to device px by S.
   function init() {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 
-    const md = Math.min(W, H);
-    minR = Math.max(1, Math.floor(0.006 * md * config.sizeScale));
-    maxR = Math.max(minR + 1, Math.floor(0.045 * md * config.sizeScale));
-    minArea = AREA_K * minR * minR;
-    maxArea = AREA_K * maxR * maxR;
+    let cellHalf;   // largest bubble radius, device px (drives mesh_length)
+    if (config.simple) {
+      const md = Math.min(W, H);
+      minR = Math.max(1, Math.floor(0.006 * md));
+      maxR = Math.max(minR + 1, Math.floor(0.045 * md));
+      minArea = AREA_K * minR * minR;
+      maxArea = AREA_K * maxR * maxR;
+      nearMaxArea = AREA_K * (maxR - 1) * (maxR - 1);
+      cellHalf = maxR;
+    } else {
+      cellHalf = buildStepTable();
+    }
 
-    meshLength = 2 * maxR + 3;
+    meshLength = 2 * cellHalf + 3;
     meshW = Math.floor(W / meshLength) + 1;
     meshH = Math.floor(H / meshLength) + 1;
     meshCells = meshW * meshH;
 
-    // Generous cap that the merging/popping cycle never actually approaches, but
-    // which guarantees the spawn loop can never overflow memory.
-    maxBubbles = clamp(meshCells * 6 + 50, 200, 4000);
+    mesh = new Array(meshCells);
+    for (let i = 0; i < meshCells; i++) mesh[i] = [];
+    count = 0;
 
-    bubbles = [];
-    const seed = clamp(meshCells, 12, 400);
-    for (let i = 0; i < seed; i++) spawnBubble(true);
+    // The C has no cap. The merge-and-pop dynamics are self-limiting (the field
+    // saturates at roughly 9 bubbles per mesh cell), so this guard sits well
+    // above the natural peak and never binds in normal play -- it only bounds
+    // memory on a pathological screen.
+    cap = Math.min(20000, Math.max(2000, meshCells * 16));
+
+    applyMode();
+  }
+
+  // Pick a random sprite set (random() % 4) and decode its 11 PNGs.
+  function loadSprites() {
+    const set = BUBBLE_SETS[Math.floor(Math.random() * BUBBLE_SETS.length)];
+    const imgs = [];
+    for (let i = 1; i <= SPRITES_PER_SET; i++) {
+      const img = new Image();
+      img.src = bubbleSpriteURL(set, i);
+      imgs.push(img);
+    }
+    return Promise.all(imgs.map((img) => img.decode())).then(() => imgs);
+  }
+
+  // Get the sim ready: simple mode at once; fancy mode once the sprites decode
+  // (reusing an already-loaded set). On load failure, fall back to simple.
+  function bootstrap() {
+    ready = false;
+    if (config.simple) {
+      init();
+      ready = true;
+      return;
+    }
+    if (loadedImages) {
+      init();
+      ready = true;
+      return;
+    }
+    if (booting) return;
+    booting = true;
+    loadSprites().then((imgs) => {
+      booting = false;
+      loadedImages = imgs;
+      if (!config.simple) { init(); ready = true; }
+    }).catch(() => {
+      booting = false;
+      config.simple = true;
+      init();
+      ready = true;
+    });
   }
 
   function resize() {
@@ -358,19 +480,26 @@ export function start(canvas) {
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    init();
+    if (ready) init();
   }
 
   // rAF lag-accumulator paced by config.delay (us): run one step() per delay,
-  // banking leftover time so the speed is identical at any refresh rate, and cap
-  // catch-up so a backgrounded tab can't burst on refocus. step() is the heavy
-  // work (merge pass), so we draw at most once per frame.
+  // banking leftover time so the rate is identical at any refresh rate, and cap
+  // catch-up so a backgrounded tab can't burst on refocus.
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
   let rafId = 0;
 
   function frame(now) {
+    if (!ready) {
+      // Hold black until the sprites have decoded (fancy mode).
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
+
     if (lastTime === 0) lastTime = now;
     lag += now - lastTime;
     lastTime = now;
@@ -389,16 +518,19 @@ export function start(canvas) {
     rafId = requestAnimationFrame(frame);
   }
 
-  // Re-seed with the current config (size/colors change the field, so a non-live
-  // edit rebuilds everything). init() does not paint, so clear first.
+  // Clear and re-seed (empty). Used for the non-live `simple` toggle and manual
+  // restarts; init() does not paint, so clear first.
   function reinit() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    init();
+    lastTime = 0;
+    lag = 0;
+    bootstrap();
   }
 
   window.addEventListener('resize', resize);
   resize();
+  bootstrap();
   rafId = requestAnimationFrame(frame);
 
   return {
