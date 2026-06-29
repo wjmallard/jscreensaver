@@ -89,16 +89,20 @@
     <div class="help-box">
       <div class="help-title">commands</div>
       <dl class="help-list">
-        <dt>s</dt><dd>hack: select</dd>
-        <dt>i</dt><dd>hack: info</dd>
-        <dt>c</dt><dd>hack: configure</dd>
-        <dt>p</dt><dd>hack: pause</dd>
-        <dt>r</dt><dd>hack: restart</dd>
+        <dt class="help-cat">navigation</dt>
+        <dt>s</dt><dd>select</dd>
+        <dt>q</dt><dd>quit to menu</dd>
+        <dt>/</dt><dd>find by name</dd>
+        <dt>&larr; &rarr;</dt><dd>previous / next</dd>
+        <dt class="help-cat">hack</dt>
+        <dt>i</dt><dd>info</dd>
+        <dt>c</dt><dd>configure</dd>
+        <dt>p</dt><dd>pause</dd>
+        <dt>r</dt><dd>restart</dd>
+        <dt class="help-cat">general</dt>
         <dt>a</dt><dd>about</dd>
         <dt>h</dt><dd>help</dd>
-        <dt>f</dt><dd>toggle framerate</dd>
-        <dt>&larr; &rarr;</dt><dd>previous / next hack</dd>
-        <dt>q</dt><dd>exit to menu</dd>
+        <dt>f</dt><dd>framerate</dd>
       </dl>
     </div>
   </div>
@@ -115,6 +119,13 @@
     <div class="about-box">
       <div class="about-title" id="info-title">info</div>
       <div class="about-body" id="info-body"></div>
+    </div>
+  </div>
+
+  <div id="search">
+    <div class="search-box">
+      <input id="search-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="find a hack...">
+      <ul class="search-list" id="search-list"></ul>
     </div>
   </div>
 

@@ -35,6 +35,9 @@ const configBox = document.getElementById('config');
 const about = document.getElementById('about');
 const help = document.getElementById('help');
 const infoBox = document.getElementById('info');
+const searchBox = document.getElementById('search');
+const searchInput = document.getElementById('search-input');
+const searchList = document.getElementById('search-list');
 const list = document.getElementById('sel-list');
 const cats = document.getElementById('sel-cats');
 const selMain = document.getElementById('sel-main');
@@ -73,6 +76,8 @@ let visible = [];         // hacks currently shown in the list (filtered)
 let cursorIndex = 0;      // keyboard-highlighted row in the list
 let focusPane = 'list';   // which pane the keyboard drives: 'rail' | 'list'
 let cycleCat = 'All';     // genre that view-mode left/right cycling stays within
+let searchResults = [];   // hacks matching the quick-find query (prefix matches first)
+let searchCursor = 0;     // highlighted row in the quick-find results
 
 function render() {
   const open = selector.classList.contains('open');
@@ -258,7 +263,7 @@ function syncPauseBtn() {
 // Clear / home: stop the hack, drop the hash, clear to black, and hold the
 // picker open (non-dismissable, since there's nothing to return to).
 function goHome() {
-  closeConfig(); closeAbout(); closeHelp(); closeInfo();
+  closeConfig(); closeAbout(); closeHelp(); closeInfo(); closeSearch();
   cancelFade();
   if (handle) { handle.stop(); handle = null; currentModule = null; }
   currentName = null;
@@ -445,7 +450,7 @@ function pickRandom() {
 // Config / About / Help / Info are mutually exclusive pop-overs; the config and
 // info boxes are populated polymorphically from whatever hack is running.
 function openConfig() {
-  closeAbout(); closeHelp(); closeInfo();
+  closeAbout(); closeHelp(); closeInfo(); closeSearch();
   const ttl = document.getElementById('config-title');
   const body = document.getElementById('config-body');
   if (handle && handle.params) {
@@ -458,9 +463,9 @@ function openConfig() {
   configBox.classList.add('open');
 }
 function closeConfig() { configBox.classList.remove('open'); }
-function openAbout() { closeConfig(); closeHelp(); closeInfo(); about.classList.add('open'); }
+function openAbout() { closeConfig(); closeHelp(); closeInfo(); closeSearch(); about.classList.add('open'); }
 function closeAbout() { about.classList.remove('open'); }
-function openHelp() { closeConfig(); closeAbout(); closeInfo(); help.classList.add('open'); }
+function openHelp() { closeConfig(); closeAbout(); closeInfo(); closeSearch(); help.classList.add('open'); }
 function closeHelp() { help.classList.remove('open'); }
 
 // Append `text` to `el`, turning http(s) URLs into <a> links; the non-URL runs
@@ -493,7 +498,7 @@ function appendLinkified(el, text) {
 // paragraph breaks plus, inside a paragraph, single newline breaks (preformatted
 // listings, split URLs) that white-space: pre-wrap renders.
 function openInfo() {
-  closeConfig(); closeAbout(); closeHelp();
+  closeConfig(); closeAbout(); closeHelp(); closeSearch();
   const ttl = document.getElementById('info-title');
   const body = document.getElementById('info-body');
   const meta = currentName ? byName[currentName] : null;
@@ -516,6 +521,99 @@ function openInfo() {
   infoBox.classList.add('open');
 }
 function closeInfo() { infoBox.classList.remove('open'); }
+
+// Quick-find ('/'): a title search over the whole library, shown in its own
+// top-anchored overlay. Matching is case-insensitive substring with prefix
+// matches sorted ahead of mid-string ones; within each group HACKS' existing
+// alphabetical order is preserved (the scan is stable). An empty query matches
+// nothing (the results list collapses to just the input). Only view mode opens
+// it, and while it's open the search input holds focus, so the global key router
+// steps aside (its input-focus guard) and the input's own handlers below own
+// ArrowUp/Down/Enter/Esc.
+function searchMatches(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const prefix = [], mid = [];
+  for (const h of HACKS) {
+    const i = h.title.toLowerCase().indexOf(q);
+    if (i === 0) prefix.push(h);
+    else if (i > 0) mid.push(h);
+  }
+  return prefix.concat(mid);
+}
+
+function openSearch() {
+  closeConfig(); closeAbout(); closeHelp(); closeInfo();
+  searchInput.value = '';
+  searchResults = [];
+  searchCursor = 0;
+  renderSearch();
+  searchBox.classList.add('open');
+  searchInput.focus();
+}
+function closeSearch() {
+  searchBox.classList.remove('open');
+  searchInput.blur();
+}
+
+// Rebuild the results list from searchResults. The running hack's row is marked
+// amber (as in the picker); a query with no matches shows a dim placeholder; an
+// empty query shows nothing (the list collapses via the :empty CSS).
+function renderSearch() {
+  searchList.textContent = '';
+  if (searchResults.length) {
+    searchResults.forEach((h, i) => {
+      const li = document.createElement('li');
+      li.dataset.hack = h.title;
+      if (h.title === currentName) li.classList.add('active');
+      if (i === searchCursor) li.classList.add('cursor');
+      const label = document.createElement('span');
+      label.textContent = h.title;
+      li.appendChild(label);
+      if (h.heavy) {                               // GPU-intensive: trailing red dot
+        const heavy = document.createElement('span');
+        heavy.className = 'sel-heavy';
+        heavy.textContent = '\u25CF';
+        heavy.title = 'GPU-intensive';
+        li.appendChild(heavy);
+      }
+      li.addEventListener('click', () => { searchCursor = i; commitSearch(); });
+      searchList.appendChild(li);
+    });
+  } else if (searchInput.value.trim()) {
+    const li = document.createElement('li');
+    li.className = 'sel-empty';
+    li.textContent = '\u2014 no match \u2014';
+    searchList.appendChild(li);
+  }
+}
+
+// Lighter update for arrow nav: move the cursor class and scroll it into view
+// without rebuilding the rows.
+function renderSearchCursor() {
+  for (let i = 0; i < searchList.children.length; i++) {
+    searchList.children[i].classList.toggle('cursor', i === searchCursor);
+  }
+  searchList.children[searchCursor]?.scrollIntoView({ block: 'nearest' });
+}
+function moveSearch(delta) {
+  if (!searchResults.length) return;
+  const n = searchResults.length;
+  searchCursor = (searchCursor + delta + n) % n;
+  renderSearchCursor();
+}
+
+// Mount the highlighted match and close. A name search spans the whole library,
+// so subsequent left/right cycling uses the All pool (cycleCat = 'All'), matching
+// deep-link / hashchange navigation. Close first so mount's title flash isn't
+// briefly drawn under the still-open box.
+function commitSearch() {
+  const pick = searchResults[searchCursor];
+  if (!pick) return;
+  cycleCat = 'All';
+  closeSearch();
+  mount(pick.title);
+}
 
 // Frame readout (toggled by 'f'), bottom-right. For a 3D / WebGL hack it shows
 // the shadertoy harness's own telemetry — "res Sx  M ms  WxH" (adaptive render
@@ -635,6 +733,23 @@ configBox.addEventListener('click', (e) => { if (e.target === configBox) closeCo
 about.addEventListener('click', (e) => { if (e.target === about) closeAbout(); });
 help.addEventListener('click', (e) => { if (e.target === help) closeHelp(); });
 infoBox.addEventListener('click', (e) => { if (e.target === infoBox) closeInfo(); });
+searchBox.addEventListener('click', (e) => { if (e.target === searchBox) closeSearch(); });
+
+// Quick-find input: filter as you type; arrows move the highlight, Enter mounts
+// the highlighted match, Esc closes. These live on the input (not the global key
+// router, which steps aside while a text field has focus), so they own the keys
+// only while the search box is up.
+searchInput.addEventListener('input', () => {
+  searchResults = searchMatches(searchInput.value);
+  searchCursor = 0;
+  renderSearch();
+});
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+  else if (e.key === 'Enter') { e.preventDefault(); commitSearch(); }
+});
 
 // View-mode pointer gestures on the canvas (no overlay is up, so the canvas is the
 // hit target): a tap summons the picker, a horizontal swipe cycles prev/next like
@@ -726,6 +841,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'a') { e.preventDefault(); openAbout(); }
   else if (e.key === 'f') { e.preventDefault(); toggleFps(); }
   else if (e.key === 'h') { e.preventDefault(); openHelp(); }
+  else if (e.key === '/') { e.preventDefault(); openSearch(); }
   else { e.preventDefault(); openSelector(); }
 });
 

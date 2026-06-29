@@ -24,23 +24,23 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #000; over
    letting the browser scroll, pan, or pull-to-refresh over the screensaver. */
 canvas { display: block; touch-action: none; }
 
-/* Picker + Config + About + Help + Info share a dimmed-overlay + green box look. */
-#selector, #config, #about, #help, #info {
+/* Picker + Config + About + Help + Info + Search share a dimmed-overlay + green box look. */
+#selector, #config, #about, #help, #info, #search {
   position: fixed; inset: 0; display: none;
   align-items: center; justify-content: center;
   background: rgba(0, 0, 0, 0.5);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 #selector { z-index: 100000; }
-#config, #about, #help, #info { z-index: 100001; }   /* one of these is open at a time */
-#selector.open, #config.open, #about.open, #help.open, #info.open { display: flex; }
+#config, #about, #help, #info, #search { z-index: 100001; }   /* one of these is open at a time */
+#selector.open, #config.open, #about.open, #help.open, #info.open, #search.open { display: flex; }
 
 /* The Info box dims the screen less than the other panels: with it open you can
    still cycle hacks (left/right), so it doubles as a preview -- keep the running
    hack clearly visible behind it. The box's own opaque bg keeps the text legible. */
 #info { background: rgba(0, 0, 0, 0.2); }
 
-.sel-box, .config-box, .about-box, .help-box {
+.sel-box, .config-box, .about-box, .help-box, .search-box {
   background: var(--phosphor-bg); color: var(--phosphor);
   border: 1px solid var(--phosphor-border); border-radius: 4px;
   box-shadow: 0 0 30px rgba(60, 220, 110, 0.15);
@@ -150,6 +150,38 @@ canvas { display: block; touch-action: none; }
 .help-list { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; padding: 14px 16px; margin: 0; }
 .help-list dt { color: var(--phosphor-bright); white-space: nowrap; }
 .help-list dd { margin: 0; color: var(--phosphor); }
+/* Command groups: a dim, letter-spaced label (like the picker's category header)
+   spanning both columns, with space above all but the first to set the groups
+   apart. It spans a flexible (1fr) track, so it doesn't widen the key column --
+   the single-key rows and their descriptions stay aligned across all groups. */
+.help-list .help-cat { grid-column: 1 / -1; color: var(--phosphor-dim); font-size: 11px; letter-spacing: 0.08em; }
+.help-list .help-cat:not(:first-child) { margin-top: 8px; }
+
+/* Quick-find ('/') -- a top-anchored search box: type to filter the whole library
+   by title (case-insensitive substring, prefix matches first), Up/Down to move,
+   Enter to run, Esc to close. Top-anchored rather than centred so the box doesn't
+   jump as the match count changes; the results list scrolls within a capped height
+   and collapses entirely (with the input's divider) while the query is empty. */
+#search { align-items: flex-start; }
+.search-box { margin-top: 12vh; width: min(380px, 92vw); display: flex; flex-direction: column; font-size: 13px; }
+.search-box input {
+  box-sizing: border-box; width: 100%; padding: 11px 16px;
+  border: 0; background: none; color: var(--phosphor-bright);
+  font: inherit; letter-spacing: 0.04em; text-shadow: inherit;
+}
+.search-box input:focus { outline: none; }
+.search-box input::placeholder { color: var(--phosphor-dim); letter-spacing: 0.02em; }
+.search-list { list-style: none; overflow-y: auto; max-height: min(50vh, 360px); padding: 6px 0; }
+.search-list:empty { display: none; }
+.search-list:not(:empty) { border-top: 1px solid var(--phosphor-divider); }
+.search-list li { display: flex; gap: 7px; align-items: baseline; padding: 4px 16px; cursor: pointer; white-space: nowrap; }
+.search-list li:hover { background: #0c2a18; }
+.search-list li.cursor { background: #0e3320; box-shadow: inset 3px 0 0 var(--phosphor); }
+.search-list li.active { color: var(--phosphor-amber); text-shadow: 0 0 6px rgba(255, 176, 0, 0.4); }
+.search-list li.sel-empty, .search-list li.sel-empty:hover { color: var(--phosphor-dim); cursor: default; background: none; }
+.search-list::-webkit-scrollbar { width: 8px; }
+.search-list::-webkit-scrollbar-thumb { background: var(--phosphor-border); border-radius: 4px; }
+.search-list::-webkit-scrollbar-track { background: transparent; }
 
 #fps, #hackname {
   position: fixed; z-index: 99998; cursor: default;
