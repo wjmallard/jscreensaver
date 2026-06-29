@@ -270,6 +270,17 @@
       "description": "Moving polygons, similar to a kaleidoscope.\n\nSee also the \"Kaleidescope\" and \"GLeidescope\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Kaleidoscope"
     },
     {
+      "title": "cubestorm",
+      "module": "./hacks/cubestorm.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2003,
+      "description": "Boxes change shape and intersect each other, filling space."
+    },
+    {
       "title": "cubicgrid",
       "module": "./hacks/cubicgrid.js",
       "dim": "3d",
@@ -357,6 +368,18 @@
       "author": "David Bagley",
       "year": 1999,
       "description": "A cellular automaton that starts with a random field, and organizes it into stripes and spirals.\n\nhttps://en.wikipedia.org/wiki/Maxwell%27s_demon"
+    },
+    {
+      "title": "discoball",
+      "module": "./hacks/discoball.js",
+      "dim": "3d",
+      "categories": [
+        "geometry",
+        "optical"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2016,
+      "description": "A dusty, dented disco ball. Woop woop."
     },
     {
       "title": "discrete",
@@ -692,6 +715,28 @@
       "description": "A hexagon in a plasma field.\n\nhttps://www.shadertoy.com/view/WfS3Dd"
     },
     {
+      "title": "hexstrut",
+      "module": "./hacks/hexstrut.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2016,
+      "description": "A honeycomb of rotating Y-shaped struts; waves of rotation and colour propagate across the plane."
+    },
+    {
+      "title": "hextrail",
+      "module": "./hacks/hextrail.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2022,
+      "description": "A network of colorful lines grows upon a hexagonal substrate."
+    },
+    {
       "title": "hopalong",
       "module": "./hacks/hopalong.js",
       "dim": "2d",
@@ -861,6 +906,18 @@
       "author": "Sverre H. Huseby and Glenn T. Lines",
       "year": 1995,
       "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nThis generates random spline-ish line drawings and morphs between them."
+    },
+    {
+      "title": "lockward",
+      "module": "./hacks/lockward.js",
+      "dim": "3d",
+      "categories": [
+        "optical",
+        "geometry"
+      ],
+      "author": "Leo L. Schwab",
+      "year": 2007,
+      "description": "A translucent spinning, blinking thing."
     },
     {
       "title": "logarithmiccircles",
@@ -1360,6 +1417,18 @@
       "author": "J. Tarbell and Mike Kershaw",
       "year": 2004,
       "description": "Crystalline lines grow on a computational substrate. A simple perpendicular growth rule creates intricate city-like structures."
+    },
+    {
+      "title": "superquadrics",
+      "module": "./hacks/superquadrics.js",
+      "dim": "3d",
+      "categories": [
+        "geometry",
+        "surfaces"
+      ],
+      "author": "Ed Mackey",
+      "year": 1987,
+      "description": "Morphing 3D mathematical shapes."
     },
     {
       "title": "swirl",
