@@ -11,7 +11,7 @@
 // about an optimum, and each field is independently switched on and off at
 // random (>= 3 always on). Every step each star is pushed by the active fields,
 // then respawned if it leaves the screen, hugs a central axis, or rarely at
-// random. Each star leaves a short fading trail.
+// random. Each star leaves a short trail (a hard, fixed-length tail — not a fade).
 //
 // Rendering: this is SPARSE vector drawing (ps small squares per frame), so it
 // uses canvas fillRect on a PERSISTENT canvas — exactly like grav.js. The C
@@ -33,18 +33,16 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/whirlwindwarp.xml so the tuning UI maps
-  // 1:1 to the original. The stock hack caps itself at 200 fps (5000 us/frame)
-  // internally; we expose that as an adjustable Frame rate and default a touch
-  // calmer (8000 us) for a more relaxed drift.
+  // Config mirrors hacks/config/whirlwindwarp.xml, which exposes ONLY points and
+  // tails (plus a --fps diagnostic we omit). There is NO delay resource: the C
+  // self-caps at 200 fps internally, so frame pacing is an internal constant
+  // (DELAY_US below), not a user slider.
   const config = {
-    delay: 16000,     // \u00B5s between steps (stock self-caps at 5000)
     points: 400,     // number of stars (--points)
     tails: 8,        // trail length per star, in plots (--tails)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 60000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'points', label: 'Particles', type: 'range', min: 10, max: 1000, step: 10, default: 400, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'tails', label: 'Trail size', type: 'range', min: 1, max: 50, step: 1, default: 8, lowLabel: 'short', highLabel: 'long', live: false },
   ];
@@ -53,6 +51,14 @@ export function start(canvas) {
   const MAX_PS = 1000;
   const MAX_TS = 50;
   const FS = 16;
+
+  // The C has no delay resource; it self-caps at 200 fps (5000 us/frame) via
+  // gettimeofday. We pace the rAF lag-accumulator with this internal interval.
+  // 100 fps (half the stock cap, per the project's effective-fps calibration)
+  // reads calmer in a browser. This only sets wall-clock speed, NOT the spatial
+  // look of the trails (that is fixed by `tails` and the per-step drift). Tunable
+  // pace knob, not a fidelity item.
+  const DELAY_US = 10000;
 
   let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
@@ -69,7 +75,7 @@ export function start(canvas) {
   let acc;              // acceleration of the random walk
   let vel;              // velocity of the random walk
 
-  let colors;           // per-star hsl() string
+  let colors;           // per-star rgb() colour string (faithful hsv_to_rgb)
   let hue;              // drifting hue used to recolour stars
   let ps;               // active star count (config.points, clamped)
   let ts;               // active trail length (config.tails, clamped)
@@ -84,6 +90,36 @@ export function start(canvas) {
   // op + damp*(var-op) + force*myrnd()/4 — the C's stars_perturb macro.
   function perturb(value, optimum, damp, force) {
     return optimum + damp * (value - optimum) + force * myrnd() / 4.0;
+  }
+
+  // 0..1 channel -> 0..255, the way the X server consumes hsv_to_rgb's 16-bit
+  // output (it stores C*65535 then the visual downsamples >>8 == floor(C*256)).
+  function ch(c) {
+    if (c <= 0) return 0;
+    if (c >= 1) return 255;
+    return Math.min(255, Math.floor(c * 256.0));
+  }
+
+  // hsv_to_rgb (utils/hsv.c), verbatim: h in degrees, s,v in [0,1]. The C calls
+  // this directly per star (NOT make_*_colormap), so there is no shared colormap
+  // helper to use here. Returns an "rgb(r,g,b)" string for canvas fillStyle.
+  function hsvToRgb(h, s, v) {
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    if (v < 0) v = 0; else if (v > 1) v = 1;
+    const H = (Math.trunc(h) % 360) / 60.0;
+    const i = Math.trunc(H);
+    const f = H - i;
+    const p1 = v * (1 - s);
+    const p2 = v * (1 - (s * f));
+    const p3 = v * (1 - (s * (1 - f)));
+    let R, G, B;
+    if      (i === 0) { R = v;  G = p3; B = p1; }
+    else if (i === 1) { R = p2; G = v;  B = p1; }
+    else if (i === 2) { R = p1; G = v;  B = p3; }
+    else if (i === 3) { R = p1; G = p2; B = v;  }
+    else if (i === 4) { R = p3; G = p1; B = v;  }
+    else              { R = v;  G = p1; B = p2; }
+    return `rgb(${ch(R)}, ${ch(G)}, ${ch(B)})`;
   }
 
   // Respawn a star at a random realspace point.
@@ -192,13 +228,14 @@ export function start(canvas) {
 
   function step() {
     // Occasionally recolour one star toward the current hue, then drift the hue.
-    // (The C reallocates an X colour; we just rewrite the hsl() string.)
+    // (The C reallocates an X colour; we just rewrite the colour string.) pp ranges
+    // over the allocated colours [0, colsavailable); on a browser every colour is
+    // available so colsavailable == ps-1. hue is an int in the C (so the drift is
+    // an integer random walk; truncate each step).
     if (myrnd() > 0.75 && ps > 0) {
-      const pp = ((0.5 + myrnd() / 2) * ps) | 0;
-      const sat = 60 + 40 * Math.abs(myrnd());   // .6 + .4*myrnd() of full
-      const lit = 30 + 25 * Math.abs(myrnd());   // value -> mid lightness
-      colors[Math.min(pp, ps - 1)] = `hsl(${hue | 0}, ${sat | 0}%, ${lit | 0}%)`;
-      hue = hue + 0.5 + myrnd() * 9.0;
+      const pp = (((ps - 1) * (0.5 + myrnd() / 2)) | 0);
+      colors[Math.min(pp, ps - 1)] = hsvToRgb(hue, 0.6 + 0.4 * myrnd(), 0.6 + 0.4 * myrnd());
+      hue = Math.trunc(hue + 0.5 + myrnd() * 9.0);
       if (hue < 0) hue += 360;
       if (hue >= 360) hue -= 360;
     }
@@ -263,15 +300,14 @@ export function start(canvas) {
     }
   }
 
-  // After a reinit/resize, paint the background and seed the field once so the
-  // very first frame already shows the cloud (no blank/degenerate start).
+  // After a reinit/resize, paint the background black (the C's XClearWindow). We
+  // do NOT pre-plot the stars here: the C never draws untracked points, and the
+  // first step() already paints the whole cloud (after one move), so frame 1 is
+  // non-blank without leaving permanent, never-erased specks at the t=0 positions.
   function draw() {
     if (needsBackground) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, W, H);
-      for (let p = 0; p < ps; p++) {
-        plot(scrposX(p), scrposY(p), colors[p]);
-      }
       needsBackground = false;
     }
   }
@@ -298,13 +334,13 @@ export function start(canvas) {
     ty.fill(-starsize - 1);
     nt = 0;
 
-    // Per-star colours: random hue, .6+.4*myrnd() saturation, mid lightness.
+    // Per-star colours, exactly as the C:
+    //   hsv_to_rgb(random()%360, .6+.4*myrnd(), .6+.4*myrnd())
+    // random hue, with saturation AND value each in [0.2, 1.0) (myrnd is [-1,1)).
     colors = new Array(ps);
     for (let p = 0; p < ps; p++) {
       const h = (Math.random() * 360) | 0;
-      const sat = 60 + 40 * Math.abs(myrnd());
-      const lit = 30 + 25 * Math.abs(myrnd());
-      colors[p] = `hsl(${h}, ${sat | 0}%, ${lit | 0}%)`;
+      colors[p] = hsvToRgb(h, 0.6 + 0.4 * myrnd(), 0.6 + 0.4 * myrnd());
     }
 
     // Force-field optima (the C's op[] table). Phases get a random start; the
@@ -343,7 +379,7 @@ export function start(canvas) {
     // Initialise stars.
     for (let p = 0; p < ps; p++) newp(p);
 
-    hue = 180 + 180 * myrnd();
+    hue = Math.trunc(180 + 180 * myrnd());   // the C's hue is an int
 
     needsBackground = true;
   }
@@ -357,7 +393,7 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator loop paced by config.delay (see squiral.js). The canvas
+  // rAF lag-accumulator loop paced by DELAY_US (see squiral.js). The canvas
   // is persistent (trails are a ring buffer), so step() draws incrementally and
   // draw() only paints the one-time background after a reinit/resize.
   const MAX_CATCHUP_STEPS = 8;
@@ -370,8 +406,8 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // DELAY_US is microseconds (the internal pace); the rAF clock is milliseconds.
+    const delayMs = DELAY_US / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     draw();   // one-time background after reinit/resize

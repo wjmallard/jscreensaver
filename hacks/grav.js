@@ -20,6 +20,8 @@
 // accumulate), then draws the new disc; the star is erased and redrawn at its new
 // size. A full repaint each frame would wipe the trails, which are the whole point.
 
+import { makeRandomColormapRGB } from './colormap.js';
+
 export const title = 'grav';
 
 export const info = {
@@ -32,20 +34,21 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/grav.xml so the tuning UI maps 1:1.
-  // `ncolors` sizes the hue palette (the stock hack uses it for the X colormap;
-  // we map it onto an hsl() rainbow).
+  // `ncolors` sizes the colour palette: grav.c defines BRIGHT_COLORS, so the
+  // framework fills the X colormap via make_random_colormap(bright_p=True) and
+  // each planet/star picks a RANDOM entry -- see buildPalette()/pickColor().
   const config = {
-    delay: 18000,    // \u00B5s between steps (--delay)
+    delay: 18000,    // \u00B5s between steps (--delay; stock 10000, calmer here)
     count: 12,       // number of orbiting planets (--count)
-    ncolors: 64,     // size of the rainbow palette (--ncolors)
+    ncolors: 64,     // palette size; BRIGHT_COLORS random colormap (--ncolors)
     decay: true,     // damp velocities so orbits spiral inward (--no-decay)
     trail: true,     // leave a dot at every old position (--no-trail)
   };
 
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 18000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Objects', type: 'range', min: 1, max: 40, step: 1, default: 12, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'count', label: 'Number of objects', type: 'range', min: 1, max: 40, step: 1, default: 12, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'decay', label: 'Orbital decay', type: 'checkbox', default: true, live: true },
     { key: 'trail', label: 'Object trails', type: 'checkbox', default: true, live: true },
   ];
@@ -66,20 +69,40 @@ export function start(canvas) {
   let W, H;           // canvas size, device px
   let planets;        // [{ px,py,pz, vx,vy,vz, xi,yi,ri, color }]
   let star;           // { sr, max, color } — central pulsar
+  let paletteStrings; // BRIGHT_COLORS colormap as 'rgb(...)' strings (null => white)
   let needsBackground; // clear to black on the next frame (after reinit/resize)
 
   function floatRand(min, max) {
     return min + Math.random() * (max - min);
   }
 
-  function palette(i, n) {
-    return `hsl(${(i * 360 / n) | 0}, 100%, 55%)`;
+  // Build the colour palette. grav.c defines BRIGHT_COLORS, so the X colormap is
+  // make_random_colormap with bright_p=True: `ncolors` INDEPENDENT random HSV
+  // colours (hue 0-360, saturation 30-100%, value 66-100%) -- NOT a hue-ordered
+  // rainbow. When ncolors <= 2 the C falls back to white (the MI_NPIXELS > 2
+  // gate / `npixels <= 2 goto MONO`), so we leave paletteStrings null and
+  // pickColor() returns white. Built once per init(); the hack never cycles.
+  function buildPalette() {
+    const n = Math.max(1, Math.round(config.ncolors));
+    if (n > 2) {
+      paletteStrings = makeRandomColormapRGB(n, true)
+        .map(([r, g, b]) => `rgb(${r},${g},${b})`);
+    } else {
+      paletteStrings = null;
+    }
   }
 
-  // INTRINSIC_RADIUS = height/5 in the C; AVG isn't needed, only the projected
-  // radius RADIUS = INTRINSIC_RADIUS / (z + DIST).
+  // A planet/star colour: a random entry of the palette (the C's
+  // MI_PIXEL(NRAND(MI_NPIXELS))), or white when ncolors <= 2.
+  function pickColor() {
+    if (!paletteStrings) return 'rgb(255,255,255)';
+    return paletteStrings[(Math.random() * paletteStrings.length) | 0];
+  }
+
+  // INTRINSIC_RADIUS = (int)(height/5) in the C (integer division); AVG isn't
+  // needed, only the projected radius RADIUS = INTRINSIC_RADIUS / (z + DIST).
   function intrinsicRadius() {
-    return H / 5;
+    return (H / 5) | 0;
   }
 
   // Project a planet's 3D point to screen + set its disc radius, matching the C:
@@ -108,7 +131,7 @@ export function start(canvas) {
       xi: -1,
       yi: -1,
       ri: 0,
-      color: palette((Math.random() * config.ncolors) | 0, config.ncolors),
+      color: pickColor(),
     };
     project(p);
     return p;
@@ -117,9 +140,11 @@ export function start(canvas) {
   // Fill a disc of diameter d centred on (x, y), matching the C's XFillArc, which
   // takes a top-left corner (x - d/2, y - d/2) and a width/height of d. Clipped to
   // the window like the C's Planet() macro (it only draws when the centre is in
-  // bounds). d is already in device px.
+  // bounds). d is already in device px. A 0-size arc draws nothing in X, so a
+  // planet whose projected radius rounds to 0 (very far away) vanishes -- faithful;
+  // the trail dot and erase always pass d >= 1, so they're unaffected.
   function disc(x, y, d, fill) {
-    if (d < 1) d = 1;
+    if (d < 1) return;
     if (x < 0 || y < 0 || x > W || y > H) return;
     const r = d / 2;
     ctx.fillStyle = fill;
@@ -228,6 +253,8 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
 
+    buildPalette();   // BRIGHT_COLORS colormap; planets/star pick random entries
+
     const n = Math.max(1, Math.round(config.count));
     planets = [];
     for (let i = 0; i < n; i++) planets.push(makePlanet());
@@ -235,7 +262,7 @@ export function start(canvas) {
     star = {
       max: Math.max(2 * S, H / (2 * DIST)),   // STARRADIUS in device px
       sr: Math.max(2 * S, H / (2 * DIST)),
-      color: palette((Math.random() * config.ncolors) | 0, config.ncolors),
+      color: pickColor(),
     };
 
     needsBackground = true;

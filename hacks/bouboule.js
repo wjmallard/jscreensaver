@@ -9,22 +9,31 @@
 // unit vectors on a sphere, then on every frame the whole cloud is rotated
 // (three independent slowly-oscillating Euler angles), squashed onto an
 // ellipsoid whose half-width / half-height pulse, and projected to 2D — the
-// centre of the ball also wanders. Each star is drawn as a small filled dot;
-// the cloud reads as a deforming balloon with spots painted on its invisible
-// surface. Every motion (rotation, centre, ellipsoid size) is driven by a
-// "SinVariable": a value that oscillates min..max via sin(alpha), with alpha
-// advancing each frame — optionally with a randomized acceleration so the
-// breathing never settles into a perfect loop.
+// centre of the ball also wanders. Each star is drawn as a small filled disk of
+// FIXED size (the C never resizes a dot per frame — only the per-star stereo
+// offset moves); the cloud reads as a deforming balloon with spots painted on
+// its invisible surface. Every motion (rotation, centre, ellipsoid size) is
+// driven by a "SinVariable": a value that oscillates min..max via sin(alpha),
+// with alpha advancing each frame — optionally with a randomized acceleration so
+// the breathing never settles into a perfect loop.
 //
-// size-by-depth: the original only varies a star's size for the red/blue
-// stereo offset; here we additionally scale each dot by the rotated z of its
-// star (near side of the ball bigger, far side smaller) so the sphere reads as
-// solid even in flat (non-3D) mode. See bouboule.md "Deviations".
+// Colour: bouboule.c is built with SMOOTH_COLORS, so the framework allocates one
+// make_smooth_colormap (random 2-5 HSV anchor loop, often muted) of `ncolors`
+// entries. In flat (non-3D) mode the whole ball is a single colormap entry at a
+// time, stepping one entry every COLOR_CHANGES frames. We build that palette via
+// the shared faithful helper in colormap.js — NOT a vivid full-saturation HSL
+// rainbow (the earlier port's deviation; see bouboule.md).
 //
-// Rendering: sparse fillRect dots over a full black repaint each frame (matches
-// the C's HAVE_JWXYZ path, which XClearWindows every frame under Quartz double-
-// buffering rather than erasing the old arc list). At most `count` dots per
-// frame, so plotting the live points is far cheaper than any per-pixel blit.
+// 3D mode (--3d; the STOCK DEFAULT, *use3d:True): a red copy and a blue copy of
+// every star are offset by a per-star stereo diff for red/blue glasses. The
+// colormap is unused in this mode — only red / blue / (overlap) magenta.
+//
+// Rendering: filled-disk dots over a full black repaint each frame (matches the
+// C's HAVE_JWXYZ path, which XClearWindows every frame under Quartz double-
+// buffering rather than erasing the old arc list). At most 2*count small disks
+// per frame, trivially cheap.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'bouboule';
 
@@ -35,36 +44,35 @@ export const info = {
 };
 
 export function start(canvas) {
-  // 'lighter' (3D stereo overlap -> magenta/white) needs source-over off; we
-  // set the op explicitly per draw, so the default getContext state is fine.
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/bouboule.xml so the config box maps 1:1.
-  // 3d defaults OFF here (the stock default is on): the vivid single-hue ball is
-  // the signature look; red/blue separation is offered as a toggle. See the .md.
+  // Defaults/ranges mirror hacks/config/bouboule.xml so the config box maps 1:1:
+  // delay (µs/frame, "Frame rate", inverted), count, ncolors, and the 3d toggle.
+  // The .xml exposes NO size slider, so `size` stays a fixed resource here (the
+  // stock *size:15). mode3d defaults ON, matching the stock *use3d:True.
   const config = {
-    delay: 30000,    // µs between frames (--delay; xml default 20000, calmer here)
+    delay: 30000,    // µs between frames (--delay; .xml default 20000 — see bouboule.md: paced to the live binary's ~half-nominal effective fps so the breathing speed matches)
     count: 100,      // number of stars on the ball (--count)
-    size: 15,        // maximum star radius in px (--size)
-    ncolors: 64,     // size of the rainbow hue cycle (--ncolors)
-    mode3d: false,   // red/blue stereo separation (--3d / --no-3d)
+    ncolors: 64,     // size of the make_smooth_colormap (--ncolors)
+    size: 15,        // max star radius in px (--size; the .xml exposes no slider for it, so it stays fixed)
+    mode3d: true,    // red/blue stereo separation (--3d / --no-3d); stock default is on
   };
 
   // live: true  -> the loop reads config[key] every frame (applies instantly).
   // live: false -> the value sizes the star list / palette, so changing it
   //                re-runs init() via reinit().
+  // Labels mirror the .xml _label / _low-label / _high-label resources.
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Number of spots', type: 'range', min: 1, max: 400, step: 1, default: 100, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'size', label: 'Spot size', type: 'range', min: 1, max: 60, step: 1, default: 15, lowLabel: 'small', highLabel: 'large', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'mode3d', label: 'Red/blue 3D separation', type: 'checkbox', default: false, live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'count', label: 'Number of spots', type: 'range', min: 1, max: 400, step: 1, default: 100, lowLabel: 'Few', highLabel: 'Many', live: false },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'Two', highLabel: 'Many', live: false },
+    { key: 'mode3d', label: 'Do Red/Blue 3D separation', type: 'checkbox', default: true, live: true },
   ];
 
   // Simulation constants, straight from bouboule.c.
   const TWOPI = 2.0 * Math.PI;
   const MINSIZE = 1;
-  const COLOR_CHANGES = 50;     // frames between hue steps (1 = every frame)
+  const COLOR_CHANGES = 50;     // frames between colormap steps (1 = every frame)
   const MAX_SIZEX_SIZEY = 2.0;  // caps how flat / how tall the ellipsoid can get
   // Percentages (0..100) that a SinVariable re-rolls its acceleration each frame.
   const THETACANRAND = 80;      // for the three rotation angles
@@ -74,21 +82,21 @@ export function start(canvas) {
   const MINZVAL = 100;          // nearest a star may approach
   const SCREENZ = 2000;         // where the screen sits
   const MAXZVAL = 10000;        // farthest a star may recede
-  const DELTA3D = 1.5;          // stereo strength (--delta3d)
+  const DELTA3D = 1.5;          // stereo strength (--delta3d; .xml exposes no slider)
 
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
   let maxStarSize;    // maximum dot radius, device px
   let stars;          // unit-vector cloud + per-star size
-  let palette;        // ncolors rainbow CSS strings
+  let palette;        // ncolors smooth-colormap CSS strings
   let colorp;         // index into palette (the whole ball is one colour)
-  let colorChange;    // frames since the last hue step
+  let colorChange;    // frames since the last colormap step
   // The eight SinVariables that drive every motion.
   let sx, sy, sz;       // centre of the ball on screen (z drives stereo depth)
   let sizex, sizey;     // ellipsoid half-width / half-height (the pulse)
   let thetax, thetay, thetaz;   // rotation angles about the local x / y / z axes
 
-  // INTRAND-style helper: integer in [0, n).
+  // NRAND-style helper: integer in [0, n).
   const nrand = (n) => Math.floor(Math.random() * n);
   const min = (a, b) => (a < b ? a : b);
   const max = (a, b) => (a > b ? a : b);
@@ -149,10 +157,12 @@ export function start(canvas) {
     sinvary(v);
   }
 
+  // make_smooth_colormap (utils/colors.c) via the shared faithful helper: random
+  // 2-5 HSV anchor points interpolated into a closed loop, often muted/pastel.
+  // The C builds the colormap once per hack start; we rebuild it per init().
   function buildPalette() {
     const n = max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 55%)`;
+    palette = makeSmoothColormapRGB(n).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // Seed the whole star-ball (the C's init_bouboule). Sizes are in device px.
@@ -161,7 +171,9 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
 
-    // Maximum dot radius (the C's max_star_size = MI_SIZE), in device px.
+    // Maximum dot radius (the C's max_star_size = MI_SIZE), in device px. The C
+    // doubles size on Retina (width/height > 2560); we scale by devicePixelRatio
+    // for the same effect.
     const size = max(MINSIZE, Math.round(config.size)) * S;
     maxStarSize = max(MINSIZE, Math.round(size));
 
@@ -247,7 +259,7 @@ export function start(canvas) {
       THETACANRAND,
     );
 
-    // ---- The stars: unit vectors on a sphere, plus a per-star size ----
+    // ---- The stars: unit vectors on a sphere, plus a per-star fixed size ----
     const nstars = max(1, Math.round(config.count));
     stars = new Array(nstars);
     for (let i = 0; i < nstars; i++) {
@@ -261,8 +273,8 @@ export function start(canvas) {
       const z = Math.cos(omega);
 
       // Star size: NRAND(2*max); below max -> 0, else shifted down by max. So
-      // roughly half the stars are minimal (size 0 -> 1px) and the rest spread
-      // 0..max. Kept verbatim from the C.
+      // roughly half the stars are minimal (size 0 -> 2px disk) and the rest
+      // spread 0..max. FIXED per star — never re-rolled. Kept verbatim from the C.
       let starSize = nrand(2 * maxStarSize);
       if (starSize < maxStarSize) starSize = 0;
       else starSize -= maxStarSize;
@@ -279,8 +291,8 @@ export function start(canvas) {
   }
 
   // Advance every SinVariable, recompute the rotation matrix, and project each
-  // star to screen. Mirrors draw_bouboule()'s math. Returns nothing; draw()
-  // paints from the per-star screen coords stamped here.
+  // star to screen. Mirrors draw_bouboule()'s math. Stamps per-star screen
+  // coords (sxp/syp, truncated like the C's (short)) and the stereo offset diff.
   function simulate() {
     // Vary the rotation angles and the wandering centre.
     sinvary(thetax);
@@ -311,51 +323,52 @@ export function start(canvas) {
     for (let i = 0; i < stars.length; i++) {
       const s = stars[i];
 
-      // Rotated screen position (the C's arc->x / arc->y), ellipsoid-scaled and
-      // centre-offset. These are the full 3x3-rotation rows the C inlines.
-      s.sxp = ex * ((CY * CZ - SX * SY * SZ) * s.x + (-CX * SZ) * s.y + (SY * CZ + SZ * SX * CY) * s.z) + ox;
-      s.syp = ey * ((CY * SZ + SX * SY * CZ) * s.x + (CX * CZ) * s.y + (SY * SZ - SX * CY * CZ) * s.z) + oy;
+      // Rotated, ellipsoid-scaled, centre-offset screen position (the C's
+      // arc->x / arc->y, the full 3x3-rotation rows inlined, cast to short).
+      s.sxp = (ex * ((CY * CZ - SX * SY * SZ) * s.x + (-CX * SZ) * s.y + (SY * CZ + SZ * SX * CY) * s.z) + ox) | 0;
+      s.syp = (ey * ((CY * SZ + SX * SY * CZ) * s.x + (CX * CZ) * s.y + (SY * SZ - SX * CY * CZ) * s.z) + oy) | 0;
 
-      // Rotated depth (the C's GETZDIFF argument): the z-component of the same
-      // rotation, scaled by the x-radius (the field is as deep as it is wide),
-      // offset by the centre's world z. Drives both stereo offset and our
-      // depth-based dot scaling.
-      const zworld = ex * ((SY * CX) * s.x + SX * s.y + (CX * CY) * s.z) + sz.value;
-
-      // Depth in [-1, 1]: +1 on the near face of the ball, -1 on the far face.
-      // (ex is the x-radius, so the rotated-z span is +/- ex around sz.value.)
-      s.depth = ex > 0 ? (zworld - sz.value) / ex : 0;
-
-      // Horizontal stereo offset for 3D mode.
-      s.diff = use3d ? getZDiff(zworld) : 0;
+      // Stereo offset for 3D mode: GETZDIFF of the rotated depth (the field is
+      // as deep as it is wide, so the x-radius scales z), offset by the centre's
+      // world z. Truncated to int as the C does. Zero in flat mode.
+      if (use3d) {
+        const zworld = ex * ((SY * CX) * s.x + SX * s.y + (CX * CY) * s.z) + sz.value;
+        s.diff = getZDiff(zworld) | 0;
+      } else {
+        s.diff = 0;
+      }
     }
 
-    // Slowly cycle the ball's single colour (the C's COLOR_CHANGES gate).
-    if (palette.length > 2 && ++colorChange >= COLOR_CHANGES) {
+    // Slowly step the ball's single colour (the C's COLOR_CHANGES gate). Only in
+    // flat mode, and only when the smooth colormap has > 2 entries (matching the
+    // C's `!use3d && MI_NPIXELS > 2` guard).
+    if (!use3d && palette.length > 2 && ++colorChange >= COLOR_CHANGES) {
       colorChange = 0;
       if (++colorp >= palette.length) colorp = 0;
     }
   }
 
-  // Paint a star as a filled square (the C draws a filled disk; the brief calls
-  // for fillRect dots). Radius scales with the star's base size AND its depth:
-  // near-face stars (depth ~ +1) render up to ~1.6x, far-face (~ -1) down to
-  // ~0.5x, so the sphere reads as solid. `dxp` is the horizontal stereo shift.
+  // Paint one star as a filled disk, exactly as the C's XFillArc(0..360): the
+  // bounding box is [x, y, 2+size, 2+size] (diameter = 2 + star size), and when
+  // the star has nonzero size the top-left is shifted back by the FULL size (the
+  // C's `arc->x -= star->size`). `dxp` is the horizontal stereo shift (0 flat).
   function paintStar(s, dxp) {
-    const base = s.size + 1;                       // >= 1 px even for size-0 stars
-    const r = max(1, Math.round(base * (1.0 + 0.55 * s.depth)));
-    const d = 2 * r;
-    // Centre the dot (the C subtracts star->size to place the arc's top-left).
-    const px = (s.sxp + dxp - r) | 0;
-    const py = (s.syp - r) | 0;
-    ctx.fillRect(px, py, d, d);
+    const d = 2 + s.size;
+    let px = s.sxp + dxp;
+    let py = s.syp;
+    if (s.size !== 0) { px -= s.size; py -= s.size; }
+    const r = d / 2;
+    ctx.beginPath();
+    ctx.arc(px + r, py + r, r, 0, TWOPI);
+    ctx.fill();
   }
 
   // Full repaint each frame: clear to black, then stamp every star. In 3D mode
-  // we draw a red copy offset +diff and a blue copy offset -diff, composited
-  // with 'lighter' so the overlap sums to magenta/white — the closest faithful
-  // stand-in for the C's GXor stereo blend (canvas has no XOR raster op). In
-  // flat mode the whole ball is one slowly-cycling rainbow hue.
+  // we draw a red copy offset +diff and a blue copy offset -diff. Canvas has no
+  // GXor raster op, so the two copies are composited with 'lighter' so the
+  // overlap sums to magenta — the both3d=magenta the C's anaglyph is designed
+  // around (see bouboule.md). In flat mode the whole ball is one smooth-colormap
+  // entry (white when <= 2 colours, matching the C's MI_NPIXELS > 2 gate).
   function draw() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);

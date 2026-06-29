@@ -1,7 +1,8 @@
 # whirlwindwarp
 
 A cloud of floating "stars" dragged around by a procedural 2D flow field, each
-star leaving a short fading trail. Port of xscreensaver's `whirlwindwarp.c`.
+star leaving a short trail (a hard, fixed-length tail — not a fade). Port of
+xscreensaver's `whirlwindwarp.c`.
 
 ## Source
 
@@ -53,22 +54,43 @@ squares, matching the C on a high-res display (no extra dpr multiply).
 
 ## Deviations from the C
 
-- **Colours.** The C allocates X11 colours and, on failure, cycles through
-  already-allocated ones; the recolour step picks `pp = colsavailable * rand`
-  where `colsavailable` is the count of successfully allocated colours. In a
-  browser every colour is always available, so we use `ps` directly (clamped to
-  `ps-1`) and emit `hsl()` strings. Saturation/lightness map the C's
-  `.6+.4*myrnd()` hsv to roughly `60-100% / 30-55%` — a slightly more vivid
-  rainbow than the muted original, per the project's tuning guidance.
-- **Frame pacing.** The C self-caps at 200 fps (5000 us/frame) via
-  `gettimeofday`. We instead expose an adjustable Frame rate (the standard rAF
-  lag-accumulator) and default it a touch calmer at **8000 us** for a more
-  relaxed drift. Drag the slider right for the stock-ish speed.
+- **Colours: now faithful HSV (was a wrong HSL approximation).** Each star's
+  colour is the C's `hsv_to_rgb(random()%360, .6+.4*myrnd(), .6+.4*myrnd())` —
+  random hue with saturation AND value each in `[0.2, 1.0)` (since `myrnd()` is
+  `[-1,1)`). We transcribe `utils/hsv.c`'s `hsv_to_rgb` inline and emit `rgb()`
+  strings. This hack calls `hsv_to_rgb` directly per star — it does **not** use
+  `make_*_colormap` — so there is no shared `colormap.js` helper to call here
+  (`colormap.js`'s own `hsvToRgb` is private/unexported, so the transcription is
+  inlined; exporting it from `colormap.js` would let this hack share it).
+  - *The bug that was here:* the prior port emitted `hsl()` with saturation
+    `60+40*abs(myrnd())` and lightness `30+25*abs(myrnd())`. That (a) used the
+    wrong colour model (HSL ≠ HSV), (b) dropped the lower half of the
+    saturation/value range via `abs()` (killing the C's pastel/dim stars), and
+    (c) skewed the cloud dark and over-saturated. A false note claimed this was
+    "per the project's tuning guidance"; removed.
+- **Recolour index + integer hue walk (faithful).** The recolour step picks
+  `pp = (ps-1) * (0.5+myrnd()/2)`, matching the C's `colsavailable *
+  (0.5+myrnd()/2)` — on a browser every colour allocates, so `colsavailable ==
+  ps-1` (the C cycles already-allocated colours only when the X colormap is
+  exhausted, which never happens here). `hue` is an `int` in the C, so its drift
+  is an integer random walk; we `Math.trunc` after each `hue += 0.5+myrnd()*9.0`
+  and on the `180+180*myrnd()` seed.
+- **Frame pacing (internal constant, not a resource).** The XML/C have **no**
+  `delay`/fps resource — the C self-caps at 200 fps (5000 us/frame) via
+  `gettimeofday`. An earlier port wrongly exposed a "Frame rate" slider; it has
+  been **removed**. We pace the rAF lag-accumulator with an internal
+  `DELAY_US = 10000` (100 fps, half the stock cap, applying the project's
+  effective-fps ≈ half-nominal calibration). This sets wall-clock speed only, not
+  the spatial look of the trails (fixed by `tails` and the per-step drift).
+  **Pace knob — needs live calibration** against the demo video (youtube
+  `eWrRhSYzimY`); bump `DELAY_US` down toward 5000 for stock speed or up if the
+  drift reads too fast.
 - **Meters / showfps dropped.** The `--meters` debug overlay (force-field
   parameter bars + reset counts) and the `--fps` toggle are diagnostics, not
   part of the look, and are omitted. The XML's `showfps` boolean is therefore
   not exposed.
-- No XOR / feedback tricks are used by this hack, so none are emulated.
+- No XOR / feedback / alpha-blend tricks are used by this hack (plain opaque
+  `XFillRectangle` over an opaque black background), so none are emulated.
 
 ## Correctness self-review
 
@@ -88,9 +110,13 @@ squares, matching the C on a high-res display (no extra dpr multiply).
   change via `reinit()` -> `init()`, which rebuilds the buffers. `ps`/`ts` are
   therefore constant between reinits. The buffer is seeded off-screen
   (`-starsize-1`) so the first `ps*ts` erases are no-ops on a black background.
-- **First frame is non-degenerate.** `draw()` paints black and plots all stars
-  once (after `init`/`resize`/`reinit`) so frame 1 already shows the cloud; the
-  force fields are seeded random-on at init, so motion starts immediately.
+- **First frame is non-degenerate, with no permanent specks.** `draw()` only
+  paints the background black (the C's `XClearWindow`); it no longer pre-plots the
+  stars. (An earlier port did, drawing `ps` points that were never recorded in
+  the `tx/ty` ring buffer, so they were never erased — permanent dots frozen at
+  the t=0 positions. Removed.) The first `step()` paints the whole cloud after
+  one move, exactly as the C's draw loop does, so frame 1 is already non-blank.
+  Force fields are seeded random-on at init, so motion starts immediately.
 - **Respawn-then-draw ordering matches the C.** A star that respawns this step
   is still drawn at (and its plot stored from) its *new* position, exactly as in
   `whirlwindwarp_draw`.

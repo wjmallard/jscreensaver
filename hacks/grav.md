@@ -27,17 +27,17 @@ Standard rAF lag-accumulator paced by `config.delay` (µs in the xml; divided by
 
 ## Deviations from the C
 - **Persistent-canvas erase/draw** kept faithfully (above) rather than a full repaint, so trails behave exactly as in the original.
-- **Colors**: the C pulls each planet/star colour from the X colormap (`MI_PIXEL`, `ncolors` entries). We map `ncolors` onto an `hsl()` rainbow (`hsl(i·360/n, 100%, 55%)`) per the gallery's vivid-palette convention — brighter than the stock muted colormap.
-- **devicePixelRatio**: the projected disc radius and star radius are already in device px (they're derived from `canvas.height`), so they scale on retina for free. The trail-dot size and star-ring `lineWidth` are scaled by `dpr` explicitly; the C instead tripled the trail dot only past 2560 px (we keep that ×3 branch *and* apply dpr).
+- **Colors** *(audit fix)*: now faithful. `grav.c` defines `BRIGHT_COLORS`, so the xlockmore framework fills the X colormap with `make_random_colormap` (bright path: random hue 0–360, saturation 30–100%, value 66–100% — vivid but *varied*, **not** a hue-ordered rainbow), and each planet and the star pick a *random* entry (`MI_PIXEL(NRAND(MI_NPIXELS))`). We port this exactly via `makeRandomColormapRGB(ncolors, true)` from `colormap.js`, built once per `init()`. When `ncolors ≤ 2` the C drops to mono/white (xlockmore's `npixels <= 2 goto MONO`, i.e. the `MI_NPIXELS > 2` gate) — we leave the palette null and use white. There is **no colour cycling** (a canvas is TrueColor → `writable_p` is false → the framework never rotates the map, and grav.c has no cycling code regardless). An earlier port used a fully-saturated `hsl(i·360/n, 100%, 55%)` rainbow — the systemic "vivid rainbow" deviation — now removed.
+- **devicePixelRatio**: the projected disc radius and star radius are already in device px (they're derived from `canvas.height`), so they scale on retina for free. The trail-dot size and star-ring `lineWidth` are scaled by `dpr` explicitly; the C instead tripled the trail dot only past 2560 px (we keep that ×3 branch *and* apply dpr). The star's pulse step is `±dpr` device px (not `±1`): the pulse *range* (`STARRADIUS`) is also dpr-scaled, so this keeps the pulse period — measured in frames — equal to the original's at its native resolution rather than dpr-times slower.
 - **Giant near-camera discs**: when a planet's `z` approaches `-16`, `z+DIST → 0` and the disc radius explodes (e.g. `20·height`). The C has the identical behaviour and relies on its `Planet()` macro to draw only when the disc *centre* is in bounds; our `disc()` clips with the exact same centre-in-bounds test, so an off-screen-centred giant simply isn't drawn — faithful.
 - **No `--fps`**: the xml's "Show frame rate" is an xscreensaver overlay, not part of the hack; omitted (as in the other ports). The `--root` command flag is X-specific and N/A.
-- **Integer truncation**: `xi`/`yi`/`ri` use `| 0` to match the C's `(int)` cast (truncate toward zero).
+- **Integer truncation**: `xi`/`yi`/`ri` use `| 0` to match the C's `(int)` cast (truncate toward zero), and `INTRINSIC_RADIUS = (H/5) | 0` matches the C's integer `gp->height/5`. A planet whose projected radius rounds to 0 (very far away) draws nothing — X's `XFillArc` with a 0-size box draws nothing, so `disc()` returns early for `d < 1` (the trail dot and erase always pass `d ≥ 1`, so they're unaffected).
 
 ## Config
 Ranges mirror `hacks/config/grav.xml`:
-- `delay` — Frame rate, µs/step, default 10000, `invert: true` (the xml's `convert="invert"` slider), **live**.
-- `count` — Objects (planets), 1–40, default 12, **non-live** (sizes the planet array → `reinit()`).
-- `ncolors` — Colors, 1–255, default 64, **non-live** (sizes the palette → `reinit()`).
+- `delay` — Frame rate, µs/step, **default 18000** (the stock xml/`.c` default is **10000**); the browser's rAF loop reaches a higher *effective* step rate than xscreensaver's `delay + ~overhead`, so we run a slightly calmer pace. `invert: true` (the xml's `convert="invert"` slider), **live**. This is a tunable pace knob, **not** a fidelity claim — the main session should confirm the pace against the live binary.
+- `count` — "Number of objects" (planets), 1–40, default 12, **non-live** (sizes the planet array → `reinit()`).
+- `ncolors` — "Number of colors", 1–255, default 64, **non-live** (sizes the `make_random_colormap` palette → `reinit()`).
 - `decay` — Orbital decay, default on, **live** (read every step; flips the integration in place).
 - `trail` — Object trails, default on, **live** (read every step).
 

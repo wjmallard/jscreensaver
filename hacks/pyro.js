@@ -12,11 +12,25 @@
 // gravity on every projectile is proportional to its size, so big sparks fall
 // faster than small ones, giving the drooping willow-burst shape.
 //
+// The C runs the whole simulation in integer fixed point: positions/sizes/
+// velocities are kept scaled and read back >>10 (/1024) for screen coords. The
+// port keeps that arithmetic verbatim, in CSS-pixel space — identical to the C
+// at the same window size — then scales the *draw* to the device backing store
+// by devicePixelRatio for a crisp retina image. No physics constant is scaled by
+// dpr: doing so would stretch the fuse (a step count) and burst rockets after
+// apex on retina.
+//
+// Projectiles live in a fixed pool threaded onto a LIFO free list, exactly like
+// the C's `next_free` chain — which matters: a primary is freed the instant its
+// fuse dies, so its OWN slot is the first thing its burst re-allocates, and the
+// resulting memory aliasing shapes every explosion (see shrapnel()).
+//
 // Rendering: sparse VECTOR ops (fillRect for tiny sparks, arc+fill for larger
-// ones) with a full clear-to-black each frame — same as boxfit. The C erases
-// each projectile's previous rect every step and draws only the new one; a full
-// repaint on the double-buffered canvas reproduces the identical look (hard
-// sparks on black, no trails) without the per-projectile erase bookkeeping.
+// ones) with a full clear-to-black each frame. The C erases each projectile's
+// previous rect every step and draws only the new one; a full repaint on the
+// double-buffered canvas reproduces the identical look (hard sparks on black,
+// no trails) without the per-projectile erase bookkeeping or the C's pixel-sort
+// (an X11 GC optimisation with no canvas analogue).
 
 export const title = 'pyro';
 
@@ -31,9 +45,12 @@ export function start(canvas) {
 
   // Defaults/ranges mirror hacks/config/pyro.xml so the config box maps 1:1 to
   // the original. (The xml's "showfps" boolean is host chrome, not ported.)
+  // delay: the stock xml default is 10000 µs; 20000 here paces the rAF loop to
+  // the C's *effective* framerate (~half nominal — see pyro.md). A pacing knob,
+  // not a fidelity item.
   const config = {
     delay: 20000,    // µs between steps (--delay), inverted "Frame rate"
-    count: 600,      // max live projectiles (--count), "Particle density"
+    count: 600,      // size of the projectile pool (--count), "Particle density"
     frequency: 30,   // launch when rand(frequency)==0 (--frequency), inverted
     scatter: 100,    // shrapnel per burst (--scatter), "Explosive yield"
   };
@@ -45,34 +62,33 @@ export function start(canvas) {
     { key: 'scatter', label: 'Explosive yield', type: 'range', min: 1, max: 400, step: 1, default: 100, lowLabel: 'low', highLabel: 'high', live: true },
   ];
 
-  // Fixed point: the C keeps x/y/size/velocity scaled by 1024 and shifts >>10
-  // for screen coords. We keep the same arithmetic so the motion matches exactly.
   const FP = 10;                 // fixed-point shift (>>10 == /1024)
   const PI_2000 = 6284;          // size of the velocity caches (~2000*PI)
   const GRAVITY = 100;           // the C's `g`, used only in the fuse calc
 
   // Whacked sin/cos caches that shape the explosion burst (cache() in the C).
-  // Each index i holds a velocity vector along angle i/1000 rad, scaled by a
-  // randomised radius dA — a sin() of a random angle plus a small asin() term
-  // that fattens the distribution toward a sphere. Indexed randomly per spark.
+  // Each entry is a unit vector at angle i/1000 rad scaled by a randomised
+  // radius dA — sin() of a random angle plus a small asin() term that fattens
+  // the distribution toward a sphere — times 2500. Sparks index it at random.
+  // Built once, like the C (the distribution is independent of window/dpr).
   const sinCache = new Int32Array(PI_2000);
   const cosCache = new Int32Array(PI_2000);
   function buildCaches() {
     for (let i = 0; i < PI_2000; i++) {
       let dA = Math.sin((Math.floor(Math.random() * (PI_2000 / 2))) / 1000.0);
       dA += Math.asin(Math.random()) / (Math.PI / 2) * 0.1;
-      cosCache[i] = Math.trunc(Math.cos(i / 1000.0) * dA * 2500.0 * S);
-      sinCache[i] = Math.trunc(Math.sin(i / 1000.0) * dA * 2500.0 * S);
+      cosCache[i] = Math.trunc(Math.cos(i / 1000.0) * dA * 2500.0);
+      sinCache[i] = Math.trunc(Math.sin(i / 1000.0) * dA * 2500.0);
     }
   }
 
-  let S = 1;                 // devicePixelRatio
-  let W, H;                  // canvas size, device px
+  let S = 1;                 // devicePixelRatio (render scale only — not physics)
+  let W, H;                  // canvas size in CSS px (the physics space)
   let projectiles;           // flat pool of every projectile (size = config.count)
+  let freeHead;              // head of the LIFO free list (a projectile, or null)
 
-  // A projectile is a plain object reused from the pool. `dead` ones sit idle
-  // until launch()/burst() revive them, mirroring the C's free-list (we just
-  // scan for a dead slot instead of threading a next_free pointer).
+  // A projectile is a plain object reused from the pool. They are all wired onto
+  // a LIFO free list exactly like the C's `next_free` chain.
   function makeProjectile() {
     return {
       x: 0, y: 0,        // position, fixed-point
@@ -83,14 +99,26 @@ export function start(canvas) {
       primary: false,    // true = rocket (white), false = shrapnel (coloured)
       hue: 0,            // 0..359, the burst colour
       dead: true,
+      nextFree: null,
     };
   }
 
+  // free_projectile(): push onto the free-list head, mark dead.
+  function freeProjectile(p) {
+    p.nextFree = freeHead;
+    freeHead = p;
+    p.dead = true;
+  }
+
+  // get_projectile(): pop the free-list head, or null if the pool is exhausted
+  // (in which case the C — and we — silently drop the launch/spark).
   function getProjectile() {
-    for (let i = 0; i < projectiles.length; i++) {
-      if (projectiles[i].dead) return projectiles[i];
-    }
-    return null;   // pool exhausted -> drop the launch/spark, like the C
+    const p = freeHead;
+    if (!p) return null;
+    freeHead = p.nextFree;
+    p.nextFree = null;
+    p.dead = false;
+    return p;
   }
 
   // Launch a primary rocket from the bottom edge. xlim/ylim are fixed-point.
@@ -98,35 +126,37 @@ export function start(canvas) {
     const p = getProjectile();
     if (!p) return;
 
-    // Pick an x and horizontal velocity so the rocket stays on screen.
+    // Pick an x and horizontal velocity so the arc stays on screen.
     let x, dx, xxx;
-    // dx/dy/size are velocities/extent in the position space, which is sized in
-    // device px; scale them by dpr so a burst covers the same fraction of the
-    // screen (and rises to the same apparent height) on retina as on 1x.
     do {
       x = Math.floor(Math.random() * xlim);
-      dx = Math.round((30000 - Math.floor(Math.random() * 60000)) * S);
+      dx = 30000 - Math.floor(Math.random() * 60000);
       xxx = x + dx * 200;
     } while (xxx <= 0 || xxx >= xlim);
 
     p.x = x;
     p.y = ylim;
     p.dx = dx;
-    p.size = Math.round(8000 * S);
+    p.size = 8000;
     p.decay = 0;
-    p.dy = Math.round((Math.floor(Math.random() * 4000) - 13000) * S);   // upward (negative y)
+    p.dy = Math.floor(Math.random() * 4000) - 13000;   // upward (negative y)
     p.fuse = Math.floor(((Math.floor(Math.random() * 500) + 500) * Math.abs(Math.trunc(p.dy / g))) / 1000);
     p.primary = true;
-    p.dead = false;
 
     // Cope with small windows -- the constants above assume big ones.
     const dd = Math.floor(1000000 / ylim);
     if (dd > 1) p.fuse = Math.floor(p.fuse / dd);
 
-    p.hue = Math.floor(Math.random() * 360);
+    p.hue = Math.floor(Math.random() * 360);   // C: hsv(h,1,1); rockets draw white
   }
 
-  // Spawn one shrapnel spark from a bursting parent.
+  // Spawn one shrapnel spark from a bursting parent. The first spark of a burst
+  // reuses the parent's OWN freed slot, so `parent` IS `p`: every field is read
+  // before it is written, so the first spark gets the true parent velocity/size
+  // — but it also OVERWRITES the parent slot, so the rest of the burst builds on
+  // the first spark (its velocity offset by cache[v1], its size 2/3 of 2/3). This
+  // aliasing is exactly what the C does, and it is what shapes the explosion:
+  // bursts are dottier (most sparks 4/9 the rocket size) and drift off-centre.
   function shrapnel(parent) {
     const p = getProjectile();
     if (!p) return;
@@ -135,14 +165,11 @@ export function start(canvas) {
     const v = Math.floor(Math.random() * PI_2000);
     p.dx = sinCache[v] + parent.dx;
     p.dy = cosCache[v] + parent.dy;
-    // decay scaled by dpr so a spark's lifetime in steps is dpr-independent
-    // (size is dpr-scaled too, so size/decay -- the step count -- stays fixed).
-    p.decay = Math.round((Math.floor(Math.random() * 50) - 60) * S);   // shrinks
+    p.decay = Math.floor(Math.random() * 50) - 60;   // shrinks
     p.size = Math.floor((parent.size * 2) / 3);
     p.fuse = 0;
     p.primary = false;
     p.hue = parent.hue;
-    p.dead = false;
   }
 
   // One simulation step over the whole pool (pyro_draw in the C, minus the X11
@@ -160,38 +187,38 @@ export function start(canvas) {
       p.dy += p.size >> 6;        // gravity, proportional to size
       if (p.primary) p.fuse--;
 
-      // Screen coords: the C stores positions in a *1000 space (set by launch)
-      // but reads them >>10 (/1024), and bounds-checks against the raw pixel
-      // extent. We replicate that exactly rather than "tidy" the two scales.
       const x = p.x >> FP;
       const y = p.y >> FP;
 
+      // A primary lives while its fuse burns; shrapnel while it has size left;
+      // both die off-screen. (Bounds are the raw pixel extent, as in the C.)
       const alive = (p.primary ? (p.fuse > 0) : (p.size > 0)) &&
                     x < W && y < H && x > 0 && y > 0;
+      if (!alive) freeProjectile(p);
 
-      if (!alive) {
-        p.dead = true;
-      }
-
-      // Burst: a primary whose fuse just ran out scatters shrapnel and dies.
+      // Burst: a primary whose fuse ran out scatters shrapnel. It was just
+      // freed (above), so its slot is the free-list head and the first
+      // shrapnel() reuses it (the aliasing described in shrapnel()).
       if (p.primary && p.fuse <= 0) {
-        const half = Math.max(1, Math.floor(config.scatter / 2));
-        let j = Math.floor(Math.random() * Math.max(1, config.scatter)) + half;
+        let j = Math.floor(Math.random() * config.scatter) + Math.floor(config.scatter / 2);
         while (j-- > 0) shrapnel(p);
       }
     }
 
-    // Launch a fresh rocket every so often. The C re-reads the window size here
-    // and passes the *1000 bounds to launch (which seeds positions in that space).
-    if (Math.floor(Math.random() * Math.max(1, config.frequency)) === 0) {
+    // Launch a fresh rocket every so often, seeding it in the *1000 position
+    // space (the C re-reads the window size here; we use the cached CSS extent).
+    if (Math.floor(Math.random() * config.frequency) === 0) {
       launch(W * 1000, H * 1000, g);
     }
   }
 
-  // Draw every live projectile (full repaint on the double-buffered canvas).
+  // Draw every live projectile (full repaint). Physics is in CSS px; we scale
+  // each coordinate by dpr at draw time so the backing store stays crisp on
+  // retina without distorting the simulation. (No ctx transform state, so
+  // nothing leaks to the next mounted hack.)
   function draw() {
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     for (let i = 0; i < projectiles.length; i++) {
       const p = projectiles[i];
@@ -202,16 +229,16 @@ export function start(canvas) {
       const y = p.y >> FP;
       if (x <= 0 || y <= 0 || x >= W || y >= H) continue;
 
-      // Rockets burn white (the launch streak); shrapnel wears the burst hue.
-      // Vivid, fully-saturated colours per the gallery's palette convention.
-      ctx.fillStyle = p.primary ? '#fff' : `hsl(${p.hue}, 100%, 60%)`;
+      // Rockets burn white (the launch streak); shrapnel wear the burst hue at
+      // full saturation and value — hsl(h,100%,50%) == the C's hsv(h,1,1).
+      ctx.fillStyle = p.primary ? '#fff' : `hsl(${p.hue}, 100%, 50%)`;
 
       if (size < 4) {
-        ctx.fillRect(x, y, Math.max(1, size), Math.max(1, size));
+        ctx.fillRect(x * S, y * S, size * S, size * S);   // point / tiny square (C: XDrawPoint / small XFillRectangle)
       } else {
-        const r = size / 2;
+        const r = (size * S) / 2;
         ctx.beginPath();
-        ctx.arc(x + r, y + r, r, 0, Math.PI * 2);
+        ctx.arc(x * S + r, y * S + r, r, 0, Math.PI * 2);   // filled disc (C: XFillArc)
         ctx.fill();
       }
     }
@@ -219,17 +246,19 @@ export function start(canvas) {
 
   function init() {
     S = window.devicePixelRatio || 1;
-    W = canvas.width;
-    H = canvas.height;
+    W = canvas.width / S;
+    H = canvas.height / S;
 
     const n = Math.max(1, Math.round(config.count));
     projectiles = new Array(n);
     for (let i = 0; i < n; i++) projectiles[i] = makeProjectile();
-
-    buildCaches();   // S is set, so burst velocities scale with dpr
+    // Free every slot in index order, so the list head ends at the last slot
+    // (matching the C's init loop). All projectiles start dead.
+    freeHead = null;
+    for (let i = 0; i < n; i++) freeProjectile(projectiles[i]);
 
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   function resize() {
@@ -272,6 +301,7 @@ export function start(canvas) {
     init();
   }
 
+  buildCaches();   // once, like the C
   window.addEventListener('resize', resize);
   resize();
   rafId = requestAnimationFrame(frame);

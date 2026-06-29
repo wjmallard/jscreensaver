@@ -16,8 +16,8 @@
 // in the C), so this uses canvas VECTOR ops. The C colours each leaf line by its
 // position along the curve (a rainbow gradient) and casts that to an integer
 // palette index, so leaf segments are bucketed by colour index into one Path2D
-// per colour (<= ncolors) and each bucket is stroked once — turning up to tens of
-// thousands of XDrawLine calls into ~ncolors stroke()s per frame.
+// per colour (256, the C's MAXIMUM_COLOR_COUNT) and each bucket is stroked once —
+// turning up to tens of thousands of XDrawLine calls into <=256 stroke()s/frame.
 
 export const title = 'ccurve';
 
@@ -33,24 +33,24 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/ccurve.xml (1:1 with the original).
   // The C runs two timers: `pause` (short, between successive depth frames as the
   // fractal grows) and `delay` (long, the "linger" once a fractal is complete,
-  // before the next one). `limit` sets the recursion depth (density). We keep the
-  // xml units (seconds) and divide to ms in the loop; `pause` is tuned a touch
-  // calmer than stock and `ncolors` is ours for parity with the gallery.
+  // before the next one). `limit` sets the recursion depth (density). In ccurve
+  // BOTH timers are in SECONDS (the C reads them as floats and multiplies by 1e6),
+  // matching the xml's seconds-labelled sliders; we divide to ms in the loop. The
+  // palette is fixed (256-entry rainbow, not user-configurable) -- see buildPalette.
   const config = {
     delay: 3,          // seconds to linger on a finished fractal (--delay)
     pause: 0.4,        // seconds between depth frames as it grows (--pause)
     limit: 200000,     // line budget; sets recursion depth (--limit)
-    ncolors: 64,       // hue-cycle size (not in stock UI; gallery parity)
   };
 
   const params = [
-    { key: 'pause', label: 'Frame rate', type: 'range', min: 0, max: 5, step: 0.1, default: 0.4, unit: ' s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'delay', label: 'Linger', type: 'range', min: 0, max: 30, step: 1, default: 3, unit: ' s', lowLabel: 'brief', highLabel: 'long', live: true },
-    { key: 'limit', label: 'Density', type: 'range', min: 3, max: 300000, step: 1000, default: 200000, lowLabel: 'low', highLabel: 'high', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'pause', label: 'Animation speed', type: 'range', min: 0, max: 5, step: 0.1, default: 0.4, unit: ' s', invert: true, lowLabel: 'Slow', highLabel: 'Fast', live: true },
+    { key: 'delay', label: 'Change image every', type: 'range', min: 0, max: 30, step: 1, default: 3, unit: ' s', lowLabel: '0 seconds', highLabel: '30 seconds', live: true },
+    { key: 'limit', label: 'Density', type: 'range', min: 3, max: 300000, step: 1000, default: 200000, lowLabel: 'Low', highLabel: 'High', live: false },
   ];
 
   const EPSILON = 1e-5;
+  const COLOR_COUNT = 256;   // the C's MAXIMUM_COLOR_COUNT (make_color_loop size)
   // The C weights segment counts so 4-segment generators dominate, then 3, then 2.
   const LENGTHS = [4, 4, 4, 4, 4, 3, 3, 3, 2];
 
@@ -62,7 +62,7 @@ export function start(canvas) {
 
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
-  let palette;               // ncolors smooth-rainbow CSS strings
+  let palette;               // 256 full-saturation rainbow CSS strings (make_color_loop)
 
   // Current-fractal state (mirrors the C's struct draw_* fields).
   let segments;              // the chosen generator: [{ angle, length }, ...]
@@ -88,10 +88,15 @@ export function start(canvas) {
   const rand = (n) => Math.floor(Math.random() * n);
 
   function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 1 (the C's mono fallback).
-    for (let i = 0; i < n; i++) palette[i] = n > 1 ? `hsl(${i * 360 / n}, 100%, 55%)` : '#fff';
+    // ccurve_init builds a fixed 256-entry HSV colour LOOP via make_color_loop
+    // with anchors (0,1,1)/(120,1,1)/(240,1,1) -- a full-saturation, full-value
+    // hue sweep red->green->blue->red, built ONCE and never cycled. With s=v=1 at
+    // evenly spaced hues that loop is exactly hsl(h,100%,50%), so we emit the same
+    // 256 entries. (hsl 100%/50% == hsv s=1/v=1; 50% lightness keeps the hues pure.)
+    palette = new Array(COLOR_COUNT);
+    for (let i = 0; i < COLOR_COUNT; i++) {
+      palette[i] = `hsl(${i * 360 / COLOR_COUNT}, 100%, 50%)`;
+    }
   }
 
   // --- generator selection (the C's select_2/3/4_pattern, transcribed) ---------
@@ -505,8 +510,9 @@ export function start(canvas) {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
-    // The C draws 1px lines; bump on hi-dpi / very large windows so they read.
-    ctx.lineWidth = (W > 2560 || H > 2560) ? 2 * S : Math.max(1, S);
+    // The C draws a 1-device-px hairline (XDrawLine, default GC line width 0).
+    // max(1, dpr) keeps that 1px on standard displays and 1 CSS px on retina.
+    ctx.lineWidth = Math.max(1, S);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     nextDelay = 0;

@@ -13,10 +13,11 @@
 // coloured per galaxy. After a fixed number of steps the universe is reseeded.
 //
 // Rendering: tiny filled rects via fillRect (sparse — at most a few thousand
-// 1-2 px dots over a mostly-black field), with an optional faint fade of the
-// previous frame to leave comet-like motion trails. Plotting only the live
-// points is far cheaper than a full per-pixel ImageData blit would be here, and
-// the fade trail is a cheap full-canvas alpha rect.
+// 1-2 px dots over a mostly-black field), on a freshly-cleared black canvas
+// every frame (the C clears each frame; there are no star trails). Plotting only
+// the live points is far cheaper than a full per-pixel ImageData blit.
+
+import { makeColorRampRGB } from './colormap.js';
 
 export const title = 'galaxy';
 
@@ -30,15 +31,14 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/galaxy.xml so the config box maps 1:1.
-  // `trails` is not in the stock galaxy UI (the C clears every frame) — we add
-  // it for the comet-tail look; see galaxy.md.
+  // (delay default is doubled from the xml's 20000 to match the C's effective
+  // ~half-nominal step rate — a pace knob, not a fidelity item; see galaxy.md.)
   const config = {
-    delay: 40000,   // µs between steps (--delay)
+    delay: 40000,   // µs between steps (--delay; xml stock 20000)
     count: -5,      // galaxies; negative = random up to |count| (--count)
     cycles: 250,    // steps before the universe reseeds (--cycles / "Duration")
-    ncolors: 64,    // size of the rainbow palette (--ncolors)
+    ncolors: 64,    // size of the uniform colormap (--ncolors)
     spin: true,     // tumble the viewpoint (--spin)
-    trails: 0.30,   // motion-trail persistence, 0 = clear each frame (added)
   };
 
   const params = [
@@ -46,7 +46,6 @@ export function start(canvas) {
     { key: 'count', label: 'Galaxies (< 0 = random)', type: 'range', min: -20, max: 20, step: 1, default: -5, live: false },
     { key: 'cycles', label: 'Duration', type: 'range', min: 10, max: 1000, step: 10, default: 250, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 10, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'trails', label: 'Trails', type: 'range', min: 0, max: 0.9, step: 0.05, default: 0.30, lowLabel: 'none', highLabel: 'long', live: true },
     { key: 'spin', label: 'Rotate viewpoint', type: 'checkbox', default: true, live: true },
   ];
 
@@ -62,13 +61,12 @@ export function start(canvas) {
   const QCONS = 0.001;                    // gravitational constant scale
   const COLORBASE = 16;                   // colour buckets the C spreads galaxies over
 
-  let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
   let scale;          // world->screen length scale
   let pscale;         // dot size in device px
   let midX, midY;     // screen centre
   let galaxies;       // array of galaxy clouds
-  let palette;        // ncolors rainbow CSS strings
+  let palette;        // ncolors uniform-colormap CSS strings
   let rotY, rotX;     // viewpoint rotation angles
   let step;           // frames since last reseed
   let hitIterations;  // == config.cycles; reseed at 4x this
@@ -77,10 +75,17 @@ export function start(canvas) {
     return Math.random();
   }
 
+  // make_uniform_colormap (utils/colors.c, via galaxy.c's UNIFORM_COLORS): a hue
+  // ramp 0->359 at ONE random saturation & value, each in 66%-100% — a uniformly
+  // tinted, muted rainbow, NOT a full-saturation one. Built once per init; the C's
+  // framework builds it at startup and galaxy never rebuilds it, so the colours
+  // stay fixed across reseeds.
   function buildPalette() {
     const n = Math.max(2, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 60%)`;
+    const S = (Math.floor(Math.random() * 34) + 66) / 100;   // 0.66..0.99
+    const V = (Math.floor(Math.random() * 34) + 66) / 100;
+    const ramp = makeColorRampRGB(0, S, V, 359, S, V, n, false);
+    palette = ramp.map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // Seed (or reseed) the whole universe: choose the galaxy count, then build
@@ -101,11 +106,13 @@ export function start(canvas) {
 
     galaxies = [];
     for (let i = 0; i < ngalaxies; i++) {
-      // Galaxy colour bucket: C skips index 0/1 collisions to avoid an
-      // all-green galaxy; we map the bucket onto the rainbow palette.
+      // Galaxy colour (galaxy.c): NRAND(COLORBASE-2), nudged past slots 2-3 (the
+      // C's "not all-green" fudge). The C draws every star of a galaxy with
+      // MI_PIXEL(COLORSTEP * galcol), where COLORSTEP = ncolors / COLORBASE.
       let galcol = Math.floor(frand() * (COLORBASE - 2));
       if (galcol > 1) galcol += 2;
-      const colorIndex = Math.floor(galcol / COLORBASE * palette.length) % palette.length;
+      const colorStep = Math.floor(palette.length / COLORBASE);
+      const colorIndex = colorStep * galcol;
 
       const nstars = Math.floor(frand() * (MAX_STARS / 2)) + MAX_STARS / 2;
 
@@ -239,17 +246,12 @@ export function start(canvas) {
     if (step > hitIterations * 4) startover();
   }
 
-  // Draw the current star positions. With trails > 0 we fade the previous frame
-  // (alpha-black rect) instead of clearing, so the dots leave comet tails.
+  // Draw the current star positions onto a freshly-cleared black field. The C
+  // clears every frame (XClearWindow single-buffered, or erases the previous
+  // rects double-buffered) — either way only the live points show, no trails.
   function draw() {
-    const t = config.trails;
-    if (t > 0) {
-      ctx.fillStyle = `rgba(0,0,0,${1 - t})`;
-      ctx.fillRect(0, 0, W, H);
-    } else {
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
-    }
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
 
     for (let i = 0; i < galaxies.length; i++) {
       const gt = galaxies[i];
@@ -265,14 +267,18 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
-    // Same screen scale as the C: (w + h) / 8, with retina dots 2 px wide.
-    pscale = Math.max(1, Math.round(S));
-    scale = (W + H) / 8.0 / pscale;
+    // init_galaxy: world scale (w + h) / 8; dots are 1 px, bumped to 2 px (with the
+    // world scale halved to keep the same extent) only past 2560 device px.
+    scale = (W + H) / 8.0;
     midX = W / 2;
     midY = H / 2;
+    pscale = 1;
+    if (W > 2560 || H > 2560) {
+      pscale = 2;
+      scale /= pscale;
+    }
     buildPalette();
     startover();
   }

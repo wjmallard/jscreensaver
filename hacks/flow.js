@@ -18,6 +18,8 @@
 // double-buffered path) clears the canvas and re-strokes all buckets each frame.
 // A handful of strokes (<= ncolors) cover hundreds/thousands of short segments.
 
+import { makeRandomColormapRGB } from './colormap.js';
+
 export const title = 'flow';
 
 export const info = {
@@ -30,13 +32,13 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/flow.xml so the config box maps ~1:1 to
-  // the original. (`count` defaults below stock 3000 for a calmer/lighter cloud
-  // -- the slider still reaches 5000; see flow.md.)
+  // the original. (`delay` default is eased from the stock 10000 to calm the pace
+  // in a browser -- the slider still spans the xml's 0..100000; see flow.md.)
   const config = {
-    delay: 15000,     // \u00B5s between steps (--delay)
-    count: 1500,      // number of bees (--count; stock 3000)
+    delay: 15000,     // \u00B5s between steps (--delay; stock 10000, eased)
+    count: 3000,      // number of bees (--count)
     cycles: 10000,    // steps before a flow times out and re-seeds (--cycles)
-    ncolors: 200,     // size of the rainbow palette (--ncolors)
+    ncolors: 200,     // size of the colour palette (--ncolors)
     size: -10,        // trail-length seed (--size; negative => random taillen)
     rotate: true,     // orbit the attractor (--no-rotate)
     ride: true,       // ride along a bee (--no-ride)
@@ -47,9 +49,9 @@ export function start(canvas) {
 
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Count', type: 'range', min: 10, max: 5000, step: 10, default: 1500, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'cycles', label: 'Timeout', type: 'range', min: 1000, max: 800000, step: 1000, default: 10000, lowLabel: 'small', highLabel: 'large', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
+    { key: 'count', label: 'Count', type: 'range', min: 10, max: 5000, step: 10, default: 3000, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'cycles', label: 'Timeout', type: 'range', min: 0, max: 800000, step: 1000, default: 10000, lowLabel: 'small', highLabel: 'large', live: true },
+    { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'size', label: 'Length of trails', type: 'range', min: -20, max: -2, step: 1, default: -10, lowLabel: 'short', highLabel: 'long', invert: true, live: false },
     { key: 'rotate', label: 'Rotating around attractor', type: 'checkbox', default: true, live: false },
     { key: 'ride', label: 'Ride in the flow', type: 'checkbox', default: true, live: false },
@@ -130,6 +132,7 @@ export function start(canvas) {
 
   // Rendering buckets: segBuckets[col] is a flat [x1,y1,x2,y2, ...] list.
   let segBuckets, nbuckets, bucketColors;
+  let palette = null, paletteN = 0;     // faithful make_random_colormap, cached by ncolors
 
   // Orientation matrix and ODE scratch (reused to avoid per-step allocation).
   const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -442,15 +445,33 @@ export function start(canvas) {
       bees[b] = { tail };
     }
 
-    // Colour buckets: bucket col uses palette entry col+1, like the C's
-    // MI_PIXEL(col+1) over MI_NPIXELS-1 buckets. <= 2 colours -> mono white.
+    // Palette: flow.c defines no *_COLORS, so xlockmore gives it the DEFAULT
+    // colour scheme -- make_random_colormap with bright_p = FALSE: `ncolors`
+    // fully-random RGB entries (NOT a smooth/ordered rainbow ramp). xlockmore
+    // allocates the colormap ONCE at screen init; init_flow never rebuilds it, so
+    // we cache by ncolors and only re-roll when ncolors changes (an internal
+    // re-seed keeps the same palette, as the C does). Bucket col uses palette
+    // entry col+1, like the C's MI_PIXEL(col+1) over MI_NPIXELS-1 buckets.
+    // <= 2 colours -> mono white, as the C's render() falls back to MI_WHITE_PIXEL.
     const np = Math.max(1, Math.round(config.ncolors));
     nbuckets = Math.max(1, np - 1);
+    if (np > 2) {
+      if (!palette || paletteN !== np) {
+        palette = makeRandomColormapRGB(np, false);   // make_random_colormap, bright_p=False
+        paletteN = np;
+      }
+    } else {
+      palette = null;
+      paletteN = np;
+    }
     bucketColors = new Array(nbuckets);
     for (let col = 0; col < nbuckets; col++) {
-      bucketColors[col] = np > 2
-        ? `hsl(${(((col + 1) * 360 / np) | 0)}, 100%, 55%)`
-        : 'white';
+      if (np > 2) {
+        const c = palette[col + 1];
+        bucketColors[col] = `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+      } else {
+        bucketColors[col] = 'white';
+      }
     }
     // Preserve existing buckets across an internal re-seed (so the last frame of
     // the old flow stays on screen); only rebuild when the count changed.

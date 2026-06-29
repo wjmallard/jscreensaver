@@ -62,7 +62,6 @@ export function start(canvas) {
   const TC = 1.0;                  // time constant (timeScale); the C clamps to 0..10
   const SHAKE_THRESHOLD = 0.015;   // max per-frame motion below which we "shake"
 
-  let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px (the box is [0,W] x [0,H])
   let count;          // actual ball count (may be trimmed to fit the box)
   let maxRadius;      // largest ball radius, device px
@@ -71,10 +70,10 @@ export function start(canvas) {
   let opx, opy;       // previous positions (only used to measure motion for shake)
   let r;              // ball radii
   let m;              // ball masses, precomputed
-  let color, color2;  // current ball colour, and the "special" colour (1 ball)
-  let specialBall;    // index drawn in color2 (the C's mouse_ball; here just decor)
+  let color;          // current ball colour; EVERY ball shares it (the C's fg)
   let timeSinceShake; // seconds (real wall-clock) since the last shake
   let lastShakeClock; // performance.now() at the last shake bookkeeping tick
+  let seeded = false; // whether the ball set has been created yet
 
   // Gravity orientation. shake() permutes the C's running (accx, accy); we keep
   // that permutation symbolically as coefficients on the *base* (wind, gravity)
@@ -89,23 +88,34 @@ export function start(canvas) {
     return Math.random() * x;
   }
 
-  // Bright, saturated ball colours: the C rolls each channel in [0x88, 0xff],
-  // i.e. always at least half-bright. We do the same to a CSS rgb() string.
-  function randomColor() {
-    const ch = () => 0x88 + ((Math.random() * 0x78) | 0);
-    return `rgb(${ch()},${ch()},${ch()})`;
+  // Ball colour, transcribed from recolor() in the C: each 16-bit channel is
+  //   0x8888 + (random() % 0x8888)
+  // held in an unsigned short, so when the sum exceeds 0xffff it WRAPS to a dark
+  // value (~12.5% per channel); the X server then displays the high byte (>> 8).
+  // We reproduce that exactly, wrap included, so the occasional darker / more
+  // saturated colour phase survives. (Clamping each channel to [0x88,0xff], as a
+  // naive port would, flattens every phase to pastel.)
+  function randomChannel() {
+    const c16 = (0x8888 + ((Math.random() * 0x8888) | 0)) & 0xFFFF;
+    return c16 >> 8;
   }
 
   function recolor() {
-    color = randomColor();
-    color2 = randomColor();
+    color = `rgb(${randomChannel()},${randomChannel()},${randomChannel()})`;
   }
 
-  // Initialise ball arrays and the box. Mirrors fluidballs_init().
-  function init() {
-    S = window.devicePixelRatio || 1;
+  // Read the box bounds from the canvas. The C polls the window geometry every
+  // frame (check_window_moved) and updates the bounds WITHOUT disturbing the
+  // running simulation; the resize listener is our equivalent.
+  function setBox() {
     W = canvas.width;
     H = canvas.height;
+  }
+
+  // Create and scatter the ball set. Mirrors fluidballs_init(). max_radius and
+  // count are fixed here (the C computes them once, at init, from the box size).
+  function seed() {
+    setBox();
 
     // Identity orientation: accx = wind, accy = gravity (the C's starting state;
     // it clamps each to [-1, 1], which our slider ranges already respect).
@@ -118,9 +128,11 @@ export function start(canvas) {
 
     count = Math.max(1, Math.round(config.count));
 
-    // max_radius = size/2, scaled to device px; retina bump and tiny-window cap
-    // match the C (which keys the retina test on a 2560 px window).
-    maxRadius = (config.size / 2) * S;
+    // max_radius = size/2 in device px. X11 works in device px and the canvas is
+    // device px too, so there is NO extra dpr scaling (a ball is size/2 px on any
+    // display, matching the C). The retina bump (x3 past 2560 px) and tiny-window
+    // cap (<= 5) are the C's, keyed on the device-px size exactly as the C is.
+    maxRadius = config.size / 2;
     if (maxRadius < 1) maxRadius = 1;
     if (W > 2560 || H > 2560) maxRadius *= 3;
     if ((W < 100 || H < 100) && maxRadius > 5) maxRadius = 5;
@@ -162,13 +174,11 @@ export function start(canvas) {
     opx.set(px);
     opy.set(py);
 
-    // One ball gets the "special" colour, purely for a little visual variety
-    // (the C reserves this colour for the mouse-dragged ball, which we omit).
-    specialBall = 1 + ((Math.random() * count) | 0);
+    seeded = true;
   }
 
   // Messes with gravity: permute "down" to a random one of four directions, then
-  // re-roll the colours. Mirrors shake() in C, which maps the current (accx, accy)
+  // re-roll the colour. Mirrors shake() in C, which maps the current (accx, accy)
   // by case. We apply the same linear map to the orientation coefficients (so the
   // permutation composes across shakes and still tracks the live wind/gravity):
   //   0: (a,b)->(a,b)   1: ->(-a,-b)   2: ->(b,a)   3: ->(-b,-a)
@@ -190,7 +200,6 @@ export function start(canvas) {
     }
     timeSinceShake = 0;
     recolor();
-    specialBall = 1 + ((Math.random() * count) | 0);
   }
 
   // One physics step: pairwise collisions, wall clamps, then gravity. Mirrors
@@ -286,8 +295,8 @@ export function start(canvas) {
     ctx.fillRect(0, 0, W, H);
 
     let maxD = 0;
+    ctx.fillStyle = color;   // every ball is the one colour, like the C (fg)
     for (let a = 1; a <= count; a++) {
-      ctx.fillStyle = a === specialBall ? color2 : color;
       ctx.beginPath();
       ctx.arc(px[a], py[a], r[a], 0, Math.PI * 2);
       ctx.fill();
@@ -322,7 +331,11 @@ export function start(canvas) {
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    init();
+    // Setting canvas.width clears it. First time: create the balls. After that,
+    // just move the walls and let the sim run on -- the C's check_window_moved
+    // updates the bounds on a resize but never re-scatters the balls.
+    if (!seeded) seed();
+    else setBox();
   }
 
   // rAF lag-accumulator paced by config.delay (us); run one step() per delay,
@@ -353,12 +366,12 @@ export function start(canvas) {
     rafId = requestAnimationFrame(frame);
   }
 
-  // Re-seed with the current config (count/size/random change the ball set, so
-  // a non-live edit rebuilds everything). init() does not paint, so clear first.
+  // Rebuild the ball set with the current config (count/size/random change it,
+  // so a non-live edit re-seeds). seed() does not paint, so clear first.
   function reinit() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    init();
+    seed();
   }
 
   window.addEventListener('resize', resize);
