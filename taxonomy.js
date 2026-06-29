@@ -170,6 +170,7 @@ export const HACK_TAXONOMY = {
   batteredplanet: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   bestill: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   bubblecolors: { dimension: '3d', categories: ['plasma'] },
+  cubestack: { dimension: '3d', categories: ['geometry'] },
   cubestorm: { dimension: '3d', categories: ['geometry'] },
   cubicgrid: { dimension: '3d', categories: ['geometry'] },
   dangerball: { dimension: '3d', categories: ['geometry'] },

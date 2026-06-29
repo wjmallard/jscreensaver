@@ -270,6 +270,17 @@
       "description": "Moving polygons, similar to a kaleidoscope.\n\nSee also the \"Kaleidescope\" and \"GLeidescope\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Kaleidoscope"
     },
     {
+      "title": "cubestack",
+      "module": "./hacks/cubestack.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2016,
+      "description": "An endless stack of unfolding, translucent cubes."
+    },
+    {
       "title": "cubestorm",
       "module": "./hacks/cubestorm.js",
       "dim": "3d",
