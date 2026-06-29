@@ -34,10 +34,10 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/fluidballs.xml so the config box maps
-  // 1:1 to the original. `delay` is a touch calmer than the stock 10000 us by
-  // feel; everything else matches the xml defaults.
+  // 1:1 to the original. `delay` is the xml stock value; the loop adds a fixed
+  // OVERHEAD so the effective step rate matches the live binary (see the .md).
   const config = {
-    delay: 16000,        // \u00B5s between steps (--delay; stock 10000)
+    delay: 10000,        // \u00B5s between steps (--delay; the xml stock value)
     count: 300,          // number of balls (--count)
     size: 25,            // ball diameter; max_radius = size/2 (--size)
     gravity: 0.01,       // downward acceleration (--gravity)
@@ -48,7 +48,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Number of balls', type: 'range', min: 1, max: 3000, step: 1, default: 300, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'size', label: 'Ball size', type: 'range', min: 3, max: 200, step: 1, default: 25, lowLabel: 'small', highLabel: 'large', live: false },
     { key: 'gravity', label: 'Gravity', type: 'range', min: 0, max: 0.1, step: 0.001, default: 0.01, lowLabel: 'freefall', highLabel: 'Jupiter', live: true },
@@ -342,6 +342,14 @@ export function start(canvas) {
   // banking leftover time so the speed is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't burst on refocus. The collision pass
   // is the heavy work, so we draw at most once per frame (not once per step).
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay fluidballs runs 52.7 fps, while the
+  // port at the stock 10000 us ran ~100 steps/sec (1.9x fast). 10000 + 8975 =
+  // 18975 us -> 52.7 steps/sec, matching the live binary. A calibration, not a
+  // tuning knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8975;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -352,7 +360,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

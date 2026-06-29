@@ -15,6 +15,8 @@ coral.c builds its colormap with **`make_uniform_colormap`** (`NCOLORSMAX` = 200
 ## Motion / timing (faithful)
 Per `coral_draw`: one full walker sweep per `delay2` µs (default 20000 → ~50 sweeps/s); on completion the finished image is **static for `delay` seconds** ("Linger", default 5 s), then it regrows. The port matches all three: growth pace, the static linger (counted off real wall time so it is `delay` seconds at any refresh rate, and pauses cleanly), and regrow.
 
+The rAF loop adds a fixed **`OVERHEAD = 7855 µs`** to the per-sweep `delay2` (not the linger) so `(delay2 + OVERHEAD)` reproduces the live binary's effective sweep rate: measured against the live `-fps` overlay coral runs **35.9 fps** mid-growth, so `20000 + 7855 = 27855 µs → 35.9 sweeps/sec`. A calibration, not a tuning knob — the `delay2` slider stays 1:1 with the xml. See the framerate-calibration note.
+
 ## Deviations from the C
 - **Palette** — see above (this was the main fidelity bug; now faithful).
 - **Animated `erase_window` between linger and regrow → instant clear.** The xscreensaver erase wipes are not integrated in this gallery (`wipes.js` is built but unwired); coral clears to black before regrowing.

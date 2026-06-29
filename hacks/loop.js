@@ -404,6 +404,14 @@ export function start(canvas) {
     // step() per config.delay (microseconds -> ms), banking leftover time so the
     // speed is the same at any refresh rate. Cap catch-up so a backgrounded tab
     // (where rAF is paused) doesn't fire a burst of steps when it regains focus.
+    //
+    // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+    // rate is lower (delay + framework overhead -- see the framerate-calibration
+    // note). The live loop measures 8.9 fps, but the port at the stock 100000 us
+    // ran 10 steps/sec (1.12x fast). 100000 + 12360 = 112360 us -> 8.9 steps/sec,
+    // matching the live binary. A calibration, not a tuning knob (the delay
+    // slider still maps 1:1 to the xml resource).
+    const OVERHEAD = 12360;
     const MAX_CATCHUP_STEPS = 8;
     let lastTime = 0;
     let lag = 0;
@@ -414,7 +422,7 @@ export function start(canvas) {
       lag += now - lastTime;
       lastTime = now;
 
-      const delayMs = config.delay / 1000;
+      const delayMs = (config.delay + OVERHEAD) / 1000;
       lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
       let steps = 0;
       while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {

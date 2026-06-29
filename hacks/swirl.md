@@ -41,4 +41,6 @@ Verified with a headless node harness that mocks a minimal DOM and drives the **
 ## Config
 Mirrors `hacks/swirl.xml` exactly (only its real, animatable resources): `delay` (µs/frame, default 10000, `invert: true` "Frame rate" slider), `count` → **Count** (knots, 0-20, default 5), `ncolors` → **Number of colors** (clamped 2-255, default 200). `showfps` is a framework control, not surfaced. There is **no** cycle-speed or duration control — the C does not cycle, and the hold is the hardcoded `RESTART`.
 
+**Framerate calibration (`OVERHEAD = 6556`).** The stock `delay = 10000 µs` is only a sleep floor; the live binary's real rate is lower (delay + framework overhead — see the framerate-calibration note). The live swirl measures **60.4 fps**, while the port at the stock delay ran 100 steps/sec (1.66× fast). The loop adds `OVERHEAD`: `10000 + 6556 = 16556 µs → 60.4 steps/sec`, matching the live binary. The `RESTART` hold is **frame-counted**, so it scales with `(delay + OVERHEAD)` exactly as the live binary's; the `delay` slider still maps 1:1 to the xml resource.
+
 **Local dev:** ES-module `import`s need a real server — `python3 -m http.server` in the repo, then <http://localhost:8000/#swirl>. `file://` double-click fails (CORS on the `null` origin); GitHub Pages serves over http, so production is fine.

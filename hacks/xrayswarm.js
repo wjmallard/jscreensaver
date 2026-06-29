@@ -37,13 +37,13 @@ export function start(canvas) {
   // scheme, and the mutation rate are all auto-managed by the C and never were
   // user resources, so we do NOT surface them as sliders. See xrayswarm.md.
   const config = {
-    delay: 24000,      // microseconds between sim steps (--delay; xml default 20000)
+    delay: 20000,      // microseconds between sim steps (--delay; the xml stock value)
   };
 
   // Mirrors the only stock resource: `delay`, the usleep interval in
   // microseconds (the xml's "Frame rate", inverted so high = faster).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 24000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
   ];
 
   // Hard-coded counts from the C (#define).
@@ -636,6 +636,14 @@ export function start(canvas) {
 
   // rAF lag-accumulator paced by config.delay (microseconds); see squiral.js.
   // Heavy work is in step()/draw(), so we step up to the cap then draw once.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay xrayswarm runs 33.4 fps, while the
+  // port at the stock 20000 us ran ~50 steps/sec (1.5x fast). 20000 + 9940 =
+  // 29940 us -> 33.4 steps/sec, matching the live binary. A calibration, not a
+  // tuning knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 9940;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -647,7 +655,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

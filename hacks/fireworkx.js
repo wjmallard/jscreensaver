@@ -45,14 +45,14 @@ export function start(canvas) {
   // units). The C's SHELLCOUNT(4)/PIXCOUNT(500) are FIXED compile-time constants
   // -- not xml resources -- so they stay constants here (below), not sliders.
   const config = {
-    delay: 50000,    // µs between frames (--delay; stock 10000, calmer here)
+    delay: 10000,    // µs between frames (--delay)
     maxlife: 32,     // shell life dial 0..100 -> "Activity" (--maxlife)
     flash: true,     // additive colored light flash (--no-flash)
     shoot: false,    // launch shells upward from the floor (--shoot)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'maxlife', label: 'Activity', type: 'range', min: 0, max: 100, step: 1, default: 32, lowLabel: 'dense', highLabel: 'sparse', live: true },
     { key: 'flash', label: 'Light flash', type: 'checkbox', default: true, live: true },
     { key: 'shoot', label: 'Shells upward', type: 'checkbox', default: false, live: true },
@@ -468,6 +468,16 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (microseconds). The per-step work
   // is heavy (12 sub-steps + a full per-pixel blur), so a low catch-up cap keeps
   // a backgrounded tab from firing a burst of blurs on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay fireworkx runs 38.2 fps, while the
+  // port at the stock 10000 us ran ~100 fps (2.6x fast -- the 12 sub-steps +
+  // full-buffer blur per frame make the framework overhead large here). 10000 +
+  // 16178 = 26178 us -> 38 fps, matching the live binary. Each frame still runs
+  // FTWEAK sub-steps, so this paces displayed frames, not the sub-step count.
+  // A calibration, not a tuning knob (delay slider still maps 1:1 to xml).
+  const OVERHEAD = 16178;
   const MAX_CATCHUP_STEPS = 3;
   let lastTime = 0;
   let lag = 0;
@@ -478,7 +488,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

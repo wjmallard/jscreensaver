@@ -609,6 +609,14 @@ export function start(canvas) {
 
   // Fixed-timestep lag-accumulator loop: one generation per config.delay,
   // banking leftover time so the pace is steady at any refresh rate.
+  //
+  // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+  // rate is lower (delay + framework overhead -- see the framerate-calibration
+  // note). The live ant measures 37.9 fps, but the port at the stock 20000 us ran
+  // 50 generations/sec (1.3x fast). 20000 + 6385 = 26385 us -> 37.9 gen/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 6385;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -620,7 +628,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = Math.max(0.001, config.delay / 1000);
+    const delayMs = Math.max(0.001, (config.delay + OVERHEAD) / 1000);
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

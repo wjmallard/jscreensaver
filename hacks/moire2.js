@@ -277,6 +277,14 @@ export function start(canvas) {
 
   // rAF lag-accumulator paced by config.delay (microseconds): one step() per
   // delay, banking leftover time so the pace is refresh-rate independent.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // The live moire2 measures 15.8 fps, but the port at the stock 50000 us ran
+  // 20 steps/sec (1.27x fast). 50000 + 13291 = 63291 us -> 15.8 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 13291;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -287,7 +295,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

@@ -38,10 +38,10 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/eruption.xml so the config box maps 1:1
-  // to the original, except `delay` defaults calmer than stock (see below). (The
-  // xml's "showfps" boolean is host chrome, not ported.)
+  // to the original. (The xml's "showfps" boolean is host chrome, not ported.)
+  // delay defaults to the stock value; the loop adds a fixed OVERHEAD (see below).
   const config = {
-    delay: 20000,      // µs/step; calmer than the xml stock 10000 (pace knob)
+    delay: 10000,      // µs/step (--delay; the xml stock value)
     ncolors: 256,      // size of the heat palette (--ncolors)
     nparticles: 300,   // particles per eruption (--particles)
     cooloff: 2,        // convolution cooling offset, pre-shift (--cooloff)
@@ -55,7 +55,7 @@ export function start(canvas) {
   // live: false -> the value sizes the palette/particle pool/heat buffer, so a
   //                change re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 16, max: 256, step: 1, default: 256, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'nparticles', label: 'Number of particles', type: 'range', min: 100, max: 2000, step: 10, default: 300, lowLabel: 'little', highLabel: 'many', live: false },
     { key: 'cooloff', label: 'Cooling factor', type: 'range', min: 0, max: 10, step: 1, default: 2, lowLabel: 'slow', highLabel: 'fast', live: true },
@@ -390,6 +390,15 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the pace is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't fire a burst of steps on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // eruption's live `-fps` overlay was UNMEASURABLE (the full-frame fire obscured
+  // it), so this is set to ~10000 us by analogy with the other dense ImageData
+  // fire hacks; 10000 + 10000 = 20000 us -> ~50 steps/sec. NEEDS A VISUAL CHECK
+  // against the live binary. A calibration, not a tuning knob (the delay slider
+  // still maps 1:1 to the xml resource).
+  const OVERHEAD = 10000;   // FLAG: unmeasured (fire hid the -fps overlay) -- verify visually
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -400,7 +409,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;   // xml units are µs; rAF is ms
+    const delayMs = (config.delay + OVERHEAD) / 1000;   // xml units are µs; rAF is ms
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

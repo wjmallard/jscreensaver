@@ -333,6 +333,14 @@ export function start(canvas) {
   // Drive off requestAnimationFrame but keep the original pace: one step() per
   // config.delay, banking leftover time so the speed is the same at any refresh
   // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay goop runs 45.4 fps, while the port
+  // at the stock 12000 us ran ~83 fps (1.8x fast). 12000 + 10026 = 22026 us ->
+  // 45 fps, matching the live binary. A calibration, not a tuning knob (the
+  // delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 10026;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -344,7 +352,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

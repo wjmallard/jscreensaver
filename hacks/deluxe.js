@@ -44,7 +44,7 @@ export function start(canvas) {
   // a real resource the C reads (default 15) but does NOT expose in the xml, so
   // it is kept here as a fixed internal value rather than a slider.
   const config = {
-    delay: 15000,       // microseconds between steps (--delay; xml default 10000, eased)
+    delay: 10000,       // microseconds between steps (--delay)
     thickness: 50,      // line width in logical px (--thickness)
     count: 5,           // number of throbbers in the pool (--count)
     ncolors: 20,        // size of the random colour table (--ncolors)
@@ -56,7 +56,7 @@ export function start(canvas) {
   // live: false -> the value sizes the pool/colours/geometry, so a change
   //                re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 15000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'thickness', label: 'Lines', type: 'range', min: 1, max: 150, step: 1, default: 50, lowLabel: 'thin', highLabel: 'thick', live: false },
     { key: 'count', label: 'Shapes', type: 'range', min: 1, max: 20, step: 1, default: 5, lowLabel: '1', highLabel: '20', live: false },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 20, lowLabel: 'two', highLabel: 'many', live: false },
@@ -337,6 +337,14 @@ export function start(canvas) {
   // Drive off requestAnimationFrame but keep the original pace: one step() per
   // config.delay, banking leftover time so the speed is the same at any refresh
   // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay deluxe runs 55.3 fps, while the
+  // port at the stock 10000 us ran ~100 fps (1.8x fast). 10000 + 8083 = 18083
+  // us -> 55 fps, matching the live binary. A calibration, not a tuning knob
+  // (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8083;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -348,7 +356,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

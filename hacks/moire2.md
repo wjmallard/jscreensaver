@@ -28,3 +28,5 @@ Canvas has no `XCopyArea`-with-raster-op, so the scrolling 1-bit pixmaps are eva
 
 ## Config
 `delay` (Frame rate, live, invert) · `colorShift` (Re-roll rate, live, invert) · `thickness` (Ring spacing; 0 = auto, reinit) · `sources` (Ring-fields; 0 = auto, reinit) · `ncolors` (reinit). Defaults mirror `hacks/moire2.xml`: delay 50000 (the C default), ncolors 150, thickness 0, plus the two added keys (colorShift 5, sources 0).
+
+**Framerate calibration (`OVERHEAD = 13291`).** The stock `delay = 50000 µs` is only a sleep floor; the live binary's real rate is lower (delay + framework overhead — see the framerate-calibration note). The live moire2 measures **15.8 fps**, while the port at the stock delay ran 20 steps/sec (1.27× fast). The loop adds `OVERHEAD`: `50000 + 13291 = 63291 µs → 15.8 steps/sec`, matching the live binary. The `delay` slider still maps 1:1 to the xml resource.

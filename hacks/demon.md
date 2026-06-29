@@ -24,6 +24,7 @@ The rule reads the **old** grid for the whole pass and commits at the end (the C
 - **Config mirrors `demon.xml`**: `delay` (µs, "Frame rate", inverted), `count` ("States", 0 = auto), `cycles` ("Timeout"), `ncolors` ("Number of colors"), `size` ("Cell size").
 
 ## Platform-side deviations (rendering / environment; not algorithm)
+- **Framerate calibration (`OVERHEAD = 9880`).** The stock `delay = 50000 µs` is only a sleep floor; the live binary's real tick rate is lower (delay + framework overhead). Measured against the live `-fps` overlay demon runs **16.7 fps**, so the rAF loop adds `OVERHEAD`: `50000 + 9880 = 59880 µs → 16.7 ticks/sec`. A calibration, not a tuning knob — the `delay` slider stays 1:1 with the xml. See the framerate-calibration note.
 - **Cell rendering is a stamp reimplementation, not the C's `XFillPolygon`/`XFillRectangles`.** Each shape is rasterised once into a pixel **stamp** and changed cells are blitted into one `ImageData`:
   - **Hex** = a half-open Voronoi cell (every pixel in exactly one hexagon — no gaps/AA seams).
   - **Triangle** = a half-open point-in-triangle test, two interlocking orientations. The tiling is the equilateral grid **rotated 90°** (triangles point left/right) — a from-scratch tiling that reproduces the C's `{E-or-W, N, S}` adjacency, not the C's exact vertex geometry. 9/12 render on the same triangle grid as 3 (only the neighbour coupling differs), matching the C (which draws 3/9/12 identically).

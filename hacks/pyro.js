@@ -45,18 +45,18 @@ export function start(canvas) {
 
   // Defaults/ranges mirror hacks/config/pyro.xml so the config box maps 1:1 to
   // the original. (The xml's "showfps" boolean is host chrome, not ported.)
-  // delay: the stock xml default is 10000 µs; 20000 here paces the rAF loop to
-  // the C's *effective* framerate (~half nominal — see pyro.md). A pacing knob,
-  // not a fidelity item.
+  // delay: the stock xml default is 10000 µs; the rAF loop adds a fixed OVERHEAD
+  // so (delay + OVERHEAD) reproduces the C's *effective* framerate (see pyro.md).
+  // A pacing knob, not a fidelity item.
   const config = {
-    delay: 20000,    // µs between steps (--delay), inverted "Frame rate"
+    delay: 10000,    // µs between steps (--delay), inverted "Frame rate"
     count: 600,      // size of the projectile pool (--count), "Particle density"
     frequency: 30,   // launch when rand(frequency)==0 (--frequency), inverted
     scatter: 100,    // shrapnel per burst (--scatter), "Explosive yield"
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Particle density', type: 'range', min: 10, max: 2000, step: 10, default: 600, lowLabel: 'sparse', highLabel: 'dense', live: false },
     { key: 'frequency', label: 'Launch frequency', type: 'range', min: 1, max: 100, step: 1, default: 30, invert: true, lowLabel: 'seldom', highLabel: 'often', live: true },
     { key: 'scatter', label: 'Explosive yield', type: 'range', min: 1, max: 400, step: 1, default: 100, lowLabel: 'low', highLabel: 'high', live: true },
@@ -272,6 +272,14 @@ export function start(canvas) {
 
   // rAF lag-accumulator paced by config.delay (µs), with a catch-up cap so a
   // backgrounded tab doesn't burst on refocus. Copied from squiral.js.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay pyro runs 62.5 fps, while the port
+  // at the stock 10000 us ran ~100 steps/sec (1.6x fast). 10000 + 6000 = 16000
+  // us -> 62.5 steps/sec, matching the live binary. A calibration, not a tuning
+  // knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 6000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -282,7 +290,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;       // xml units are µs; rAF is ms
+    const delayMs = (config.delay + OVERHEAD) / 1000;   // xml units are µs; rAF is ms
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

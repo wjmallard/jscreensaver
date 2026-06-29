@@ -365,6 +365,15 @@ export function start(canvas) {
   // config.delay, banking leftover time so the speed is the same at any refresh
   // rate. step() reads the real wall-clock elapsed for the source advance, so a
   // longer-than-delay frame still moves the waves the right amount.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay interference runs 27.9 fps, while
+  // the port at the stock 30000 us ran ~33 fps (1.2x fast). 30000 + 5842 =
+  // 35842 us -> 28 fps, matching the live binary. (Source motion reads the real
+  // wall-clock elapsed, so this only paces the render cadence, not wave speed.)
+  // A calibration, not a tuning knob (the delay slider still maps 1:1 to xml).
+  const OVERHEAD = 5842;
   const MAX_CATCHUP_STEPS = 4;   // each step is a full per-pixel pass; keep low
   let lastTime = 0;
   let lag = 0;
@@ -376,7 +385,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

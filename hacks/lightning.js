@@ -403,6 +403,15 @@ export function start(canvas) {
   // Fixed-timestep loop (squiral style): one stage tick per config.delay, banking
   // leftover time so the pace is the same at any refresh rate. Catch-up is capped
   // so a backgrounded tab can't burst a pile of ticks on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay lightning runs 60.2 fps, while the
+  // port at the stock 10000 us ran ~100 ticks/sec (1.66x fast). 10000 + 6611 =
+  // 16611 us -> 60.2 ticks/sec, matching the live binary. Applied to the per-tick
+  // delay only, so the stage machine's tick COUNTS (the 7-tick hold, etc.) are
+  // unchanged -- only the tick duration. A calibration, not a tuning knob.
+  const OVERHEAD = 6611;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -413,7 +422,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

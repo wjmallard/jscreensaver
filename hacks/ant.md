@@ -52,6 +52,7 @@ The old port's invented `delay` (ms) and fixed `size`/`count` were replaced with
 Continuous: one generation per `delay`, every ant moves one cell, trails persist, dish resets at `cycles`. Matches `draw_ant` exactly (no colour cycling, no paint-and-hold). Fixed-timestep lag accumulator (vines/squiral style).
 
 ## Notes
+- **Framerate calibration (`OVERHEAD = 6385`).** The stock `delay = 20000 µs` is only a sleep floor; the live binary's real rate is lower (delay + framework overhead). The live `-fps` overlay shows ant at **37.9 fps**, so the loop adds `OVERHEAD`: `20000 + 6385 = 26385 µs → 37.9 generations/sec`. A calibration, not a tuning knob — the `delay` slider stays 1:1 with the xml. See the framerate-calibration note.
 - The faithful turmite core (`fromTableDirection`, `chgDir = (2·ANGLES − dir) % ANGLES`, the step-first vs turn-first distinction, per-shape toroidal wrap) replicates the C exactly and is shared across all shapes.
 - No scope cuts remain among the cell shapes (square 4/8, hexagon 6, triangle 3/12 are all ported). The `eyes`-for-12-sided case is intentionally absent (the C's `UNDER_CONSTRUCTION`/`return`).
 

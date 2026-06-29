@@ -48,6 +48,8 @@ Matches the C. Both renderers continuously redraw; the motion is the coefficient
 ## Config
 Mirrors `hacks/config/strange.xml` 1:1: `delay` (µs/frame, inverted), `curve`, `points`, `pointSize`, `zoom`, `brightness`, `motionBlur`, `ncolors` — same names, defaults, ranges. `delay`/`zoom`/`brightness`/`motionBlur` are live; `curve`/`points`/`pointSize`/`ncolors` reinit (they pick the map, switch renderer across the 6000 line, size buffers, or size the palette). No invented sliders.
 
+**Framerate calibration (`OVERHEAD = 8083`).** The stock `delay = 10000 µs` is only a sleep floor; the live binary's rate is lower (delay + framework overhead). The `-fps` overlay measures **55.3 fps** (the default simple swarm), while the port at the bare stock delay ran 100 steps/sec (1.81× fast), so the loop runs at `delay + OVERHEAD = 18083 µs → 55.3 steps/sec`. A calibration, not a tuning knob; the slider still maps 1:1 to the xml. See [[framerate-calibration]].
+
 ## Caveats / spot-check in browser
 - **Default = the simple swarm.** Confirm it reads as discrete dots that swoop, twist, and recolour each frame (one colour at a time, cycling), with no glow/trails — *not* the dense accumulator field. Simulated: all `points` land in-bounds for fresh X2/X3 attractors (the world box is fixed to `[-UNIT, UNIT]` and `Lx/Ly` fill the canvas), zero NaN.
 - **Crank Number of points past ~6000** to reach the accumulator (glow + optional motion-blur trails). This is the heavy path (a full `W×H` bloom + colour-map pass per frame, single-threaded); fine for moderate counts, slower toward 500000. Verify exposure/trails against the live binary.

@@ -303,6 +303,15 @@ export function start(canvas) {
   // scan pace is the same at any refresh rate; catch-up is capped so a backgrounded
   // tab can't burst. When the scan finishes the image HOLDS for `linger` seconds,
   // then a fresh random preset is seeded (the C's cadence).
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead — see the framerate-calibration note). The
+  // live xlyap measures 48.7 fps during the build scan, but the port at the stock
+  // 10000 µs ran 100 steps/sec (2.05x fast). 10000 + 10534 = 20534 µs -> 48.7
+  // steps/sec, matching the live binary. Applied to the per-step COMPUTE delay
+  // only — the `linger` hold is a separate wall-clock duration, left untouched.
+  // A calibration, not a tuning knob (the slider still maps 1:1 to the xml delay).
+  const OVERHEAD = 10534;
   const MAX_CATCHUP_STEPS = 8;
   let rafId = 0;
   let lastTime = 0;
@@ -320,7 +329,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

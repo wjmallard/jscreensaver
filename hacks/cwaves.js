@@ -212,6 +212,14 @@ export function start(canvas) {
   // Drive off requestAnimationFrame but keep the original pace: one step() per
   // config.delay, banking leftover time so the speed is the same at any refresh
   // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // The live cwaves measures 35.6 fps, but the port at the stock 20000 us ran
+  // 50 steps/sec (1.4x fast). 20000 + 8090 = 28090 us -> 35.6 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8090;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -223,7 +231,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

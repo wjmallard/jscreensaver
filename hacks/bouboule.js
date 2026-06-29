@@ -51,7 +51,7 @@ export function start(canvas) {
   // The .xml exposes NO size slider, so `size` stays a fixed resource here (the
   // stock *size:15). mode3d defaults ON, matching the stock *use3d:True.
   const config = {
-    delay: 30000,    // µs between frames (--delay; .xml default 20000 — see bouboule.md: paced to the live binary's ~half-nominal effective fps so the breathing speed matches)
+    delay: 20000,    // µs between frames (--delay; the .xml stock value — the loop adds a fixed OVERHEAD so the effective rate matches the live binary, see bouboule.md)
     count: 100,      // number of stars on the ball (--count)
     ncolors: 64,     // size of the make_smooth_colormap (--ncolors)
     size: 15,        // max star radius in px (--size; the .xml exposes no slider for it, so it stays fixed)
@@ -63,7 +63,7 @@ export function start(canvas) {
   //                re-runs init() via reinit().
   // Labels mirror the .xml _label / _low-label / _high-label resources.
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     { key: 'count', label: 'Number of spots', type: 'range', min: 1, max: 400, step: 1, default: 100, lowLabel: 'Few', highLabel: 'Many', live: false },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'Two', highLabel: 'Many', live: false },
     { key: 'mode3d', label: 'Do Red/Blue 3D separation', type: 'checkbox', default: true, live: true },
@@ -404,6 +404,14 @@ export function start(canvas) {
   // delay, banking leftover time so the speed is identical at any refresh rate.
   // Cap catch-up so a backgrounded tab doesn't burst a run of frames on refocus.
   // Draw once per frame (the heavy work is simulate(), so we never over-draw).
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay bouboule runs 37.4 fps, while the
+  // port at the stock 20000 us ran ~50 frames/sec (1.34x fast). 20000 + 6738 =
+  // 26738 us -> 37.4 frames/sec, matching the live binary. A calibration, not a
+  // tuning knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 6738;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -414,7 +422,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

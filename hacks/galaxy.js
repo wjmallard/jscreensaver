@@ -30,11 +30,11 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/galaxy.xml so the config box maps 1:1.
-  // (delay default is doubled from the xml's 20000 to match the C's effective
-  // ~half-nominal step rate — a pace knob, not a fidelity item; see galaxy.md.)
+  // Defaults/ranges mirror hacks/config/galaxy.xml so the config box maps 1:1, at
+  // the stock defaults. (delay is the xml resource in microseconds; the rAF loop
+  // adds OVERHEAD to reproduce the live binary's effective rate; see galaxy.md.)
   const config = {
-    delay: 40000,   // µs between steps (--delay; xml stock 20000)
+    delay: 20000,   // µs between steps (--delay; xml default 20000)
     count: -5,      // galaxies; negative = random up to |count| (--count)
     cycles: 250,    // steps before the universe reseeds (--cycles / "Duration")
     ncolors: 64,    // size of the uniform colormap (--ncolors)
@@ -42,7 +42,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Galaxies (< 0 = random)', type: 'range', min: -20, max: 20, step: 1, default: -5, live: false },
     { key: 'cycles', label: 'Duration', type: 'range', min: 10, max: 1000, step: 10, default: 250, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 10, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
@@ -296,6 +296,14 @@ export function start(canvas) {
   // delay, banking leftover time so the speed is identical at any refresh rate.
   // Cap catch-up so a backgrounded tab doesn't burst on refocus. Draw once per
   // frame (the heavy work is simulate(), so we never draw more than we step).
+  //
+  // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+  // rate is lower (delay + framework overhead -- see the framerate-calibration
+  // note). The live galaxy measures 38.9 fps, but the port at the stock 20000 us
+  // ran 50 steps/sec (1.3x fast). 20000 + 5707 = 25707 us -> 38.9 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 5707;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -306,7 +314,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

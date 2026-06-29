@@ -39,7 +39,7 @@ export function start(canvas) {
   // the original. (`mode`, `recurse` and `multi` aren't surfaced in the stock
   // UI; the C defaults are recurse=False / multi=True, which we follow.)
   const config = {
-    delay: 30000,     // µs between frames (--delay; xml stock 20000 — see .md)
+    delay: 20000,     // µs between frames (--delay; xml/C stock 20000)
     functions: 3,     // number of affine lenses (--functions)
     detail: 9,        // exponent: points drawn = functions^detail (--detail)
     ncolors: 200,     // size of the make_smooth_colormap palette (--colors)
@@ -52,7 +52,7 @@ export function start(canvas) {
   // live: false -> the value sizes the lens set / palette / point budget, so a
   //                change re-runs init() via reinit() (and clears the canvas).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'functions', label: 'Number of functions', type: 'range', min: 2, max: 6, step: 1, default: 3, lowLabel: '2', highLabel: '6', live: false },
     { key: 'detail', label: 'Detail', type: 'range', min: 4, max: 14, step: 1, default: 9, lowLabel: 'low', highLabel: 'high', live: false },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
@@ -341,6 +341,14 @@ export function start(canvas) {
 
   // rAF lag accumulator paced by config.delay (µs), with a catch-up cap so a
   // backgrounded tab doesn't fire a burst of frames on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead — see the framerate-calibration note). The
+  // live ifs measures 37.2 fps, but the port at the stock 20000 µs ran 50
+  // steps/sec (1.34x fast). 20000 + 6882 = 26882 µs -> 37.2 steps/sec, matching
+  // the live binary (and replacing the old by-eye 30000 default). A calibration,
+  // not a tuning knob (the slider still maps 1:1 to the xml delay).
+  const OVERHEAD = 6882;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -351,7 +359,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;   // xml units are microseconds
+    const delayMs = (config.delay + OVERHEAD) / 1000;   // xml units are microseconds
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

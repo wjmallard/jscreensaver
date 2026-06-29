@@ -258,7 +258,7 @@ export function start(canvas) {
     maxLevels = Math.max(1, Math.round(config.iterations));
     maxTotal = Math.max(1, Math.round(config.points));
 
-    let thisDelay = config.delay;
+    let thisDelay = config.delay + OVERHEAD;
 
     // Every maxLevels frames: flip alt, pick a new variation, linger, then clear
     // next frame. (C: post-increment, so frame 0 is a reset frame.)
@@ -347,6 +347,15 @@ export function start(canvas) {
   // before the next step — config.delay normally, or config.delay2 (the linger)
   // on a frame that just finished a flame. The buffer persists between steps
   // (fractals accumulate), so drawing happens inside step().
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead — see the framerate-calibration note). The
+  // live flame measures 16.6 fps while a flame builds, but the port at the stock
+  // 50000 µs ran 20 steps/sec (1.2x fast). 50000 + 10241 = 60241 µs -> 16.6
+  // steps/sec, matching the live binary. Added to the per-frame BUILD delay only
+  // (step() sets `thisDelay = config.delay + OVERHEAD`); the `delay2` linger hold
+  // is left untouched. A calibration, not a tuning knob (the slider maps 1:1).
+  const OVERHEAD = 10241;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let acc = 0;

@@ -66,19 +66,19 @@ export function start(canvas) {
   // deliberately no spawn-rate / size / colour slider.
   //
   // delay: the xml stock is 10000us (nominal ~100fps). xscreensaver's effective
-  // frame rate is roughly HALF nominal because of per-frame overhead (the
-  // project's frame-rate calibration); 20000us here reproduces the C's effective
-  // 5-bubbles-per-frame cadence instead of running about 2x too fast. It is a
-  // pace knob, not a fidelity item — the slider exposes the full xml range.
+  // frame rate is lower because of per-frame overhead (the project's frame-rate
+  // calibration), so the loop adds a fixed OVERHEAD and (delay + OVERHEAD)
+  // reproduces the C's effective 5-bubbles-per-frame cadence. It is a pace knob,
+  // not a fidelity item — the slider exposes the full xml range. See bubbles.md.
   const config = {
     simple: false,     // --simple: draw circles instead of bubble images
-    delay: 20000,      // µs between steps (--delay; xml stock 10000, see above)
+    delay: 10000,      // µs between steps (--delay; the xml stock value)
     mode: 'float',     // 'rise' | 'float' | 'drop' (--mode; xml default 'float')
     trails: false,     // big bubbles shed a small one behind them (--trails)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     { key: 'mode', label: 'Motion', type: 'select', default: 'float', live: true, options: [
         { value: 'rise', label: 'Bubbles rise' },
         { value: 'float', label: 'Bubbles float' },
@@ -486,6 +486,14 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (us): run one step() per delay,
   // banking leftover time so the rate is identical at any refresh rate, and cap
   // catch-up so a backgrounded tab can't burst on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay bubbles runs 54.2 fps, while the
+  // port at the stock 10000 us ran ~100 steps/sec (1.85x fast). 10000 + 8450 =
+  // 18450 us -> 54.2 steps/sec, matching the live binary. A calibration, not a
+  // tuning knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8450;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -504,7 +512,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

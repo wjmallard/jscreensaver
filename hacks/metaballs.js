@@ -280,6 +280,14 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the pace is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't fire a burst of steps on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay metaballs runs 52.0 fps, while the
+  // port at the stock 10000 us ran ~100 fps (1.9x fast). 10000 + 9231 = 19231
+  // us -> 52 fps, matching the live binary. A calibration, not a tuning knob
+  // (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 9231;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -290,7 +298,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

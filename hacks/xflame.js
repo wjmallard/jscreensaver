@@ -394,6 +394,15 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the pace is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't fire a burst of steps on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead — see the framerate-calibration note). The
+  // live xflame fps was UNMEASURABLE (the full-frame fire obscured the -fps
+  // overlay), so this OVERHEAD is an ESTIMATE (~9000 µs, by analogy to the other
+  // dense per-pixel/ImageData hacks; the fire blit is a touch heavier) — FLAGGED
+  // for a visual check vs the live binary. 10000 + 9000 = 19000 µs -> ~52.6
+  // steps/sec. The slider still maps 1:1 to the xml delay.
+  const OVERHEAD = 9000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -404,7 +413,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;   // xml units are µs; rAF is ms
+    const delayMs = (config.delay + OVERHEAD) / 1000;   // xml units are µs; rAF is ms
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

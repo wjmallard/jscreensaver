@@ -96,11 +96,13 @@ This keeps the trail length fixed (memory/draw cost is constant).
   (`acc * halfDtSq`) is a tiny second-order position correction.
 - **Pacing.** The C does two `dt=0.1` sub-steps per drawn frame (`draw_cnt=2`
   when `delay>0`); the port does one `step()` per `config.delay` via a
-  lag-accumulator. The default `delay` is **24000 us** rather than the xml's
-  nominal 20000: with the C's per-frame overhead the original's effective step
-  rate is ~40/s, and 24000 us gives ~42 steps/s here — a closer effective-speed
-  match than the nominal value (see the framerate-calibration notes). `delay` is
-  the only pace knob; it is a tunable, not a strict fidelity item.
+  lag-accumulator. The default `delay` is the **stock 20000 us** (the slider maps
+  1:1 to the xml resource); the loop adds a fixed `OVERHEAD = 9940 us` so
+  `(delay + OVERHEAD)` reproduces the live binary's *effective* step rate, not the
+  nominal one. Measured against the live `-fps` overlay xrayswarm runs **33.4
+  fps**, while the port at the stock delay ran ~50 steps/s (1.5× fast);
+  `20000 + 9940 = 29940 us → 33.4 steps/s`, matching the binary. A calibration,
+  not a tuning knob — see the framerate-calibration note.
 - **Colour scheme: auto-cycles (faithful).** The C starts at `COLOR_TRAILS`
   (default scheme 2) and changes scheme only via `randomSmallChange` case 9; the
   port does exactly this, with **no** scheme selector (an earlier revision added

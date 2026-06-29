@@ -233,6 +233,14 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the speed is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // The live spiral measures 16.8 fps, but the port at the stock 50000 us ran
+  // 20 steps/sec (1.19x fast). 50000 + 9524 = 59524 us -> 16.8 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 9524;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -243,7 +251,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

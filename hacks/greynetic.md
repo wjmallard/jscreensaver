@@ -27,6 +27,7 @@ The canvas itself is the persistent pile — nothing is read back, nothing accum
 - **No `mono` path.** The C falls back to fg/bg-only drawing under `mono_p` (1-bit displays) or when colour allocation fails; neither applies in a browser. *(class B.)*
 - **Resize clears.** The C's `greynetic_reshape` just updates the limits and keeps drawing over the old pixels; setting `canvas.width/height` in the browser clears anyway, and a fresh start on resize is the gallery convention. *(class B.)*
 - **`reinit` (the `r` key) clears + empties the colour pool**, so toggling `grey` takes effect on the next rects. The C reads `grey` once at init and can't toggle it at runtime. *(class C.)*
+- **Framerate calibration (`OVERHEAD = 9417`).** The stock `delay = 10000 µs` is only a sleep floor; the live binary's real rate is lower (delay + framework overhead). Measured against the live `-fps` overlay greynetic runs **51.5 fps**, while the port at the stock delay ran ~100 fps (1.9× fast); the loop adds `OVERHEAD` so `10000 + 9417 = 19417 µs → 52 fps`, matching the live binary. The delay slider still maps 1:1 to the xml resource. *(class B, calibration.)*
 
 ## Config
 Mirrors `hacks/config/greynetic.xml` exactly — the only real resources are:

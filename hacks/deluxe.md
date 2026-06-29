@@ -34,7 +34,7 @@ The config box exposes exactly the xml's sliders/toggles: **Frame rate** (`delay
 ## Deviations from the C
 - **`speed` is a fixed internal value.** `speed` is a real resource the C reads (default 15, in `deluxe_defaults`/`deluxe_options`) but it is **not** in `deluxe.xml`, so it is not exposed as a slider here; it is kept at the C default 15 internally. (The `random() % speed` jitter is guarded `≥ 1` against the C's latent divide-by-zero at speed 0.)
 - **Retina line width.** The C bumps `thickness *= 3` when the window exceeds 2560 px; this port uses the uniform `×devicePixelRatio` scaling used across the gallery (same intent, dpr-correct).
-- **`delay` → rAF lag-accumulator** (microseconds), identical pace at any refresh rate, with a catch-up cap. Stock default `10000 µs` is eased to `15000 µs` purely as a calmer pace knob (not a fidelity change); range `0–50000 µs` matches the xml.
+- **`delay` → rAF lag-accumulator** (microseconds), identical pace at any refresh rate, with a catch-up cap. Default is the stock `10000 µs` (the slider maps 1:1 to the xml resource; range `0–50000 µs` matches the xml). The loop adds `OVERHEAD = 8083 µs` so `(delay + OVERHEAD)` reproduces the live binary's effective rate: measured against the live `-fps` overlay deluxe runs **55.3 fps**, while the port at the stock delay ran ~100 fps (1.8× fast); `10000 + 8083 = 18083 µs → 55 fps`. A calibration, not a tuning knob — see the framerate-calibration note.
 - **X11 plane-mask transparency** is approximated by the jwxyz `0.8` alpha (canvas has no plane masks); see Blend above.
 - No trails / no background colour cycling: the C hard-clears to black each frame and never animates the background — this port matches that (no `fade`, no colour rotation).
 

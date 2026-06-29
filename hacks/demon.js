@@ -423,6 +423,14 @@ export function start(canvas) {
     // config.delay (µs), banking leftover time so the speed is the same at any
     // refresh rate. Cap catch-up so a backgrounded tab doesn't fire a burst, and
     // blit once per frame only if a tick painted (compute ticks paint nothing).
+    //
+    // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+    // rate is lower (delay + framework overhead -- see the framerate-calibration
+    // note). The live demon measures 16.7 fps, but the port at the stock 50000 us
+    // ran 20 ticks/sec (1.2x fast). 50000 + 9880 = 59880 us -> 16.7 ticks/sec,
+    // matching the live binary. A calibration, not a tuning knob (the delay
+    // slider still maps 1:1 to the xml resource).
+    const OVERHEAD = 9880;
     const MAX_CATCHUP_STEPS = 4;
     let lastTime = 0;
     let lag = 0;
@@ -433,7 +441,7 @@ export function start(canvas) {
       lag += now - lastTime;
       lastTime = now;
 
-      const delayMs = config.delay / 1000;
+      const delayMs = (config.delay + OVERHEAD) / 1000;
       lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
       let painted = false;

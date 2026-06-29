@@ -456,6 +456,15 @@ export function start(canvas) {
   // is low because a reveal frame paints a batch; a slow frame should fall
   // behind, not stack a burst. One blit per frame, only if something was painted
   // (so the static hold does no work and stays byte-identical).
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // The live swirl measures 60.4 fps, but the port at the stock 10000 us ran
+  // 100 steps/sec (1.66x fast). 10000 + 6556 = 16556 us -> 60.4 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource). The RESTART hold is frame-
+  // counted, so it scales with (delay + OVERHEAD) exactly as the live binary's.
+  const OVERHEAD = 6556;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -466,7 +475,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let painted = false;

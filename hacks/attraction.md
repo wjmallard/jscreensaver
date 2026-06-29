@@ -52,7 +52,7 @@ The params expose exactly the `.xml` controls: `delay` (Speed, inverted), `mode`
 ## Deviations from the C
 - **Full repaint** for line/poly/tail/spline modes instead of the C's erase-the-oldest-frame over-draw (above) — forced by the lack of an XOR/erase raster op on canvas; visually equivalent.
 - **Reseed on resize.** `attraction_reshape` only updates the bounds (keeps the balls + colormap); the port reseeds and rebuilds the palette via `init()`. Brief visual discontinuity on a window resize only; matches the gallery's house pattern.
-- **`delay` default eased** from the stock `10000` µs to `20000`. This is a *pace* knob, not a fidelity item: the in-browser rAF accumulator runs roughly **2× the C's effective step rate** (xscreensaver's effective FPS ≈ half its nominal delay rate — see the framerate-calibration notes), so `20000` reproduces the C's *effective* pace. The xml min/max (`0…40000`) are preserved. **Needs live calibration against the local binary.**
+- **Framerate calibration (`OVERHEAD = 6694`).** `delay` defaults to the **stock 10000 µs** (the xml min/max `0`/`40000` preserved); the rAF loop adds `OVERHEAD` so `(delay + OVERHEAD)` reproduces the live binary's effective rate. Measured against the live `-fps` overlay attraction runs **59.9 fps**, so `10000 + 6694 = 16694 µs → 59.9 steps/sec`. A calibration, not a tuning knob — see the framerate-calibration note.
 - **Anti-aliasing.** The C disables AA on its GCs; canvas arcs/strokes are anti-aliased. Minor edge softening only; with a hard clear each frame there is no ghosting.
 - **Dropped (X-/desktop-only):** the velocity/speed **graph meters** (`--graphmode`) and **mouse-drag** ball-grabbing (both interactive/diagnostic X11 features with no place in an unattended saver); the `vx`/`vy` seed-velocity overrides; and the `--fps` overlay.
 
@@ -64,7 +64,7 @@ The params expose exactly the `.xml` controls: `delay` (Speed, inverted), `mode`
 
 ### Spot-check requests for the browser (live verify)
 - **Default ball mode** with 3–7 balls: confirm the discs are the muted `make_random_colormap` bright colours (one fixed colour per ball), **not** a saturated rainbow, on a clean black field with **no motion trail**.
-- **Pace.** The `delay` default (20000) is a calibration estimate — compare the swirl/clump speed to the live binary at its stock `10000` and adjust the one number if needed.
+- **Pace.** `delay` is the **stock 10000** with `OVERHEAD = 6694` (calibrated to the live 59.9 fps); confirm the swirl/clump speed matches the live binary.
 - **glow** (internal default off; can be toggled via the returned `config.glow`): confirm the single-hue saturation ramp (slow balls vivid, fast pale), not a rainbow.
 - **Spline modes** with default balls (n ≥ 3): confirm the closed curve is smooth and actually *closed* (no gap/cusp at ball 0).
 - **Orbit mode** on a small window: confirm the negative-force fallback drops to a sane random seed rather than NaNs.

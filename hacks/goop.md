@@ -37,7 +37,7 @@ Units/defaults mirror `hacks/config/goop.xml`: `delay` (Frame rate, µs, 12000),
 - **No fixed-point `SCALE`.** The C does all blob math in `<<` SCALE=10000 fixed-point longs for sub-pixel motion; JS doubles give that for free, so the port works directly in float pixels (no `>>`/overflow concerns). `RAND(n)` (integer) becomes `frand(n)` (float) — equivalent at these magnitudes.
 - **devicePixelRatio.** Blob *sizes* derive from the device-pixel canvas dims, so they already scale with dpr; velocities and elasticity are multiplied by `S = devicePixelRatio` so the on-screen drift/throb speed feels the same on retina. Torque is angular, so it isn't scaled.
 - **No `--fps`, `--thickness`/outline, `--subtractive`** UI: `outline` mode and the subtractive colour-mode aren't exposed (subtractive is a no-op on jwxyz anyway). Frame rate is the standard project slider.
-- **Default delay** kept at the stock 12000 µs (already calm, and < one display frame so it steps ~once per refresh).
+- **Default delay** is the stock 12000 µs (the slider maps 1:1 to the xml resource). The rAF loop adds `OVERHEAD = 10026 µs` so `(delay + OVERHEAD)` reproduces the live binary's effective rate: measured against the live `-fps` overlay goop runs **45.4 fps**, while the port at the stock delay ran ~83 fps (1.8× fast); `12000 + 10026 = 22026 µs → 45 fps`. A calibration, not a tuning knob — see the framerate-calibration note.
 
 ## Correctness self-review
 A headless harness re-ran the core math (`makeBlob`/`moveBlob`/`throbBlob` + the spline section points) for **5000 frames x 12 blobs**:

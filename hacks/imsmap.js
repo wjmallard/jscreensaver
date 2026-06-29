@@ -155,6 +155,16 @@ export function start(canvas) {
     cx = 0; xstep = COUNT; ystep = COUNT; iteration = 0; complete = false;
   }
 
+  // OVERHEAD: delay2 (the per-chunk paint interval) is a sleep floor; the live
+  // binary's real build rate is lower (delay2 + framework overhead -- see the
+  // framerate-calibration note). The live imsmap measures 30.6 fps during the
+  // coarse->fine build, but the port at the stock 20000 us ran 50 chunks/sec
+  // (1.63x fast). 20000 + 12680 = 32680 us -> 30.6 chunks/sec, matching the
+  // live binary. Applied ONLY to the per-chunk build delay below; the `delay`-
+  // second finished-cloud hold is left untouched. A calibration, not a tuning
+  // knob (the delay2 slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 12680;
+
   // One imsmap_draw call: paint col_chunk columns of the current subdivision
   // level, advancing the state. Returns the milliseconds until the next call
   // (delay2 normally; the `delay`-second hold once the cloud is complete).
@@ -211,7 +221,7 @@ export function start(canvas) {
       }
     }
 
-    return Math.max(1, config.delay2) / 1000;   // ms until the next paint chunk
+    return Math.max(1, config.delay2 + OVERHEAD) / 1000;   // ms until the next paint chunk
   }
 
   function init() {

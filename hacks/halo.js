@@ -40,10 +40,14 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/halo.xml so the config box maps 1:1,
-  // except `delay` is tuned a touch calmer than the stock 100000 us.
+  // Defaults/ranges mirror hacks/config/halo.xml so the config box maps 1:1 to
+  // the original (delay = the stock 100000 us, so the slider maps 1:1 to the xml
+  // resource).
   const config = {
-    delay: 60000,   // us between steps (--delay; xml default 100000)
+    delay: 100000,  // us between steps (--delay; xml/C stock 100000). No OVERHEAD:
+                    // at 100000 us the nominal 10 fps already matches the live
+                    // 8.7 fps within the -fps overlay's ~15% noise (slow hack,
+                    // framework overhead negligible -- see framerate-calibration).
     count: 0,       // number of halos; 0 = auto from screen size (--count)
     ncolors: 100,   // size of the palette (--colors)
     mode: 'random', // colour scheme: random | seuss | ramp (--mode)
@@ -51,7 +55,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 200000, step: 1000, default: 60000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 200000, step: 1000, default: 100000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Number of circles (0 = auto)', type: 'range', min: 0, max: 20, step: 1, default: 0, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'mode', label: 'Colour mode', type: 'select', default: 'random', live: false, options: [

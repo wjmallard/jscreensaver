@@ -44,18 +44,19 @@ export function start(canvas) {
 
   // Defaults/ranges mirror hacks/config/anemotaxis.xml: delay (Frame rate,
   // inverted), distance (lattice size), sources, searchers. The xml exposes no
-  // colour control, so neither do we. delay's stock value is 20000 µs; we
-  // default to 50000 as a calmer pace / frame-rate calibration (the slider still
-  // spans the xml's 0..100000 range) — a deliberate pace choice, not fidelity.
+  // colour control, so neither do we. delay defaults to the stock 20000 µs (the
+  // slider maps 1:1 to the xml resource); the rAF loop adds a fixed OVERHEAD so
+  // the effective step rate matches the live binary (see anemotaxis.md and the
+  // framerate-calibration note).
   const config = {
-    delay: 50000,     // µs between steps (--delay; xml stock 20000)
+    delay: 20000,     // µs between steps (--delay; the xml stock value)
     distance: 40,     // size of the lattice (--distance)
     sources: 25,      // number of odor sources (--sources)
     searchers: 25,    // number of searchers (--searchers)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'distance', label: 'Distance', type: 'range', min: 10, max: 250, step: 1, default: 40, lowLabel: 'near', highLabel: 'far', live: false },
     { key: 'sources', label: 'Sources', type: 'range', min: 1, max: 100, step: 1, default: 25, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'searchers', label: 'Searchers', type: 'range', min: 1, max: 100, step: 1, default: 25, lowLabel: 'few', highLabel: 'many', live: false },
@@ -450,6 +451,14 @@ export function start(canvas) {
   // step actually ran (or right after init), to avoid re-jittering the plumes at
   // the display rate when the step rate is slower (this matches the C's one
   // draw per step).
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay anemotaxis runs 36.7 fps, while the
+  // port at the stock 20000 us ran ~50 steps/sec (1.36x fast). 20000 + 7248 =
+  // 27248 us -> 36.7 steps/sec, matching the live binary. A calibration, not a
+  // tuning knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 7248;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -461,7 +470,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

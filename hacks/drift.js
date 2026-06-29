@@ -42,7 +42,7 @@ export function start(canvas) {
   // xml slider set, but documented options): grow = paint many short fractals
   // instead of drifting one; liss = drive the drift from Lissajous figures.
   const config = {
-    delay: 20000,    // µs between frames (--delay; stock 10000, calmer here)
+    delay: 10000,    // µs between frames (--delay)
     count: 30,       // flame lifetime scale (--count, "Duration")
     ncolors: 200,    // size of the smooth colormap (--ncolors)
     grow: false,     // grow many fractals vs. drift one (--grow)
@@ -53,7 +53,7 @@ export function start(canvas) {
   // live: false -> sizes the palette / picks the flame mode, so a change re-runs
   //                init() via reinit() (and clears the canvas).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Duration', type: 'range', min: 1, max: 200, step: 1, default: 30, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'grow', label: 'Grow fractals', type: 'checkbox', default: false, live: false },
@@ -441,6 +441,16 @@ export function start(canvas) {
   // rAF lag accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the pace is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't fire a burst of frames on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay drift runs 36.4 fps, while the
+  // port at the stock 10000 us ran ~100 fps (2.7x fast -- each frame's 3000
+  // iters + blit make the framework overhead large here). 10000 + 17473 =
+  // 27473 us -> 36 fps, matching the live binary. The post-flame erase gap
+  // still derives from the raw delay (4e6/delay frames, the C's erase_countdown)
+  // and is left untouched. A calibration, not a tuning knob.
+  const OVERHEAD = 17473;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -451,7 +461,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;   // xml units are microseconds
+    const delayMs = (config.delay + OVERHEAD) / 1000;   // xml units are microseconds
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

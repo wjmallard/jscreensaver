@@ -210,6 +210,14 @@ export function start(canvas) {
   // config.delay seconds of real wall time, then clear and regrow. coral.c
   // animates an erase between linger and regrow; we clear instantly (wipes
   // aren't integrated — see coral.md).
+  //
+  // OVERHEAD applies to the per-sweep delay2 only (NOT the linger): the stock
+  // delay2 is a sleep floor; the live binary's real sweep rate is lower (delay2 +
+  // framework overhead -- see the framerate-calibration note). The live coral
+  // measures 35.9 fps mid-growth, but the port at the stock 20000 us ran 50
+  // sweeps/sec (1.4x fast). 20000 + 7855 = 27855 us -> 35.9 sweeps/sec, matching
+  // the live binary. A calibration, not a tuning knob (the slider stays 1:1).
+  const OVERHEAD = 7855;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -233,7 +241,7 @@ export function start(canvas) {
     }
 
     lag += dt;
-    const delayMs = config.delay2 / 1000;
+    const delayMs = (config.delay2 + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
     while (lag >= delayMs && !done) {
       step();

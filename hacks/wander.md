@@ -41,7 +41,7 @@ Audit-corrected config:
 - **`ncolors` slider removed.** There is no `ncolors` resource in the .xml and the C hardcodes 256 colours (`MAXIMUM_COLOR_COUNT`), so the previously-exposed "Colors" slider was an invented control (and buggy — default 256 > max 255). The palette is now fixed at 256.
 - **`advance` low = 1** (was 0), matching the .xml. The C's `advance == 0` random-colour mode is unreachable from the stock GUI (needs `-advance 0` on the command line); the branch is kept to match the C but the slider can't reach it.
 - **`size` high = 100** (was 20), matching the .xml spinbutton range (rendered here as a slider).
-- **`delay` default = 20000** (was 30000), restored to the stock value; the slider still lets it be slowed.
+- **`delay` default = 20000** (was 30000), restored to the stock value; the slider still lets it be slowed. The rAF loop adds a fixed **`OVERHEAD = 7027 µs`** so `(delay + OVERHEAD) = 27027 µs` reproduces the live binary's effective rate (the `-fps` overlay measures **37.0 fps**; the port at the bare stock delay ran ~50 steps/sec, 1.35× fast). A calibration, not a tuning knob — see [[framerate-calibration]].
 - `showfps` in the .xml is the global FPS-overlay toggle, not a hack parameter — omitted.
 
 ## Correctness self-review

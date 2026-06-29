@@ -24,9 +24,9 @@ At init: `count` balls (default 300) get random positions, tiny random velocitie
 Filled circles via `ctx.arc` + `fill`. Unlike grav/galaxy (persistent canvas), fluidballs **clears to black and redraws every ball each frame**, which is what the brief calls for and is the canvas equivalent of the C's scheme: the C double-buffers into a Pixmap, erases each ball's *old* disc with `erase_gc`, draws the *new* disc, then blits the buffer to the window. A whole-canvas clear-and-redraw produces the identical visible result with no erase "turds" (the C even comments that optimizing the erase "leaves turds"). At the default 300 balls this is a few hundred `arc` fills per frame — cheap.
 
 ## Loop
-The C runs exactly **one** `step()` + one repaint per frame and sleeps `state->delay` between frames (`fluidballs_draw` returns the constant delay). Here a standard rAF lag-accumulator paces the sim by `config.delay` (µs in the xml, divided by 1000 for the ms rAF clock) so the speed is independent of the monitor refresh rate; catch-up is capped (`MAX_CATCHUP_STEPS = 4`) so a backgrounded tab doesn't burst on refocus, and the collision pass is the heavy work so `draw()` runs at most once per frame even if several `step()`s fire. The accumulator runs `1e6/delay` steps/sec.
+The C runs exactly **one** `step()` + one repaint per frame and sleeps `state->delay` between frames (`fluidballs_draw` returns the constant delay). Here a standard rAF lag-accumulator paces the sim by `config.delay` (µs in the xml, divided by 1000 for the ms rAF clock) so the speed is independent of the monitor refresh rate; catch-up is capped (`MAX_CATCHUP_STEPS = 4`) so a backgrounded tab doesn't burst on refocus, and the collision pass is the heavy work so `draw()` runs at most once per frame even if several `step()`s fire. The accumulator runs `1e6/(delay + OVERHEAD)` steps/sec (see *Pace*).
 
-**Pace caveat (live-calibration item).** xscreensaver's *effective* frame rate is well below nominal — frame time ≈ `delay` + ~30 ms of per-frame overhead (see the project's framerate-calibration notes). At the stock `delay` 10000 µs that's ≈ 40 ms/frame ≈ **25 steps/sec**, whereas the accumulator at the current default 16000 µs runs ≈ 62 steps/sec — i.e. roughly 2.5× the C's real pace. Matching the C effective rate would mean a default nearer **40000 µs**. The exact value should be calibrated against the live binary by the main session (per the brief, pace is a tunable knob, not a fidelity item), so the default is left at 16000 µs here.
+**Pace (calibrated against the live binary).** The default `delay` is the **stock 10000 µs** (the slider maps 1:1 to the xml resource); the loop adds a fixed `OVERHEAD = 8975 µs` so `(delay + OVERHEAD)` reproduces the live binary's *effective* rate rather than the nominal `1/delay`. Measured against the live `-fps` overlay fluidballs runs **52.7 fps**, while the port at the stock delay ran ~100 steps/s (1.9× fast); `10000 + 8975 = 18975 µs → 52.7 steps/s`, matching the binary. A calibration, not a tuning knob — see the framerate-calibration notes. (An earlier revision used a by-eye default of 16000 µs.)
 
 ## Audit 2026-06-28 (Batch 1B)
 Fidelity audit against `fluidballs.c`. Fixes applied:
@@ -43,7 +43,7 @@ Fidelity audit against `fluidballs.c`. Fixes applied:
 - **Box geometry / resize**: the C's box is the window minus a bottom strip reserved for the optional FPS text; we don't draw FPS, so the box is the full canvas `[0,W]×[0,H]`. The C polls window geometry every frame (`check_window_moved`) and, on a move/resize, updates the bounds **without re-scattering the balls**. The port mirrors this: the `resize` listener updates `W`/`H` (the walls) and lets the running simulation continue; it re-seeds only on first start and on a non-live config change (`reinit()`). `max_radius`/`count` are fixed at seed time, as in the C (it never recomputes them on resize).
 - **`--fps`/`showfps`, `--root`, `--db`** are X/overlay flags, omitted as in the other ports. `timeScale` and `shakeThreshold` aren't in the xml UI; kept as the constants `TC = 1` and `SHAKE_THRESHOLD = 0.015` (the C's defaults).
 - **Divide-by-zero guard**: the collision axis divides by `d = sqrt(dist²)`; two perfectly-coincident balls would give `d = 0`. The C relies on float jitter; the port adds `if (d === 0) d = 0.0001` so a stacked pair gets a finite push instead of `NaN`. The only added line of logic.
-- **Default `delay` 16000 µs** (stock 10000) — a tunable pace knob, not a fidelity item. **Pace wants live calibration** (see Loop, below).
+- **Default `delay` = stock 10000 µs + `OVERHEAD = 8975 µs`** — a pacing calibration matched to the live binary's measured 52.7 fps, not a fidelity item (see *Loop* / *Pace*).
 
 ## Correctness self-review (stability — won't explode or tunnel at defaults)
 The brief's failure mode for this hack is exploding velocities or overlap tunnelling. Checked by hand:
@@ -57,7 +57,7 @@ The brief's failure mode for this hack is exploding velocities or overlap tunnel
 
 ## Config
 Ranges mirror `hacks/config/fluidballs.xml`:
-- `delay` — Frame rate, µs/step, default 16000 (stock 10000), `invert: true`, **live**.
+- `delay` — Frame rate, µs/step, default **10000** (stock) + `OVERHEAD = 8975`, `invert: true`, **live**.
 - `count` — Number of balls, 1–3000, default 300, **non-live** (sizes the ball arrays → `reinit()`).
 - `size` — Ball size, 3–200, default 25, **non-live** (sets `max_radius` and the radii → `reinit()`).
 - `gravity` — Gravity ("Freefall"→"Jupiter"), 0–0.1, default 0.01, **live**.

@@ -37,4 +37,6 @@ Pure per-pixel: every pixel is `putImageData`-painted from a `Uint32` view over 
 ## Config
 Ranges mirror `hacks/config/moire.xml`: `delay` (the xml's **Duration** slider, 1-60 s, default 5 — the seconds each still is **held** before snapping to a new one, live), `ncolors` (**Colors**, ramp size, 2-255), `offset` (**Offset**, upper bound of the random ring-spacing factor — small = tight rings). The one port addition is `centers` (**Gratings**, 1-5; 1 = the C's single static zone plate, 2+ sums gratings for crossing fringes). `centers`/`offset`/`ncolors` re-seed via `reinit()`.
 
+**Framerate calibration: none needed (paint-and-hold).** `delay` is the xml's *Duration* — a **hold** timer in seconds, not a per-frame rate — so the stock default (5 s) maps 1:1 to the xml and no `OVERHEAD` applies. Nothing animates within a still; the C's ~16 fps top-to-bottom `XShm` reveal of each still is collapsed into a single repaint, so its frame rate has no analogue here. See the framerate-calibration note.
+
 See [[squiral]] for the shared module skeleton, [[greynetic]] and [[binaryring]] for the per-pixel / Uint32-blit idioms this follows, and `colormap.js` for the faithful `make_color_ramp` / `rgb_to_hsv` port.

@@ -35,7 +35,7 @@ Standard rAF lag-accumulator paced by `config.delay` (µs in the xml; divided by
 
 ## Config
 Ranges mirror `hacks/config/grav.xml`:
-- `delay` — Frame rate, µs/step, **default 18000** (the stock xml/`.c` default is **10000**); the browser's rAF loop reaches a higher *effective* step rate than xscreensaver's `delay + ~overhead`, so we run a slightly calmer pace. `invert: true` (the xml's `convert="invert"` slider), **live**. This is a tunable pace knob, **not** a fidelity claim — the main session should confirm the pace against the live binary.
+- `delay` — Frame rate, µs/step, **default 10000** (the stock xml/`.c` default); the rAF loop adds `OVERHEAD = 8484` so `(delay + OVERHEAD)` reproduces the live binary's effective rate (live `-fps` shows grav at **54.1 fps**: `10000 + 8484 = 18484 µs → 54.1 steps/sec`). `invert: true` (the xml's `convert="invert"` slider), **live**. A calibration, not a tuning knob — see the framerate-calibration note.
 - `count` — "Number of objects" (planets), 1–40, default 12, **non-live** (sizes the planet array → `reinit()`).
 - `ncolors` — "Number of colors", 1–255, default 64, **non-live** (sizes the `make_random_colormap` palette → `reinit()`).
 - `decay` — Orbital decay, default on, **live** (read every step; flips the integration in place).

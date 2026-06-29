@@ -355,6 +355,14 @@ export function start(canvas) {
   // config.delay, banking leftover time so the speed is the same at any refresh
   // rate. step() is heavy (3 sub-steps over the whole grid), so the catch-up cap
   // is low — a slow frame should fall behind, not stack up a burst.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // The live rdbomb measures 22.2 fps, but the port at the stock 30000 us ran
+  // 33 steps/sec (1.5x fast). 30000 + 15045 = 45045 us -> 22.2 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 15045;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -366,7 +374,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

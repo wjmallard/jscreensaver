@@ -39,13 +39,11 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/popsquares.xml. The stock hack picks the
   // ramp's two endpoints via the `bg` (light) and `fg` (dark) colour selects;
   // both are exposed here verbatim (six colours each, blue by default). `delay`
-  // defaults to ~2x the stock 25000 us: a browser rAF loop hits the nominal rate
-  // exactly, whereas xscreensaver's effective fps is ~half nominal (the delay is
-  // a floor + ~30ms of overhead), so 50000 here matches the real binary's pulse
-  // speed (see framerate-calibration; the main session fine-tunes vs the live
-  // install).
+  // defaults to the stock 25000 us (the slider maps 1:1 to the xml resource);
+  // the rAF loop adds a measured OVERHEAD so the effective rate matches the live
+  // binary (see the OVERHEAD note by the loop, and framerate-calibration).
   const config = {
-    delay: 50000,          // us between frames (--delay); stock 25000, see note above
+    delay: 25000,          // us between frames (--delay)
     subdivision: 5,        // grid fineness: screen split into ~this many cells (--subdivision)
     border: 1,             // px shaved off each square so a black grid shows (--border)
     ncolors: 128,          // length of the closed colour ramp (--ncolors)
@@ -58,7 +56,7 @@ export function start(canvas) {
   // live: false -> the value sizes the grid / colour ramp, so changing it
   //                re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'subdivision', label: 'Subdivision', type: 'range', min: 1, max: 64, step: 1, default: 5, lowLabel: 'coarse', highLabel: 'fine', live: false },
     { key: 'border', label: 'Border', type: 'range', min: 0, max: 5, step: 1, default: 1, lowLabel: 'none', highLabel: 'thick', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 512, step: 1, default: 128, lowLabel: 'few', highLabel: 'many', live: false },
@@ -225,6 +223,14 @@ export function start(canvas) {
   // Drive off requestAnimationFrame but keep the original pace: one step() per
   // config.delay, banking leftover time so the speed is the same at any refresh
   // rate. Cap catch-up so a backgrounded tab doesn't fire a burst on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // Measured against the live `-fps` overlay popsquares runs 31.4 fps, while
+  // the port at the stock 25000 us ran ~40 fps (1.3x fast). 25000 + 6847 =
+  // 31847 us -> 31 fps, matching the live binary. A calibration, not a tuning
+  // knob (the delay slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 6847;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -236,7 +242,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

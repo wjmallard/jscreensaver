@@ -52,7 +52,7 @@ export function start(canvas) {
   // defaults so the default behaviour is faithful, but they are not shown as
   // sliders (the xml UI doesn't show them either). See attraction.md.
   const config = {
-    delay: 20000,     // µs between steps (--delay; xml default 10000, eased — see .md)
+    delay: 10000,     // µs between steps (--delay; xml default 10000)
     mode: 'balls',    // balls/lines/tails/polygons/splines/filled-splines (--mode)
     walls: true,      // bounce off the window edges (--walls / --nowalls)
     points: 0,        // ball count; 0 = random 3..7 (--points)
@@ -76,7 +76,7 @@ export function start(canvas) {
   // live: false -> the value sizes the balls/palette/history, so a change re-runs
   //                init() via reinit() (which also clears the canvas).
   const params = [
-    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 40000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 40000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'mode', label: 'Mode', type: 'select', options: [
         { value: 'balls', label: 'Balls' },
         { value: 'lines', label: 'Lines' },
@@ -565,6 +565,14 @@ export function start(canvas) {
   // catch-up cap so a backgrounded tab doesn't burst on refocus. The physics
   // (step) is the expensive part for many balls, so draw() runs at most once per
   // frame, only when at least one step happened.
+  //
+  // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+  // rate is lower (delay + framework overhead -- see the framerate-calibration
+  // note). The live attraction measures 59.9 fps, but the port at the stock 10000
+  // us ran ~100 steps/sec (1.7x fast). 10000 + 6694 = 16694 us -> 59.9 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 6694;
   const MAX_CATCHUP_STEPS = 6;
   let lastTime = 0;
   let lag = 0;
@@ -575,7 +583,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     if (needsBackground) {

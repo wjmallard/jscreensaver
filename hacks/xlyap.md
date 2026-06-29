@@ -78,8 +78,8 @@ The C computes ONE Lyapunov value per **window pixel** (`a_inc = a_range/width`,
   `linger`-second reset_countdown (each tick returns 1 000 000 µs), then
   `do_preset(random%22)` + `init_color`. This is a **paint-and-hold** hack — NOT
   continuously animated. (Pace note: the per-step budget is the C's literal 2000;
-  if it still reveals faster than the live binary on real hardware, lowering
-  `POINTS_PER_STEP` is the one knob — per [[framerate-calibration]].)
+  the scan rate is calibrated to the live binary via the loop's `OVERHEAD` added
+  to the compute delay — see Config / [[framerate-calibration]].)
 
 ## Deviations from the C
 - **Logistic for ALL builtins (reproduces the live binary; this REVERSES the
@@ -126,6 +126,8 @@ Mirrors `hacks/config/xlyap.xml` exactly — the only resources it exposes:
   (`invert: true`). µs interval between compute batches.
 - `linger` — "Linger", `0..10` s, default **5**. Seconds the finished image holds.
 - (`showfps` is host-owned.)
+
+**Framerate calibration (`OVERHEAD = 10534`).** The stock `delay = 10000 µs` is only a sleep floor; the live binary's build-scan rate is lower (delay + framework overhead). The `-fps` overlay measures **48.7 fps** during the scan, while the port at the bare stock delay ran 100 steps/sec (2.05× fast), so the compute loop runs at `delay + OVERHEAD = 20534 µs → 48.7 steps/sec`. Applied to the per-step **compute** delay only — the `linger` hold is a separate wall-clock duration, untouched. The slider still maps 1:1 to the xml. See [[framerate-calibration]].
 
 **Removed invented sliders** that the previous port added and the `.xml` never
 had: `Detail`, `Quality`, `Colors`, `Contrast`. The window / forcing / settle /

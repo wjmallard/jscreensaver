@@ -38,7 +38,7 @@ export function start(canvas) {
   // framework fills the X colormap via make_random_colormap(bright_p=True) and
   // each planet/star picks a RANDOM entry -- see buildPalette()/pickColor().
   const config = {
-    delay: 18000,    // \u00B5s between steps (--delay; stock 10000, calmer here)
+    delay: 10000,    // \u00B5s between steps (--delay; xml default 10000)
     count: 12,       // number of orbiting planets (--count)
     ncolors: 64,     // palette size; BRIGHT_COLORS random colormap (--ncolors)
     decay: true,     // damp velocities so orbits spiral inward (--no-decay)
@@ -46,7 +46,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 18000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Number of objects', type: 'range', min: 1, max: 40, step: 1, default: 12, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'decay', label: 'Orbital decay', type: 'checkbox', default: true, live: true },
@@ -280,6 +280,14 @@ export function start(canvas) {
   // rAF lag-accumulator loop paced by config.delay (see squiral.js). The canvas is
   // persistent (trails accumulate), so step() draws incrementally and draw() only
   // paints the one-time background after a reinit/resize.
+  //
+  // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+  // rate is lower (delay + framework overhead -- see the framerate-calibration
+  // note). The live grav measures 54.1 fps, but the port at the stock 10000 us
+  // ran ~100 steps/sec (1.85x fast). 10000 + 8484 = 18484 us -> 54.1 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8484;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -291,7 +299,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     draw();   // one-time background after reinit/resize

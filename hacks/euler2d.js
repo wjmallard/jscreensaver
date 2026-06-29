@@ -714,6 +714,14 @@ export function start(canvas) {
   // physics pass plus ~2*cnsegs short Bresenham lines (erase the oldest ring
   // frame + draw the new one), so keep the catch-up cap low. One blit per frame,
   // only when a step actually drew.
+  //
+  // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+  // rate is lower (delay + framework overhead -- see the framerate-calibration
+  // note). The live euler2d measures 52.7 fps, but the port at the stock 10000 us
+  // ran ~100 steps/sec (1.9x fast). 10000 + 8975 = 18975 us -> 52.7 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8975;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -725,7 +733,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let drew = false;

@@ -31,11 +31,12 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/flow.xml so the config box maps ~1:1 to
-  // the original. (`delay` default is eased from the stock 10000 to calm the pace
-  // in a browser -- the slider still spans the xml's 0..100000; see flow.md.)
+  // Defaults/ranges mirror hacks/config/flow.xml so the config box maps 1:1 to
+  // the original, at the stock defaults. (`delay` is the xml resource in
+  // microseconds; the rAF loop adds OVERHEAD to reproduce the live binary's
+  // effective rate -- see flow.md and the framerate-calibration note.)
   const config = {
-    delay: 15000,     // \u00B5s between steps (--delay; stock 10000, eased)
+    delay: 10000,     // \u00B5s between steps (--delay; xml default 10000)
     count: 3000,      // number of bees (--count)
     cycles: 10000,    // steps before a flow times out and re-seeds (--cycles)
     ncolors: 200,     // size of the colour palette (--ncolors)
@@ -48,7 +49,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Count', type: 'range', min: 10, max: 5000, step: 10, default: 3000, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'cycles', label: 'Timeout', type: 'range', min: 0, max: 800000, step: 1000, default: 10000, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 200, lowLabel: 'two', highLabel: 'many', live: false },
@@ -705,6 +706,14 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (us). Simulation runs in step();
   // render() repaints once per frame so the image stays stable even when we step
   // less than once per display frame (large delay). See squiral.js.
+  //
+  // OVERHEAD: the stock --delay is only a sleep floor; the live binary's real
+  // rate is lower (delay + framework overhead -- see the framerate-calibration
+  // note). The live flow measures 43.9 fps, but the port at the stock 10000 us
+  // ran ~100 steps/sec (2.3x fast). 10000 + 12779 = 22779 us -> 43.9 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 12779;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -715,7 +724,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

@@ -83,13 +83,15 @@ the rAF lag-accumulator loop.
   / 3d. `*size` (15) is a real resource but jwz never surfaced a slider for it,
   so it stays a fixed constant here, matching the stock UI. (Likewise `*delta3d`
   = 1.5 is an internal constant; the `.xml` exposes no slider.)
-- **delay default 30000 us, not the .xml's 20000** (pace). The rAF lag-
-  accumulator runs one `simulate()` per `delay` of wall-clock time, so a literal
-  20000 us would step ~50/s — faster than the live binary, whose effective frame
-  time is ~2x its nominal delay once per-frame overhead is counted (see the
-  project's frame-rate-calibration note). 30000 us (~33/s) makes the breathing
-  speed match the live hack. The slider still spans the .xml's `0..100000`
-  (inverted "Frame rate"); only the default differs.
+- **delay default = stock 20000 us + OVERHEAD calibration** (pace). The rAF lag-
+  accumulator runs one `simulate()` per `(delay + OVERHEAD)` of wall-clock time.
+  The default `delay` is the **stock 20000 us** (the slider maps 1:1 to the .xml
+  resource), and the loop adds a fixed `OVERHEAD = 6738 us` so the *effective*
+  rate matches the live binary rather than the nominal `1/delay`. Measured against
+  the live `-fps` overlay bouboule runs **37.4 fps**, while the port at the stock
+  delay ran ~50/s (1.34× fast); `20000 + 6738 = 26738 us → 37.4/s`, matching the
+  binary. A calibration, not a tuning knob — see the frame-rate-calibration note.
+  (An earlier revision used a by-eye default of 30000 us.)
 - **resize re-seeds fully** (platform). The C's `reshape_bouboule` keeps the
   stars, colormap and most SinVariables and only re-bounds the centre x/y to the
   new size. The port re-runs `init()` on resize (re-scatters the stars and

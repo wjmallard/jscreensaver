@@ -50,8 +50,8 @@ export function start(canvas) {
   // (the cosilines toggle). `ncolors` is added for parity with the other ports;
   // the C hardcodes a 32-entry blue->green->red->violet ramp.
   const config = {
-    delay: 20000,      // µs between steps. Calmer than the C's stock 10000 default
-                       // -- the stock fast rush reads as overwhelming here.
+    delay: 10000,      // µs between steps (--delay; xml/C stock 10000). The rAF loop
+                       // adds OVERHEAD so (delay + OVERHEAD) hits the live -fps rate.
     speed: 0.10,       // per-step spin rate, 0.0001..0.2 (--speed / "Density"); the
                        // C/xml stock default. Sets rotsizeX = (int)(2/speed+1) groups.
     random: true,      // true = smooth cosi-lines, false = random splats (--random)
@@ -59,7 +59,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'speed', label: 'Density', type: 'range', min: 0.0001, max: 0.2, step: 0.0001, default: 0.10, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'random', label: 'Smooth lines', type: 'checkbox', default: true, live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 32, lowLabel: 'few', highLabel: 'many', live: false },
@@ -487,6 +487,14 @@ export function start(canvas) {
   // more than the interval, a high cap would death-spiral into multi-step frames,
   // so allow at most a couple of catch-up steps and just let the spin run a hair
   // slow instead of locking up.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead -- see the framerate-calibration note).
+  // The live kumppa measures 54.1 fps, but the port at the stock 10000 us ran
+  // 100 steps/sec (1.85x fast). 10000 + 8484 = 18484 us -> 54.1 steps/sec,
+  // matching the live binary. A calibration, not a tuning knob (the delay
+  // slider still maps 1:1 to the xml resource).
+  const OVERHEAD = 8484;
   const MAX_CATCHUP_STEPS = 2;
   let lastTime = 0;
   let lag = 0;
@@ -498,7 +506,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

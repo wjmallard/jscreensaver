@@ -38,7 +38,7 @@ export function start(canvas) {
   // 4096 via the DEFAULTS resource — but we expose it as "Points" for parity
   // with the other attractor ports and to let slower machines dial it down.)
   const config = {
-    delay: 50000,   // microseconds between frames (--delay)
+    delay: 20000,   // microseconds between frames (--delay; xml/C stock 20000)
     cycles: 2500,   // frames before the screen clears + a new map begins (--cycles)
     count: 4096,    // points plotted per inner frame (DEFAULTS *count, "Points")
     ncolors: 100,   // size of the make_smooth_colormap palette (--ncolors)
@@ -47,7 +47,7 @@ export function start(canvas) {
   // live: true  -> the loop reads config[key] every frame, applies instantly.
   // live: false -> the value sizes the palette, so a change re-runs init().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Timeout', type: 'range', min: 100, max: 10000, step: 100, default: 2500, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'count', label: 'Points', type: 'range', min: 512, max: 8192, step: 256, default: 4096, lowLabel: 'few', highLabel: 'many', live: true },
     { key: 'ncolors', label: 'Number of colors', type: 'range', min: 1, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
@@ -364,6 +364,15 @@ export function start(canvas) {
   // rAF lag accumulator paced by config.delay (microseconds): run one step()
   // per delay, banking leftover time so the pace is identical at any refresh
   // rate. Cap catch-up so a backgrounded tab doesn't burst on refocus.
+  //
+  // OVERHEAD: the stock delay is a sleep floor; the live binary's real rate is
+  // lower (delay + framework overhead — see the framerate-calibration note). The
+  // live discrete measures 37.2 fps, but the port at the stock 20000 µs ran 50
+  // steps/sec (1.34x fast). 20000 + 6882 = 26882 µs -> 37.2 steps/sec, matching
+  // the live binary (and replacing the old by-eye 50000 default). One step() ==
+  // the C's draw_discrete (INNER=10 inner frames). A calibration, not a tuning
+  // knob (the slider still maps 1:1 to the xml delay).
+  const OVERHEAD = 6882;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -374,7 +383,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;   // xml units are microseconds
+    const delayMs = (config.delay + OVERHEAD) / 1000;   // xml units are microseconds
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

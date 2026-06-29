@@ -68,13 +68,12 @@ correctly wraps at the full `ncolors` and traverses the whole closed loop.
   `XCopyArea`s it (or uses the DBE back-buffer). Canvas double-buffers for us, so we draw
   straight to the one shared canvas every frame. There is no XOR / canvas-feedback raster
   op in this hack, so nothing needed emulating.
-- **Default `delay` 50000 us** instead of the stock 25000. This is a frame-rate calibration,
-  not a taste tweak: a browser rAF loop hits the nominal rate, whereas xscreensaver's
-  effective fps is ~half nominal (its `delay` is a floor plus ~30 ms of overhead), so
-  ~2x the stock value reproduces the real binary's pulse speed (see the project's
-  framerate-calibration notes). The slider still spans 0..100000 us and is `invert`ed
-  (drag right = faster) like the XML. The main session should confirm the exact value
-  against the live install.
+- **Default `delay` 25000 us** — the stock value (the slider maps 1:1 to the xml resource,
+  spanning 0..100000 us, `invert`ed so drag right = faster). The rAF loop adds a measured
+  `OVERHEAD = 6847 us` so `(delay + OVERHEAD)` reproduces the live binary's effective rate:
+  measured against the live `-fps` overlay popsquares runs **31.4 fps**, while the port at the
+  stock delay ran ~40 fps (1.3x fast); `25000 + 6847 = 31847 us -> 31 fps`, matching the live
+  binary. A calibration, not a tuning knob (see the project's framerate-calibration notes).
 - **`ncolors` slider min is 2** (the XML `low` is 1). The C forces `ncolors >= 1` then
   `exit(1)`s with "insufficient colors" if `make_color_ramp` yields fewer than 2, so 1 is a
   degenerate value the real hack refuses; clamping the floor to 2 avoids that crash while
