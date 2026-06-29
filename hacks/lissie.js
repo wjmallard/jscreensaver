@@ -10,7 +10,8 @@
 // step (clamped to [0.01, 0.15] rad), so the figure slowly precesses and
 // morphs instead of retracing one fixed curve. The worm leaves a FINITE trail:
 // a ring buffer of the last `len` points, each drawn as a small circle outline
-// in a cycling hue, so the tail is a moving rainbow tube. Every `cycles` frames
+// in a colour from a smooth colormap (SMOOTH_COLORS) that advances one step per
+// head, so the tail is a colour-cycling tube. Every `cycles` frames
 // the whole screen reseeds with fresh worms.
 //
 // Rendering: sparse vector ops. The C draws one circle (XDrawArc) per worm per
@@ -20,6 +21,8 @@
 // port keeps the ring buffer but repaints each frame: clear to black, redraw
 // each worm's live tail window. The visible result (a finite worm on black) is
 // identical and ghost-free. See the .md for the deviation.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'lissie';
 
@@ -34,7 +37,7 @@ export function start(canvas) {
 
   // Defaults/ranges mirror hacks/config/lissie.xml (1:1 with the original).
   const config = {
-    delay: 25000,    // microseconds between steps (--delay)
+    delay: 10000,    // microseconds between steps (--delay); stock lissie.c DEFAULTS
     cycles: 20000,   // frames before the screen reseeds (--cycles)
     count: 1,        // number of worms (--count)
     size: -200,      // circle size; <0 = random up to |size|, 0 = auto, >0 = fixed (--size)
@@ -45,7 +48,7 @@ export function start(canvas) {
   // live: true  -> the loop reads config every step (applies instantly).
   // live: false -> the value sizes worms/colors, so a change re-runs init().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Timeout', type: 'range', min: 1000, max: 80000, step: 1000, default: 20000, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'count', label: 'Worms', type: 'range', min: 1, max: 20, step: 1, default: 1, lowLabel: 'one', highLabel: 'many', live: false },
     { key: 'size', label: 'Size', type: 'range', min: -500, max: 500, step: 10, default: -200, lowLabel: 'small / random', highLabel: 'large', live: false },
@@ -62,7 +65,7 @@ export function start(canvas) {
 
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
-  let palette;        // ncolors smooth-rainbow CSS strings
+  let palette;        // ncolors smooth-colormap CSS strings (SMOOTH_COLORS)
   let worms;          // active worms
   let loopcount;      // frames since last reseed (the C's lp->loopcount)
   let dot, dotHalf;   // device-px footprint for the ri<2 "point" case
@@ -86,9 +89,17 @@ export function start(canvas) {
 
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 1 (the C's mono path).
-    for (let i = 0; i < n; i++) palette[i] = n > 1 ? `hsl(${i * 360 / n}, 100%, 55%)` : '#fff';
+    // lissie.c is SMOOTH_COLORS -> make_smooth_colormap: 2-5 random HSV anchors
+    // interpolated into a closed loop, usually muted/pastel and re-rolled each run
+    // -- not the fixed max-vivid hsl() the first port used. The worm's colour index
+    // advances one step per head, so the visible len-point tail is a narrow slice of
+    // the loop (often near one hue, drifting slowly), as in the live binary.
+    // ncolors <= 2 -> white (the C's MI_NPIXELS<=2 / MI_WHITE_PIXEL mono path).
+    if (n <= 2) {
+      palette = new Array(n).fill('#fff');
+      return;
+    }
+    palette = makeSmoothColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // Build one worm — the C's initlissie(). Geometry is in device px (W/H are the
@@ -236,9 +247,16 @@ export function start(canvas) {
     init();
   }
 
-  // Fixed-timestep rAF loop (squiral-style): one step() per config.delay, banking
-  // leftover time so the speed is the same at any refresh rate. Cap catch-up so a
-  // backgrounded tab can't burst. render() runs once per displayed frame.
+  // Fixed-timestep rAF loop (squiral/lisa-style): one step() per (delay + OVERHEAD),
+  // banking leftover time so the speed is the same at any refresh rate. Cap catch-up
+  // so a backgrounded tab can't burst. render() runs once per displayed frame.
+  //
+  // OVERHEAD: the live binary's *delay (10000) is a sleep floor; its real per-frame
+  // cost is higher. Measured live lissie = ~55.5 fps (Load ~45%, delay-bound), i.e. a
+  // ~18000 us period, so OVERHEAD = 1e6/55.5 - 10000 = 8000 us. Adding it to the step
+  // delay makes the worm sweep/precess at the original's pace while config.delay still
+  // maps 1:1 to the stock resource. See framerate-calibration.
+  const OVERHEAD = 8000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -249,8 +267,8 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // (config.delay + OVERHEAD) is microseconds (xml units); rAF clock is milliseconds.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

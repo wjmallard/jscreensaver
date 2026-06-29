@@ -1,6 +1,6 @@
 # helix — port notes
 
-Port of `helix.c` ("Spirally string-art-ish patterns", Jamie Zawinski, 1992; the algorithm is from a c.1988 Mac program by Chris Tate, with ellipse code by Dan Stromberg and a `-subdelay` watch-the-drawing option by Matthew Strait). Each round draws ONE closed string-art figure of one of two kinds, in a single cycling hue, then holds it on screen for a few seconds and clears to start a fresh figure.
+Port of `helix.c` ("Spirally string-art-ish patterns", Jamie Zawinski, 1992; the algorithm is from a c.1988 Mac program by Chris Tate, with ellipse code by Dan Stromberg and a `-subdelay` watch-the-drawing option by Matthew Strait). Each round draws ONE closed string-art figure of one of two kinds, in one random colour, then holds it on screen for a few seconds and clears to start a fresh figure.
 
 Original: <https://www.jwz.org/xscreensaver/> · source: `xscreensaver-6.15/hacks/helix.c` (~358 lines)
 
@@ -27,20 +27,37 @@ Two figure types are chosen at random each round (the C's `dstate = (random()&1)
 - **DRAW** advances the figure by one draw call's worth of segments — **10** `helix()` steps or **5** `trig()` steps, matching the C's `DRAW_HELIX`/`DRAW_TRIG` batched loops (both break early on completion) — and goes to LINGER once the figure closes.
 - **LINGER** holds the finished figure on screen for `linger` seconds, then CLEAR blanks it, re-rolls the figure type (`random()&1`), and leaves the screen black ~1 s before the next figure (the C's erase transition takes about that long).
 
+## Palette
+Colour is **not** a resource and **not** a colormap — helix sets the stroke colour itself, rolling one fresh HSV per figure (in `random_helix`/`random_trig`):
+
+```
+hsv_to_rgb(random() % 360, frand(1.0), frand(0.5) + 0.5)
+```
+
+So **hue** is uniform 0-359, **saturation** is uniform 0-1 (many figures come out pastel or near-white), and **value** is 0.5-1.0 (always at least half-bright). The port reproduces this exactly via a self-contained `hsvToRgb255()` — a port of `utils/hsv.c` with the X server's 16-bit -> 8-bit downsample folded in (matching `colormap.js`'s quantization). Live captures confirm the spread: white, pale green, dusty pink, muted purple, blue.
+
+This replaces an earlier fixed vivid `hsl(h, 100%, 60%)` rainbow indexed by a non-stock `ncolors` slider (the systemic palette bug) — full-saturation strokes that could never produce helix's frequent washed-out figures. The `ncolors` slider is removed (helix has no colour-count control); the C's `mono_p` white fallback never occurs on canvas, so the colour path always runs.
+
 ## Module shape
 `start(canvas) -> { stop, pause, resume, reinit, config, params }` — see `squiral.md`. This is the same family as **[[xspirograph]]** (parametric trig figure → polyline → stroke → linger → clear → new figure) and the structure is copied closely from it: a per-figure state machine plus a **variable-delay loop** where `step()` returns the ms until the next step.
 
 ## Rendering — vector ops, incremental (persistent canvas)
 The figure is genuinely line-shaped (the C emits one `XDrawLine` per step), so this uses **canvas vector ops**, not a blit. Like [[xspirograph]] (and unlike braid/boxfit, which clear-and-repaint every frame), helix **draws incrementally onto the persistent canvas**: each `step()` accumulates that draw call's batch of segments into a `Path2D` and `stroke()`s it once in the figure's colour. Nothing is repainted — the figure builds up over many frames, and the screen is cleared only between figures, exactly like the C drawing into the live window. The canvas is double-buffered so the running stroke is flicker-free.
 
-## Variable-delay loop
-`helix_draw` returns the microseconds to wait before the next call — `subdelay` while drawing, `linger` seconds at the hold, ~1 s of black after the clear. The port keeps this boxfit/xspirograph-style: `step()` returns the ms until the next step and the rAF lag-accumulator honours it (`acc` is capped at `nextDelay + 1000`, never below `nextDelay`, so a long linger pause always elapses).
+## Timing
+helix has two stock timescales:
+- **`--subdelay`** (default **20000 µs**) — the pause between draw steps. Each draw call advances the figure by 10 `helix()` steps or 5 `trig()` steps, exactly as the C batches them.
+- **`--delay`** (default **5**) — confusingly, this is the LINGER in **seconds** (the C's `sleep_time * 1e6`), the hold once a figure is complete. The `*delay: 5` in the C's DEFAULTS is *not* a 5 µs per-frame delay.
+
+**OVERHEAD calibration.** The draw phase is **delay-bound**, not compute-bound: the live `-fps` overlay reads **Load 24-46%** (it sleeps most of each frame). Measured live draw rate ≈ **36 fps** (samples 28.5 / 38.1 / 36.0 / 39.8 / 35.8 / 35.5; HELIX is denser/slower than TRIG, ±15% run variance). So `OVERHEAD = round(1e6/36) - 20000 = 7778 µs` (the port uses **7800**) and the draw paces at `(subdelay + OVERHEAD)/1000` ms. The port then measures **~35.7 draw-steps/s** (mean in-burst step gap 28.0 ms; the rAF 16.7 ms quantum makes individual gaps bimodal 16.7/33.3 ms). The **linger (5 s) is left untouched** — a multi-second hold needs no overhead. (The prior port had a by-eye `subdelay` of 50000, drawing ~2.5× too slow.)
+
+`step()` returns the ms to wait before the next step — `(subdelay + OVERHEAD)` while drawing, `linger` seconds at the hold, ~1 s of black after the clear — and the rAF lag-accumulator honours it (`acc` is capped at `nextDelay + 1000`, never below `nextDelay`, so a long linger pause always elapses), boxfit/xspirograph-style.
 
 ## Deviations from the C
 - **Erase = instant black, a wipe candidate.** The C runs xscreensaver's `erase_window` transition (an animated wipe) between figures. As instructed — and exactly like `xspirograph.js`'s `clearScreen()` — this port just `fillRect`s the screen black at that point. **Replacing it with a real wipe is a future enhancement** once a shared `wipes.js` module exists.
-- **Colour.** The C rolls a full random HSV (`random()%360`, random saturation, value 0.5–1.0) per figure. This port keeps the gallery's vivid `hsl()` rainbow: a random index into an `ncolors`-entry palette. `ncolors` is **added for parity** with the other hacks (stock helix has no colour-count control).
 - **`devicePixelRatio`.** The backing store is device-px and the line width is scaled by `dpr` (the C only bumps width to 3 px past 2560). The figure geometry is derived from the canvas size (`radius = min(W,H)/2`, `xmid/ymid = W/2, H/2`), so it auto-scales; no logical-size constants needed scaling, so the closure conditions (`limit` steps for HELIX, `|d_angle| > 360` for TRIG) are unaffected.
-- **Default frame rate.** Stock `subdelay` is 20000 µs and `delay`/linger is 5 s; kept as-is (already calm). `delay` (linger) honours the slider directly.
+
+(Palette and the draw-step frame rate were both fixed in the fidelity audit — see **Palette** and **Timing** above; they are no longer deviations.)
 
 ## Correctness self-review (closure / reset / termination)
 This family has bitten past ports (a sweep param that never resets = "dead line"; a closure test that never fires = endless over-draw; a catch-up cap below a long pause = freeze). Checked each:
@@ -51,9 +68,8 @@ This family has bitten past ports (a sweep param that never resets = "dead line"
 - Traced by hand that **multiple distinct figures** draw in succession: after a figure closes → LINGER → CLEAR re-rolls `figtype` and geometry → a new, differently-shaped figure draws. Verified both branches (HELIX and TRIG) reach `finished = true` and hand back to NEW_FIGURE.
 
 ## Config
-Ranges mirror `hacks/config/helix.xml`. The xml reuses `id="delay"` for two different sliders, ported under distinct keys:
+Two sliders, mirroring the stock resources:
 - `subdelay` — **Frame rate** (`--subdelay`, µs/step, live, inverted: drag right = faster).
 - `linger` — **Linger** (`--delay`, 1 s … 1 min hold before clearing, live).
-- `ncolors` — **Colors** (added for parity; non-live).
 
-Non-live changes and `reinit()` start a fresh sequence with the current config. Local-dev/module-fetch caveat is the same as `squiral.md` (serve over http, not `file://`).
+Both are live; `reinit()` starts a fresh sequence with the current config. Local-dev/module-fetch caveat is the same as `squiral.md` (serve over http, not `file://`).

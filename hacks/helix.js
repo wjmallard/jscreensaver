@@ -6,8 +6,8 @@
 // https://www.jwz.org/xscreensaver/
 //
 // "Spirally string-art-ish patterns." Each round draws ONE closed figure of one
-// of two kinds, in a single cycling hue, then HOLDS it on screen and clears to
-// start a fresh figure:
+// of two kinds, in one random colour (a fresh HSV roll per figure), then HOLDS
+// it on screen and clears to start a fresh figure:
 //   - HELIX: two parametric points (each x and y driven by its own integer
 //     harmonic of a swept angle) joined by line segments — a Lissajous-ish
 //     string-art weave.
@@ -35,20 +35,23 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/helix.xml (1:1 with the original).
-  // The xml reuses id="delay" for two distinct sliders: `subdelay` is the
-  // per-step frame rate (µs, inverted) and `linger` is the seconds-long hold
-  // before the finished figure is erased.
+  // Defaults/ranges mirror the stock resources (helix.c DEFAULTS / helix.xml).
+  // Stock --subdelay is 20000 µs between draw steps; --delay (here `linger`) is
+  // the hold in SECONDS (the C's sleep_time * 1e6), default 5 s. Colour is NOT a
+  // resource: the C rolls a fresh random HSV per figure (no colour-count knob).
   const config = {
-    subdelay: 50000,   // \u00B5s between draw steps (--subdelay)
-    linger: 5,         // seconds to hold the finished figure before erasing (--delay)
-    ncolors: 64,       // hue-cycle size (not in stock UI; for gallery parity)
+    subdelay: 20000,   // stock --subdelay: \u00B5s between draw steps
+    linger: 5,         // stock --delay: seconds to hold the finished figure
   };
 
+  // Live (XQuartz) draw-phase frame rate measured ~36 fps with Load 24-46% (so
+  // delay-bound, not compute-bound). The port has no per-step compute cost, so
+  // pace the draw at stock subdelay + OVERHEAD = round(1e6/36) - 20000 = 7778 \u00B5s.
+  const OVERHEAD = 7800;
+
   const params = [
-    { key: 'subdelay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'subdelay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'linger', label: 'Linger', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // The C's DRAW_HELIX runs helix() up to 10× per draw call, DRAW_TRIG runs
@@ -92,7 +95,6 @@ export function start(canvas) {
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
   let xmid, ymid;            // figure centre
-  let palette;               // ncolors smooth-rainbow CSS strings
 
   // Current figure state (mirrors the C's struct fields).
   let drawstate;             // 'NEW_FIGURE' | 'DRAW' | 'LINGER' | 'CLEAR'
@@ -103,17 +105,41 @@ export function start(canvas) {
   let dAngle, dAngleOffset, offset, dir, density;            // TRIG sweep state
   let radius1, radius2, factor1, factor2, factor3, factor4;  // figure harmonics/radii
 
-  function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 1 (the C's mono path).
-    for (let k = 0; k < n; k++) palette[k] = n > 1 ? `hsl(${k * 360 / n}, 100%, 60%)` : '#fff';
+  // hsv_to_rgb (utils/hsv.c) -> a CSS "rgb(r,g,b)" string, with the X server's
+  // 16-bit -> 8-bit downsample folded in (matches colormap.js's quantization).
+  // h in degrees; s, v in [0,1].
+  function hsvToRgb255(h, s, v) {
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    if (v < 0) v = 0; else if (v > 1) v = 1;
+    const H = (Math.trunc(h) % 360) / 60;
+    const i = Math.trunc(H);
+    const f = H - i;
+    const p1 = v * (1 - s);
+    const p2 = v * (1 - s * f);
+    const p3 = v * (1 - s * (1 - f));
+    let r, g, b;
+    if      (i === 0) { r = v;  g = p3; b = p1; }
+    else if (i === 1) { r = p2; g = v;  b = p1; }
+    else if (i === 2) { r = p1; g = v;  b = p3; }
+    else if (i === 3) { r = p1; g = p2; b = v;  }
+    else if (i === 4) { r = p3; g = p1; b = v;  }
+    else              { r = v;  g = p1; b = p2; }
+    const q = (c) => {
+      const t = Math.trunc(c * 65535) / 65536;
+      return t <= 0 ? 0 : t >= 1 ? 255 : Math.floor(t * 256);
+    };
+    return 'rgb(' + q(r) + ',' + q(g) + ',' + q(b) + ')';
   }
 
-  // The C rolls a full random HSV per figure; we keep the gallery's vivid hsl()
-  // rainbow — a random index into the ncolors-entry palette.
+  // The C's per-figure colour: hsv_to_rgb(random()%360, frand(1.0), frand(0.5)+0.5)
+  // -- one fresh HSV roll per figure. Hue uniform 0-359, SATURATION uniform 0-1
+  // (so many figures come out pastel or near-white), value 0.5-1.0 (always at
+  // least half-bright). NOT a fixed vivid rainbow.
   function newColor() {
-    strokeStyle = palette[Math.floor(Math.random() * palette.length)];
+    const h = Math.floor(Math.random() * 360);   // random() % 360
+    const s = Math.random();                      // frand(1.0)
+    const v = Math.random() * 0.5 + 0.5;          // frand(0.5) + 0.5
+    strokeStyle = hsvToRgb255(h, s, v);
   }
 
   // Choose the geometry of a new HELIX figure — the C's random_helix().
@@ -256,7 +282,8 @@ export function start(canvas) {
 
       case 'DRAW':
         if (drawFigure()) drawstate = 'LINGER';
-        return Math.max(0, config.subdelay / 1000);
+        // stock subdelay + measured OVERHEAD (live draw ~36 fps); see top.
+        return Math.max(0, (config.subdelay + OVERHEAD) / 1000);
 
       case 'LINGER':
         // The C holds the finished figure for `sleep_time` seconds, then erases.
@@ -279,7 +306,6 @@ export function start(canvas) {
 
   // Begin a fresh sequence with the current config.
   function reset() {
-    buildPalette();
     figtype = Math.floor(Math.random() * 2) ? 'HELIX' : 'TRIG';   // the C's init
     drawstate = 'NEW_FIGURE';
     clearScreen();

@@ -19,6 +19,8 @@
 // See [[spiral]] (drifting sinusoid + sparse fillRect) and [[whirlwindwarp]]
 // (sparse particle plotting on a persistent canvas).
 
+import { makeUniformColormapRGB } from './colormap.js';
+
 export const title = 'whirlygig';
 
 export const info = {
@@ -31,10 +33,11 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/whirlygig.xml so the config box maps
-  // 1:1 to the original. The stock hack runs at ~100 fps (delay 10000 us,
-  // speed 1); we default a touch calmer (16000 us ~ one display frame).
+  // 1:1 to the original. whirlygig.c has no *delay resource -- its draw callback
+  // returns a fixed 10000 us floor; the slider maps 1:1 to that stock value and
+  // the rAF loop adds a measured framework OVERHEAD (see frame()).
   const config = {
-    delay: 16000,        // \u00B5s between steps (xml --delay; stock ~10000)
+    delay: 10000,        // \u00B5s sleep floor (whirlygig_draw returns 10000)
     whirlies: 0,         // spots per line; 0 = random 1..15 (xml --whirlies -1)
     nlines: 0,           // lines of spots; 0 = random 1..5 (xml --nlines -1)
     xspeed: 1.0,         // frequency factor for the x curve (xml --xspeed)
@@ -54,7 +57,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 60000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 60000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'xmode', label: 'X mode', type: 'select', options: [
         { value: 'change', label: 'Change' },
         { value: 'spin', label: 'Spin' },
@@ -135,10 +138,15 @@ export function start(canvas) {
     return current;
   }
 
+  // whirlygig.c is a NATIVE screenhack that builds its palette with
+  // make_uniform_colormap (= make_color_ramp(0,S,V -> 359,S,V), with S and V each
+  // a single per-run random in 66%-100%). So it is a full hue ramp, but on any
+  // given run somewhat desaturated/dimmed -- not the fixed max-vivid hsl() rainbow
+  // the first port used. makeUniformColormapRGB is the faithful port; it re-rolls
+  // S,V per call (i.e. per init), matching the C re-rolling per whirlygig_init.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 55%)`;
+    palette = makeUniformColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // One axis of one whirly: returns the LOGICAL-pixel position. isX picks the
@@ -362,6 +370,14 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (us): one step() per delay,
   // banking leftover time so the speed is identical at any refresh rate, with a
   // catch-up cap so a backgrounded tab doesn't burst on refocus. See squiral.js.
+  //
+  // OVERHEAD: whirlygig_draw returns a 10000 us sleep floor, but the framework's
+  // real per-frame cost is higher. Live whirlygig measured ~58 fps (Load ~42%,
+  // delay-bound) across developed scenes, i.e. a ~17240 us period, so
+  // OVERHEAD = 1e6/58 - 10000 = 7241 us. Adding it to the step delay makes the
+  // chain crawl/zoom and the mode re-rolls fire at the original's pace while
+  // config.delay still maps 1:1 to the stock 10000 floor. See framerate-calibration.
+  const OVERHEAD = 7241;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -372,7 +388,9 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    // config.delay is the stock 10000 us floor; add the measured framework
+    // OVERHEAD, then convert to the rAF clock's milliseconds.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

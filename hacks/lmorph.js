@@ -30,38 +30,43 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/lmorph.xml (1:1 with the original),
-  // except `delay`/`steps` are retuned for smooth 60 fps motion (see lmorph.md).
+  // Defaults/ranges mirror lmorph.c's DEFAULTS (lmorph has no .xml). The figure
+  // is drawn in a single static foreground colour, exactly as the C.
   const config = {
-    delay: 16000,       // µs between morph steps (--delay; stock 70000)
+    delay: 70000,       // µs between morph steps (stock *delay; --delay)
     points: 200,        // control points per figure (--points)
-    steps: 400,         // interpolation frames per morph (--steps; stock 150)
+    steps: 150,         // interpolation frames per morph (stock *steps; --steps)
     linewidth: 5,       // stroke width in logical px (--linewidth)
     figtype: 'all',     // which figure pool: all | open | closed (--figtype)
-    colorSpeed: 0.5,    // hue degrees added per frame (added for parity; 0 = static)
   };
 
   // live: true  -> the loop reads config every step, so it applies instantly
-  //                (frame rate, morph speed, line width, colour drift).
+  //                (frame rate, morph speed, line width).
   // live: false -> the value sizes the point buffers / figure pool, so a change
   //                re-runs init() via reinit() (point count, figure type).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 70000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'points', label: 'Control points', type: 'range', min: 10, max: 1000, step: 10, default: 200, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'steps', label: 'Interpolation steps', type: 'range', min: 100, max: 500, step: 10, default: 400, lowLabel: 'less', highLabel: 'more', live: true },
+    { key: 'steps', label: 'Interpolation steps', type: 'range', min: 100, max: 500, step: 10, default: 150, lowLabel: 'less', highLabel: 'more', live: true },
     { key: 'linewidth', label: 'Lines', type: 'range', min: 1, max: 50, step: 1, default: 5, lowLabel: 'thin', highLabel: 'thick', live: true },
     { key: 'figtype', label: 'Figures', type: 'select', options: [
         { value: 'all', label: 'Open and closed figures' },
         { value: 'open', label: 'Open figures' },
         { value: 'closed', label: 'Closed figures' },
       ], default: 'all', live: false },
-    { key: 'colorSpeed', label: 'Color cycling', type: 'range', min: 0, max: 5, step: 0.1, default: 0.5, lowLabel: 'slow', highLabel: 'fast', live: true },
   ];
 
   const TWO_PI = 2.0 * Math.PI;
   // Sentinel: a stepNum larger than any possible `steps` so the first step()
   // seeds the first morph (mirrors the C's currGamma = maxGamma + 1 at startup).
   const SEED_NOW = 1 << 30;
+
+  // The C draws every figure in one static foreground colour, set once in
+  // initLMorph and never changed (lmorph_defaults: ".foreground: #4444FF"; the
+  // source comment notes the blue was "brightened a little bit"). There is no
+  // colormap and no per-point or per-frame colour, so this is a fixed blue --
+  // verified against the live binary, whose clean captures are solid #4444FF.
+  const FG = '#4444FF';
 
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
@@ -78,7 +83,6 @@ export function start(canvas) {
   let aFrom, aTo;            // figs[nFrom], figs[nTo] (the morph endpoints)
   let shift;                 // phase offset for the per-point speed wave
   let stepNum;               // integer step within the current morph
-  let hue;                   // current stroke hue, degrees
 
   function rnd(n) {
     return Math.floor(Math.random() * n);
@@ -298,13 +302,13 @@ export function start(canvas) {
   }
 
   // Full repaint: clear to black, stroke the whole polyline once (the C's
-  // XClearWindow + XDrawLines). Open figures stay open; closed figures close
-  // because their last point coincides with point 0.
-  function drawImage(color) {
+  // XClearWindow + XDrawLines) in the static foreground colour. Open figures
+  // stay open; closed figures close because their last point coincides with 0.
+  function drawImage() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = FG;
     ctx.lineWidth = Math.max(1, Math.round(config.linewidth) * S);
 
     const path = new Path2D();
@@ -325,10 +329,7 @@ export function start(canvas) {
     }
     const currGamma = stepNum / steps;
     createPoints(currGamma);
-
-    hue = (hue + config.colorSpeed) % 360;
-    const h = ((hue % 360) + 360) % 360;
-    drawImage(`hsl(${h.toFixed(2)}, 90%, 62%)`);
+    drawImage();
 
     stepNum++;
   }
@@ -358,7 +359,6 @@ export function start(canvas) {
     } while (nNext === nTo);
     nFrom = nTo;
 
-    hue = 240;                 // start blue, honouring the C's #4444FF foreground
     stepNum = SEED_NOW;        // force a seed on the first step()
 
     ctx.fillStyle = '#000';
@@ -377,6 +377,16 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
   // banking leftover time so the speed is identical at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  //
+  // OVERHEAD: the live binary's *delay (70000) is a sleep floor; its real per-
+  // frame cost is higher. The hack is delay-bound (-delay 0 measured ~3265 fps,
+  // so compute is trivial); at stock delay the live -fps overlay read a clean
+  // ~11.2 fps (Load 16-25%), i.e. a ~89000 us period, so OVERHEAD = 1e6/11.2 -
+  // 70000 ~= 19000 us. Adding it makes the port morph at the original's pace
+  // while config.delay still maps 1:1 to the stock resource. (Dense self-
+  // overlapping figures spike to ~8 fps under XQuartz's slow XDrawLines, an
+  // artifact of the macOS X server, not the delay-bound steady state.)
+  const OVERHEAD = 19000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -387,7 +397,9 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    // config.delay is microseconds (the stock resource); add the measured
+    // framework OVERHEAD, then convert to the rAF clock's milliseconds.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

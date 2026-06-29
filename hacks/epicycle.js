@@ -16,13 +16,14 @@
 // seconds, clears, and a fresh random figure (new radii + integer speeds) begins.
 //
 // Rendering: the curve is genuinely line-shaped (one XDrawLine per timestep in
-// the C), so this uses canvas VECTOR ops — each step accumulates a batch of line
-// segments into colour-bucketed Path2D objects and strokes once per colour,
-// building the figure up incrementally on the persistent (double-buffered)
-// canvas exactly like the C drawing into the live window. Nothing is repainted;
-// the screen is cleared only between figures. Same family / loop shape as
+// the C), so this uses canvas VECTOR ops — each paced step strokes exactly ONE
+// line segment onto the persistent (double-buffered) canvas, just as the C draws
+// one XDrawLine into the live window per *delay. Nothing is repainted; the screen
+// is cleared only between figures. Same family / loop shape as
 // hacks/xspirograph.js and hacks/helix.js (trace -> hold -> clear -> new figure,
 // on a variable-delay loop).
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'epicycle';
 
@@ -44,7 +45,7 @@ export function start(canvas) {
     holdtime: 2,           // seconds to hold the finished figure before erasing (--holdtime)
     linewidth: 4,          // stroke width in CSS px (--linewidth), scaled by dpr
     harmonics: 8,          // speeds are harmonics of a fundamental (--harmonics)
-    ncolors: 100,          // size of the smooth-rainbow hue cycle (--colors)
+    ncolors: 100,          // entries in the smooth colormap (--colors)
     // Internal resources (no stock UI) — verbatim from epicycle_defaults[].
     minCircles: 2,         // fewest circles in a figure (*minCircles)
     maxCircles: 10,        // most circles in a figure (*maxCircles)
@@ -68,12 +69,25 @@ export function start(canvas) {
   const MIN_RADIUS = 5;               // smallest allowable circle radius (CSS px, the C's MIN_RADIUS)
   const FILL_PROPORTION = 0.9;        // proportion of screen to fill by scaling (the C's FILL_PROPORTION)
 
+  // Pace model (see epicycle.md "Timing"): the C draws ONE line segment per
+  // epicycle_draw call and returns *delay (20000 µs) as the wait before the next,
+  // so the pen advances at a CONSTANT rate regardless of how many segments a
+  // figure has. Live -fps measured ~56 segments/sec during the draw phase
+  // (delay-bound: Load 16-41%), so the per-segment work is negligible and the
+  // measured ~56/s is slightly ABOVE the nominal 50/s the 20 ms delay implies --
+  // XQuartz just undershoots the sleep floor. But *delay is a FLOOR: the port must
+  // not run faster than the author's specified pace, so with negligible per-segment
+  // work OVERHEAD is effectively 0 (the apparent negative is measurement noise,
+  // within run variance, and is clamped away). Pace each step at
+  // (config.delay + OVERHEAD)/1000 ms, one seg/step -> the nominal 50 seg/s.
+  const OVERHEAD = 0;                 // delay-bound, one cheap segment/frame; framework cost ~= 0
+
   // Safety bounds the C does not need (an X11 saver runs for hours; we cap so a
-  // pathological high-lcm figure can't take minutes to trace or stall precalc).
-  const MAX_DRAW_SEGS = 16000;        // never draw more than this per figure
-  const MAX_PRECALC_SAMPLES = 4000;   // bounding-box samples per figure
-  const TARGET_DRAW_STEPS = 700;      // aim each figure to draw over ~this many steps
-  const BLACK_PAUSE_MS = 1000;        // black screen after the erase (the C's ~1s erase)
+  // pathological high-lcm figure can't trace for many minutes or stall precalc).
+  // The live binary is uncapped; ~99.95% of figures fall under this cap.
+  const MAX_DRAW_SEGS = 16000;        // never draw more than this per figure (~4.8 min at 56 seg/s)
+  const MAX_PRECALC_SAMPLES = 4000;   // bounding-box samples per figure (the C steps by 1.0)
+  const BLACK_PAUSE_MS = 1000;        // black screen after the erase (the C's ~1 s erase wipe)
 
   // frand(x) — a random double in [0, x), exactly like the C's frand().
   function frand(x) {
@@ -101,7 +115,7 @@ export function start(canvas) {
   let W, H;                  // canvas size, device px
   let cx, cy;                // figure centre (x_origin / y_origin)
   let unitPixels;            // min(W, H) — the C's unit_pixels
-  let palette;               // ncolors smooth-rainbow CSS strings
+  let palette;               // ncolors smooth-colormap CSS strings (one per session)
 
   // Current-figure state (mirrors the C's struct fields). One body, one chain of
   // circles described by parallel arrays.
@@ -115,18 +129,20 @@ export function start(canvas) {
   let timestep;              // T increment per segment
   let xtime;                 // T value at which the figure closes (one full period)
   let totalSegs;            // segments to draw this figure (= round(xtime/timestep), capped)
-  let batch;                 // segments drawn per step (adaptive, so draws take ~constant time)
   let segIndex;              // segments drawn so far this figure
   let prevX, prevY;          // previous plotted point (segment start)
 
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    // The C forces ncolors <= 2 into mono (white); otherwise a smooth rainbow.
+    // The C's colour_init: ncolors <= 2 falls back to mono (white foreground, the
+    // mono_p path); otherwise make_smooth_colormap builds ONE smooth colormap for
+    // the whole session — 2-5 random HSV anchors, often muted/pastel, NOT a vivid
+    // full-spectrum rainbow. color_step (colorIndex) then sweeps the hue along the
+    // curve by indexing into it.
     if (n <= 2) {
       palette = ['#fff'];
     } else {
-      palette = new Array(n);
-      for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 60%)`;
+      palette = makeSmoothColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
     }
   }
 
@@ -263,9 +279,8 @@ export function start(canvas) {
     timestep = config.timestep;
     xtime = Math.abs(L * FULLCIRCLE / wdotMax);
 
-    let nSeg = Math.round(xtime / timestep);
+    const nSeg = Math.round(xtime / timestep);
     totalSegs = Math.max(2, Math.min(nSeg, MAX_DRAW_SEGS));
-    batch = Math.max(1, Math.min(60, Math.round(totalSegs / TARGET_DRAW_STEPS)));
 
     precalcAndRescale();
 
@@ -277,32 +292,24 @@ export function start(canvas) {
     prevY = sy;
   }
 
-  // Advance the current figure by up to `batch` segments, bucketed by colour into
-  // Path2D objects and stroked once per colour. Returns true once the figure has
-  // drawn all totalSegs segments (closed on itself / hit the safety cap).
-  function drawBatch() {
-    const buckets = new Map();
-    let finished = false;
-
-    for (let b = 0; b < batch; b++) {
-      if (segIndex >= totalSegs) { finished = true; break; }
-      segIndex++;
-      const [nx, ny] = bodyXY(segIndex * timestep);
-      const idx = colorIndex(segIndex);
-      let path = buckets.get(idx);
-      if (!path) { path = new Path2D(); buckets.set(idx, path); }
-      path.moveTo(prevX, prevY);
-      path.lineTo(nx, ny);
-      prevX = nx;
-      prevY = ny;
-    }
-
+  // Draw exactly ONE line segment of the figure, as the C's epicycle_draw does
+  // one XDrawLine(old -> current) per call. Returns true once all totalSegs
+  // segments are drawn (the integer-period closure). One segment per paced step
+  // keeps the pen at a constant speed no matter how complex the figure is —
+  // matching the live binary, which advances one segment per *delay.
+  function drawSegment() {
+    if (segIndex >= totalSegs) return true;
+    segIndex++;
+    const [nx, ny] = bodyXY(segIndex * timestep);
     ctx.lineWidth = Math.max(1, config.linewidth * S);
-    for (const [idx, path] of buckets) {
-      ctx.strokeStyle = palette[idx];
-      ctx.stroke(path);
-    }
-    return finished;
+    ctx.strokeStyle = palette[colorIndex(segIndex)];
+    ctx.beginPath();
+    ctx.moveTo(prevX, prevY);
+    ctx.lineTo(nx, ny);
+    ctx.stroke();
+    prevX = nx;
+    prevY = ny;
+    return segIndex >= totalSegs;
   }
 
   // Instant clear to black. (The C runs xscreensaver's erase_window transition
@@ -322,8 +329,8 @@ export function start(canvas) {
         return 0;
 
       case 'DRAW':
-        if (drawBatch()) drawstate = 'HOLD';
-        return Math.max(0, config.delay / 1000);
+        if (drawSegment()) drawstate = 'HOLD';
+        return Math.max(0, (config.delay + OVERHEAD) / 1000);
 
       case 'HOLD':
         // The C holds the finished figure for `holdtime` seconds, then erases.

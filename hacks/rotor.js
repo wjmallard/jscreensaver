@@ -19,8 +19,11 @@
 // Rendering: genuinely line-shaped (one XDrawLine per segment in the C), so it
 // uses canvas VECTOR ops. The trail is short (<= `cycles` points), so each step
 // we clear and redraw the whole ring buffer — one stroke per segment, each in
-// its own rainbow hue. This sidesteps the C's black-over-old-segment erase
-// (canvas anti-aliasing would leave ghosts) while showing the identical pixels.
+// its own colour from the smooth colormap. This sidesteps the C's
+// black-over-old-segment erase (canvas anti-aliasing would leave ghosts) while
+// showing the identical pixels.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'rotor';
 
@@ -33,9 +36,9 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/rotor.xml (1:1 with the original).
+  // Defaults/ranges mirror rotor.c's DEFAULTS / rotor.man (1:1 with the original).
   const config = {
-    delay: 20000,   // microseconds between steps (--delay)
+    delay: 10000,   // microseconds between steps (--delay); stock rotor.c value
     cycles: 20,     // trail length: points kept in the ring buffer (--cycles)
     ncolors: 200,   // size of the hue cycle (--ncolors)
     count: 4,       // number of pivoting arms summed into the endpoint (--count)
@@ -43,7 +46,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Length', type: 'range', min: 2, max: 100, step: 1, default: 20, lowLabel: 'short', highLabel: 'long', live: false },
     { key: 'count', label: 'Arms', type: 'range', min: 1, max: 20, step: 1, default: 4, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'size', label: 'Line thickness (<0 = random)', type: 'range', min: -50, max: 50, step: 1, default: -6, live: false },
@@ -60,7 +63,7 @@ export function start(canvas) {
   let num;                   // arm count
   let nsave;                 // ring buffer length (trail length)
   let linewidth;             // stroke width, device px
-  let palette;               // ncolors rainbow CSS strings
+  let palette;               // ncolors smooth-colormap CSS strings
 
   let elements;              // per-arm drift state (mirrors the C's elem[])
   let gAngle;                // global sweep angle
@@ -75,9 +78,13 @@ export function start(canvas) {
 
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 2 (the C's mono path).
-    for (let i = 0; i < n; i++) palette[i] = n > 2 ? `hsl(${i * 360 / n}, 100%, 55%)` : '#fff';
+    // rotor.c is xlockmore SMOOTH_COLORS -> make_smooth_colormap: a per-run
+    // random 2-5 anchor HSV loop, usually muted, re-rolled each run. NPIXELS <= 2
+    // (ncolors <= 2) is the C's mono path -> white. The segment colour advances
+    // one index per step and slides through this loop, so the short trail shows a
+    // moving slice of it (sometimes a narrow band, sometimes spanning the loop).
+    if (n <= 2) { palette = ['#fff']; return; }
+    palette = makeSmoothColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // One simulation step: the C's draw_rotor inner loop. Accumulate the arm chain
@@ -230,10 +237,21 @@ export function start(canvas) {
     init();
   }
 
-  // Fixed-timestep lag accumulator (squiral-style): one step() per config.delay
-  // microseconds, banked so the pace is the same at any refresh rate, with a
-  // catch-up cap so a backgrounded tab can't burst. Redraw once per frame, only
-  // when the trail actually advanced.
+  // Per-step pacing = stock delay + a measured framework OVERHEAD. The live
+  // binary's *delay (10000 us) is a sleep FLOOR; each frame also pays a fixed
+  // framework cost, so its effective rate is below 1e6/delay. Measured against
+  // rotor's -fps overlay in the delay-bound regime (Load ~42%, small/medium
+  // figures): ~57.5 fps -> OVERHEAD = round(1e6/57.5) - 10000 = 7391 us, for a
+  // ~17.4 ms/step pace. (Large screen-spanning figures drop the live binary to
+  // 11-26 fps, but that is XQuartz software-rendering of long lines stalling the
+  // process at LOW CPU load -- not the intended pace; the original X11 and this
+  // GPU-accelerated canvas both draw the lines cheaply.)
+  const OVERHEAD = 7391;
+
+  // Fixed-timestep lag accumulator (squiral-style): one step() per
+  // (config.delay + OVERHEAD) us, banked so the pace is the same at any refresh
+  // rate, with a catch-up cap so a backgrounded tab can't burst. Redraw once per
+  // frame, only when the trail actually advanced.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -244,7 +262,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

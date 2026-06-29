@@ -21,6 +21,8 @@
 // per-pixel ImageData blit. Matches the C, which erases the previous frame's
 // rects and draws the new ones each step rather than diffing pixels.
 
+import { makeUniformColormapRGB } from './colormap.js';
+
 export const title = 'fadeplot';
 
 export const info = {
@@ -34,14 +36,14 @@ export function start(canvas) {
 
   // Defaults/ranges mirror hacks/config/fadeplot.xml so the config box maps 1:1.
   const config = {
-    delay: 40000,   // \u00B5s between steps (--delay)
+    delay: 30000,   // microseconds between steps (--delay), stock fadeplot.c DEFAULTS
     count: 10,      // number of strands / ribbon thickness (--count)
     cycles: 1500,   // dot budget: maxpts = cycles / scale (--cycles)
     ncolors: 64,    // size of the rainbow palette (--ncolors)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Thickness', type: 'range', min: 1, max: 30, step: 1, default: 10, lowLabel: 'thin', highLabel: 'thick', live: false },
     { key: 'cycles', label: 'Cycles', type: 'range', min: 1, max: 10000, step: 1, default: 1500, lowLabel: 'small', highLabel: 'large', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
@@ -49,7 +51,7 @@ export function start(canvas) {
 
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
-  let palette;        // ncolors rainbow CSS strings
+  let palette;        // ncolors uniform-colormap CSS strings (full hue ramp)
 
   // The fadeplotstruct scalars (the C works in plain ints).
   let min;            // MAX(MIN(W,H)/2, 1) — half the short side
@@ -73,8 +75,17 @@ export function start(canvas) {
 
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 55%)`;
+    // fadeplot.c defines BOTH UNIFORM_COLORS and BRIGHT_COLORS, but xlockmore.h
+    // resolves the scheme as #if UNIFORM / #elif SMOOTH / #elif BRIGHT, so
+    // UNIFORM_COLORS wins -> make_uniform_colormap: a full hue ramp (0..359) at
+    // one per-run S,V (each 66%-100%). A rainbow, but usually a touch muted and
+    // varying run to run -- not the fixed max-vivid hsl() the first port used.
+    // ncolors <= 2 -> white (the C's MI_WHITE_PIXEL path; see step()).
+    if (n <= 2) {
+      palette = new Array(n).fill('#fff');
+      return;
+    }
+    palette = makeUniformColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // Build the "signed sine squared" table: x = sin(2π i/angles), entry =
@@ -221,9 +232,20 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the speed is identical at any refresh rate. Cap
-  // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  // rAF lag-accumulator paced by config.delay (microseconds): run one step() per
+  // delay, banking leftover time so the speed is identical at any refresh rate.
+  // Cap catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  //
+  // OVERHEAD: the live binary's *delay (stock 30000) is a sleep FLOOR; its real
+  // per-frame cost is higher. Measured live fadeplot on XQuartz = ~25 fps (Load
+  // ~22%, delay-bound) when the figure is a compact dotted band, i.e. a ~40000
+  // us period, so OVERHEAD = round(1e6/25) - 30000 = 10000 us. (The rate dips to
+  // ~11 fps while the figure spreads into a full-screen curve -- that is the X
+  // server's per-frame full-window composite cost on XQuartz for 1500 scattered
+  // rects, not the hack's intended pace; the compact-band rate is the faithful
+  // delay-bound target and matches the lisa-family overhead.) config.delay still
+  // maps 1:1 to the stock resource. See framerate-calibration.
+  const OVERHEAD = 10000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -234,7 +256,9 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    // config.delay is microseconds (the stock resource); add the measured
+    // framework OVERHEAD, then convert to the rAF clock's milliseconds.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

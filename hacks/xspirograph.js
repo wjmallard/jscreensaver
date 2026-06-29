@@ -35,34 +35,38 @@ export function start(canvas) {
   // per-step frame rate (µs, inverted) and `linger` is the seconds-long hold
   // before the finished figures are erased.
   const config = {
-    subdelay: 60000,   // µs between draw steps (--subdelay)
-    linger: 5,         // seconds to hold the finished figures before erasing (--delay)
-    layers: 2,         // number of stacked figure-pairs per screen (--layers)
-    ncolors: 64,       // hue-cycle size (not in stock UI; for parity with the gallery)
+    subdelay: 20000,   // stock *subdelay (µs between draw steps) -- xspirograph.c DEFAULTS
+    linger: 5,         // stock *delay; seconds to hold the finished figures before erasing
+    layers: 2,         // stock *layers; number of stacked figure-pairs per screen
   };
 
   const params = [
     { key: 'subdelay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'linger', label: 'Linger', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
     { key: 'layers', label: 'Layers', type: 'range', min: 1, max: 10, step: 1, default: 2, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // The C's go() draws up to 1000 segments per draw call; keep that batch size
   // so the figure fills in at the same visual rate.
   const SEGS_PER_STEP = 1000;
-  // theta is bounded at 360*100 unless -alwaysfinish; we always let a figure
-  // finish (it closes on itself first in practice), but keep the cap as a guard.
+  // Each figure sweeps theta to the C's 360*100 cap. With delta's imperfection
+  // the precessing curve never returns EXACTLY to its first point (float
+  // equality, as in the C), so -- like the live binary -- every figure runs to
+  // this cap, building a dense rosette.
   const MAX_THETA = 360 * 100;
-  // The C's hsv_to_rgb(random()%360, frand(1.0), frand(0.5)+0.5) — random hue,
-  // random saturation, value in [0.5, 1.0]. delta is the algorithm's deliberate
-  // imperfection that makes the figure interesting.
+  // delta is the algorithm's deliberate imperfection that makes the figure
+  // precess instead of overlapping exactly (Singh: "imperfection adds to beauty").
   const DELTA = 1;
+  // Pacing: stock *subdelay = 20000 µs per draw step. The live -fps overlay reads
+  // ~48.9-52.9 fps at Load ~25-33% while drawing -- DELAY-bound on subdelay
+  // (1e6/20000 = 50 fps), not compute-bound, so OVERHEAD is ~0; a small token
+  // value pins the port at the measured ~49 steps/s. (*delay = 5 in the .c is only
+  // a 0/nonzero flag for the erase pauses, NOT the draw pacing.)
+  const OVERHEAD = 500;   // µs added to subdelay per draw step (measured)
 
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
   let xmid, ymid;            // figure centre
-  let palette;               // ncolors smooth-rainbow CSS strings
 
   // Current figure-set state (mirrors the C's struct fields).
   let drawstate;             // 'NEW_LAYER' | 'DRAW' | 'ERASE1' | 'ERASE2'
@@ -73,18 +77,35 @@ export function start(canvas) {
   let prevX, prevY;          // previous plotted point (segment start)
   let strokeStyle;           // current layer's colour
 
-  function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 1 (the C's mono path).
-    for (let i = 0; i < n; i++) palette[i] = n > 1 ? `hsl(${i * 360 / n}, 100%, 60%)` : '#fff';
+  // hsv_to_rgb (utils/hsv.c): h in degrees, s,v in [0,1] -> a CSS rgb() string.
+  // Same sextant logic as the C / colormap.js, so the colour character matches.
+  function hsvToRgb(h, s, v) {
+    h = ((h % 360) + 360) % 360;
+    const sextant = h / 60;
+    const i = Math.floor(sextant);
+    const f = sextant - i;
+    const p = v * (1 - s);
+    const q = v * (1 - s * f);
+    const t = v * (1 - s * (1 - f));
+    let r, g, b;
+    if      (i === 0) { r = v; g = t; b = p; }
+    else if (i === 1) { r = q; g = v; b = p; }
+    else if (i === 2) { r = p; g = v; b = t; }
+    else if (i === 3) { r = p; g = q; b = v; }
+    else if (i === 4) { r = t; g = p; b = v; }
+    else              { r = v; g = p; b = q; }
+    return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
   }
 
-  // Pick a fresh colour for a layer — the C's new_colors(): random hue from the
-  // palette (it uses a full HSV roll; we approximate with a rainbow index).
+  // Pick a fresh colour for a figure — the C's new_colors(): a FULL random HSV
+  // roll per figure (no fixed palette). hue 0..359, saturation 0..1 (so some
+  // figures come out pale or near-white, NOT a fixed max-saturation rainbow),
+  // value 0.5..1.0. Re-rolled per run, so a plain Math.random stream is faithful.
   function newColor() {
-    const n = palette.length;
-    strokeStyle = palette[Math.floor(Math.random() * n)];
+    const h = Math.floor(Math.random() * 360);   // random() % 360
+    const s = Math.random();                      // frand(1.0)
+    const v = Math.random() * 0.5 + 0.5;          // frand(0.5) + 0.5
+    strokeStyle = hsvToRgb(h, s, v);
   }
 
   // Choose the geometry of a new figure-pair — the C's pick_new().
@@ -122,7 +143,9 @@ export function start(canvas) {
     let finished = false;
 
     for (let i = 0; i < SEGS_PER_STEP; i++) {
-      // The C seeds (x1,y1) once at theta==1 from the closed-form start point.
+      // The C seeds (x1,y1) at theta==1 from the closed-form start point, but
+      // overwrites it with plot(1) below before any line is drawn (the first
+      // segment, at theta==2, runs plot(1)->plot(2)). Mirrored here.
       if (theta === 1) {
         prevX = xmid + radius1 - r2 + distance;
         prevY = ymid;
@@ -130,12 +153,11 @@ export function start(canvas) {
 
       const [x2, y2] = plot(r2);
 
-      // Closure is tested on INTEGER pixel coords: the C draws XPoints (ints), so
-      // a figure "returns to its start" when the rounded point matches — not at
-      // exact float equality, which a quasi-periodic curve never hits (so it would
-      // run to MAX_THETA every time, retracing itself and looking stuck).
-      const ix = x2 | 0, iy = y2 | 0;
-      if (theta === 1) { firstX = ix; firstY = iy; }
+      // Closure exactly as the C: compare the FLOAT point to the first point.
+      // With delta's imperfection the precessing curve never satisfies this, so
+      // every figure runs to the MAX_THETA cap -- a dense rosette, just as the
+      // live binary draws it.
+      if (theta === 1) { firstX = x2; firstY = y2; }
 
       if (theta !== 1) {
         path.moveTo(prevX, prevY);
@@ -146,8 +168,8 @@ export function start(canvas) {
       prevX = x2;
       prevY = y2;
 
-      if (theta !== 1 && ix === firstX && iy === firstY) { finished = true; }
-      else if (theta > MAX_THETA) { finished = true; }   // safety cap (the C's 360*100)
+      if (theta !== 1 && x2 === firstX && y2 === firstY) { finished = true; }
+      else if (theta > MAX_THETA) { finished = true; }   // the C's 360*100 cap
 
       theta++;
       if (finished) break;
@@ -188,7 +210,9 @@ export function start(canvas) {
       case 'DRAW': {
         const r2 = flipP ? radius2 : -radius2;
         if (drawFigure(r2)) drawstate = 'NEW_LAYER';
-        return Math.max(0, config.subdelay / 1000);
+        // stock *subdelay + measured OVERHEAD (µs -> ms). OVERHEAD applies only to
+        // the per-step draw pacing, never the fixed linger/black phase pauses.
+        return Math.max(0, (config.subdelay + OVERHEAD) / 1000);
       }
 
       case 'NEW_LAYER':
@@ -214,7 +238,6 @@ export function start(canvas) {
 
   // Begin a fresh screen with the current config.
   function reset() {
-    buildPalette();
     counter = 0;
     theta = 1;
     drawstate = 'NEW_LAYER';
