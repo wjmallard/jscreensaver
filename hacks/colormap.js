@@ -315,4 +315,16 @@ export function makeColorRampRGB(h1, s1, v1, h2, s2, v2, ncolors, closedP = fals
   return tmp.map((c) => [to255(c.r), to255(c.g), to255(c.b)]);
 }
 
+// make_uniform_colormap as `ncolors` [r,g,b] in 0..255 -- a full hue ramp
+// (0 -> 359) at a SINGLE per-run saturation and value, each random in
+// [66%,100%] (the C's UNIFORM_COLORS scheme, e.g. lisa). So it is a rainbow,
+// but on any given run somewhat desaturated/dimmed -- not the fixed max-vivid
+// hsl() ramp the early ports used. Re-rolled per run, so mathRng's order is
+// fine; only the S/V distribution and the full 0->359 hue sweep must match.
+export function makeUniformColormapRGB(ncolors = 64, rng = mathRng) {
+  const S = ((rng.random() % 34) + 66) / 100.0;   // range 66%-100%
+  const V = ((rng.random() % 34) + 66) / 100.0;   // range 66%-100%
+  return makeColorRampRGB(0, S, V, 359, S, V, ncolors, false);
+}
+
 export default makeSmoothColormap;
