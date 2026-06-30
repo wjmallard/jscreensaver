@@ -543,7 +543,7 @@ function searchMatches(query) {
 }
 
 function openSearch() {
-  closeConfig(); closeAbout(); closeHelp(); closeInfo();
+  closeConfig(); closeAbout(); closeHelp(); closeInfo(); closeSelector();
   searchInput.value = '';
   searchResults = [];
   searchCursor = 0;
@@ -748,7 +748,10 @@ searchInput.addEventListener('input', () => {
   renderSearch();
 });
 searchInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+  // Escape closes search; if no hack is running (search was opened from the picker),
+  // fall back to the picker rather than stranding on a blank screen. With a hack up
+  // it just reveals the running hack underneath.
+  if (e.key === 'Escape') { e.preventDefault(); closeSearch(); if (!currentName) openSelector(); }
   else if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
   else if (e.key === 'Enter') { e.preventDefault(); commitSearch(); }
@@ -771,6 +774,13 @@ window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.defaultPrevented) return;
   if (e.target.closest && e.target.closest('input, select, textarea')) return;
+
+  // '/' (find by name) works from ANY context: openSearch tears down whichever
+  // overlay is up (config / about / help / info / picker) and shows the search box.
+  // Handled before the per-overlay blocks below, which would otherwise swallow it
+  // via their early return. Typing '/' into the search field or a config control is
+  // already excluded by the input guard above, so this never hijacks text entry.
+  if (e.key === '/') { e.preventDefault(); openSearch(); return; }
 
   if (configBox.classList.contains('open')) {
     if (e.key === 'Escape' || e.key === 'c') { e.preventDefault(); closeConfig(); }
@@ -822,7 +832,6 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'a') { e.preventDefault(); openAbout(); }
   else if (e.key === 'f') { e.preventDefault(); toggleFps(); }
   else if (e.key === 'h') { e.preventDefault(); openHelp(); }
-  else if (e.key === '/') { e.preventDefault(); openSearch(); }
   else { e.preventDefault(); openSelector(); }
 });
 
