@@ -12,13 +12,15 @@
 // is ever sealed off (a candidate that would enclose a gap is rejected). When
 // the fringe leaves the screen, fills it, or the growth wedges, it restarts.
 //
-// Rendering: rhombi are genuine filled quads (two vivid hues — fat vs thin — with
+// Rendering: rhombi are genuine filled quads (two random-RGB hues — fat vs thin — with
 // a thin dark outline), added a few per step to the PERSISTENT (double-buffered)
 // canvas, so like the C there is no full repaint; each tile is drawn once where
 // it lands. Per step the new tiles are bucketed by type into two Path2D (fat /
 // thin) and filled in two passes, then outlined — see braid.js for the bucketing
 // idiom. The 5-D integer coordinate system from the C is kept verbatim so the
 // geometry is exact (no rounding drift across thousands of tiles).
+
+import { makeRandomColormapRGB } from './colormap.js';
 
 export const title = 'penrose';
 
@@ -31,10 +33,9 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/penrose.xml (1:1 with the original),
-  // except `delay` is tuned a touch calmer than the stock 10 ms.
+  // Defaults/ranges mirror hacks/config/penrose.xml (1:1 with the original).
   const config = {
-    delay: 20000,   // microseconds between growth steps (--delay, xml 10000)
+    delay: 10000,   // microseconds between growth steps (--delay, xml/stock 10000)
     size: 40,       // rhombus edge length in logical px (--size)
     ncolors: 64,    // hue-cycle size the fat/thin colours are drawn from (--ncolors)
     ammann: false,  // draw Ammann matching lines (--ammann)
@@ -44,7 +45,7 @@ export function start(canvas) {
   // live: false -> the value sizes geometry/colours, so a change re-runs init()
   //                via reinit() (which also clears the canvas).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'size', label: 'Tile size', type: 'range', min: 5, max: 100, step: 1, default: 40, lowLabel: 'small', highLabel: 'large', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'ammann', label: 'Draw ammann lines', type: 'checkbox', default: false, live: false },
@@ -675,11 +676,18 @@ export function start(canvas) {
       for (let i = 0; i < 5; i++) fived_basis.push([Math.cos(fifth * i), Math.sin(fifth * i)]);
     }
 
-    // Vivid rainbow palette the fat/thin indices are drawn from (white when
-    // ncolors <= 2, the C's mono path).
+    // Palette: penrose defines no *_COLORS macro, so xlockmore.c builds its
+    // colormap from the default scheme -- make_random_colormap with
+    // bright_p = False, i.e. fully random RGB (NOT a hue ramp); see penrose.md.
+    // ncolors <= 2 falls back to white (the C's MI_WHITE_PIXEL mono path).
     const n = config.ncolors;
     palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = n > 2 ? `hsl(${i * 360 / n}, 100%, 50%)` : '#fff';
+    if (n > 2) {
+      const cm = makeRandomColormapRGB(n, false);
+      for (let i = 0; i < n; i++) palette[i] = 'rgb(' + cm[i][0] + ',' + cm[i][1] + ',' + cm[i][2] + ')';
+    } else {
+      for (let i = 0; i < n; i++) palette[i] = '#fff';
+    }
 
     // Edge length: size in logical px, retina-scaled, clamped MINSIZE..min/2.
     let size = config.size * S;
@@ -806,6 +814,11 @@ export function start(canvas) {
   // rAF lag-accumulator loop: one step() per config.delay (µs), banking leftover
   // time so the pace is the same at any refresh rate; cap catch-up so a
   // backgrounded tab can't burst.
+  // OVERHEAD: the live binary's *delay is a sleep FLOOR; its real frame is
+  // delay + per-step compute. The -fps overlay read 57.2 fps at Load 42.8 %
+  // (delay-bound) = 17482 µs/frame = 10000 floor + 7482 compute, so the
+  // faithful per-step pace is (delay + 7482)/1000 ms (matches the live ~57/s).
+  const OVERHEAD = 7482;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -816,7 +829,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, Math.max(delayMs, 1) * MAX_CATCHUP_STEPS);
 
     let steps = 0;
