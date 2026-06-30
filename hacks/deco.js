@@ -50,7 +50,7 @@ export function start(canvas) {
     minWidth: 20,      // smallest cell width, screen px (--min-width)
     minHeight: 20,     // smallest cell height, screen px (--min-height)
     maxDepth: 12,      // how deep to subdivide (--max-depth)
-    lineWidth: 1,      // border line width, screen px; 0 = minimal (--line-width)
+    lineWidth: 1,      // border line width, DEVICE px (1 = crisp hairline); 0 = minimal (--line-width)
     colorMode: 'random',  // 'random' | 'smooth' | 'mondrian' (--smooth-colors / --mondrian)
     goldenRatio: false,   // split with the golden ratio instead of in half (--golden-ratio)
   };
@@ -155,11 +155,13 @@ export function start(canvas) {
       minWidth = Math.max(2, Math.round(config.minWidth * S));
       minHeight = Math.max(2, Math.round(config.minHeight * S));
 
-      // lineWidth 0 means "minimal" (1 device px). The C triples the width on
-      // displays wider/taller than 2560 px ("Retina"); we do the same in device
-      // px so borders stay visible on a high-dpr backing store.
-      lineWidth = config.lineWidth > 0 ? Math.round(config.lineWidth * S) : 1;
-      if (W > 2560 || H > 2560) lineWidth *= 3;
+      // The C's default (non-Mondrian) border is XDrawRectangle through a "thin"
+      // (line_width 0) GC -- ALWAYS 1 physical pixel, regardless of resolution.
+      // So draw 1 DEVICE px: a crisp hairline matching the live binary on any
+      // dpr. The slider thickens in device px. (Dropped the *dpr scale and the
+      // >2560 "Retina" tripling -- both made the border read too thick in a
+      // hi-dpi browser, which is exactly what looked wrong.)
+      lineWidth = config.lineWidth > 0 ? Math.max(1, Math.round(config.lineWidth)) : 1;
     }
   }
 
@@ -180,12 +182,13 @@ export function start(canvas) {
       }
       ctx.fillRect(x, y, w, h);
 
-      // XDrawRectangle outlines [x, y, w, h] inclusive; centre the stroke on the
-      // cell edge (inset by half the line width) so neighbours' borders meet
-      // cleanly instead of overlapping by a full width.
+      // XDrawRectangle outlines [x, y, w, h] with the GC line width CENTRED on
+      // the path, so each cell's border straddles its edge and OVERLAPS the
+      // neighbour's -- the shared border is ONE line-width wide, not two. (An
+      // earlier inset-by-half version sat the two borders side by side = 2x too
+      // thick, and its bevel corners left fill-coloured triangles; both fixed.)
       ctx.lineWidth = lineWidth;
-      const half = lineWidth / 2;
-      ctx.strokeRect(x + half, y + half, Math.max(0, w - lineWidth), Math.max(0, h - lineWidth));
+      ctx.strokeRect(x, y, w, h);
       return;
     }
 
@@ -221,7 +224,7 @@ export function start(canvas) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.lineJoin = 'bevel';
+    ctx.lineJoin = 'miter';
     // Border colour = the C's fgc: black in colour mode (fg/bg are swapped), white
     // in mono_p (no swap, so the foreground stays the default white).
     ctx.strokeStyle = mono ? '#fff' : '#000';
