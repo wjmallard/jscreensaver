@@ -196,9 +196,15 @@ export function start(canvas) {
   let identical, rot180;
   let left_right, top_bottom;  // which corner the search biases toward
   let box, xMargin, yMargin;   // screen layout (device px)
-  let palette, colorOf;        // hue list + per-piece colour index
+  let use3D, useBitmaps;       // render mode (use3D: 75% per puzzle, like the C's fullrandom NRAND(4); bitmaps only when box>=12)
+  let masks, boardImg, bmG, bmT; // 256 per-adjacency 1-bit tile masks + the board pixel buffer + the border's G/T
+  let palette, paletteRGB, colorOf, borderColorRGB; // hue strings + numeric RGB + per-piece index + the border hue
   let counter, wait;
   let checkOk;                 // puzzle-specific pruning predicate
+
+  // Neighbour-edge bits for the bitmap index (polyominoes.c lines 191-198).
+  const LEFT = 1, RIGHT = 2, UP = 4, DOWN = 8;
+  const LEFT_UP = 16, LEFT_DOWN = 32, RIGHT_UP = 64, RIGHT_DOWN = 128;
 
   // Array accessors mirroring the C's ARRAY / ARR macros.
   const A = (x, y) => array[x * gh + y];
@@ -736,8 +742,135 @@ export function start(canvas) {
       box = Math.floor(box * (W > H ? W / H : H / W));
     }
     if (box < 1) box = 1;
+    // box>=12 -> round down to a multiple of 12 and use the 3-D dithered bitmap
+    // tiles; smaller boxes fall back to flat rectangles (init_polyominoes ~2210).
+    if (box >= 12) {
+      box = Math.floor(box / 12) * 12;
+      useBitmaps = true;
+      buildMasks();
+      boardImg = ctx.createImageData(box * gw, box * gh);
+    } else {
+      useBitmaps = false;
+      masks = null;
+      boardImg = null;
+    }
     xMargin = Math.floor((W - box * gw) / 2);
     yMargin = Math.floor((H - box * gh) / 2);
+  }
+
+  // create_bitmaps (polyominoes.c ~786-979): precompute 256 box x box 1-bit
+  // masks, one per 8-neighbour adjacency index n. 1-bits draw in the piece's
+  // colour, 0-bits black. The body is dithered (HALFBIT etc. = a stipple that
+  // blends the colour ~1/3..3/4 with black -> the dark 3-D body); the exposed
+  // edges/corners are solid SETBIT walls -> the bright rim. Transcribed verbatim,
+  // including the bit macros (lines 209-225), G/T/R/RT geometry (220-225), the
+  // dedup aliasing (794-801), both the use3D and !use3D branches (810-835), and
+  // the THREEQUARTERSBIT bellybutton (943-959; LARGE_BELLYBUTTON is not defined,
+  // so the #else path -- the 3-D one -- is taken).
+  function buildMasks() {
+    const b = box;
+    const G = Math.floor(b / 45) + 1;          // 1/2 of the gap between pieces
+    const T = b <= 12 ? 1 : G * 2;             // wall thickness
+    const R = b <= 12 ? 1 : G * 6;             // corner rounding amount
+    const RT = b <= 12 ? 1 : G * 3;            // rounded-wall thickness
+    const RR = 0;                              // roof-ridge thickness
+    const half = b / 2;                        // box is a multiple of 12 -> exact
+    bmG = G;
+    bmT = T;
+
+    masks = new Array(256);
+    for (let n = 0; n < 256; n++) {
+      // Avoid duplicating masks: a corner bit is redundant when either of its
+      // two edges is already present -> alias to the simpler (smaller) index.
+      if ((n & LEFT_UP) && ((n & LEFT) || (n & UP))) { masks[n] = masks[n & ~LEFT_UP]; continue; }
+      if ((n & LEFT_DOWN) && ((n & LEFT) || (n & DOWN))) { masks[n] = masks[n & ~LEFT_DOWN]; continue; }
+      if ((n & RIGHT_UP) && ((n & RIGHT) || (n & UP))) { masks[n] = masks[n & ~RIGHT_UP]; continue; }
+      if ((n & RIGHT_DOWN) && ((n & RIGHT) || (n & DOWN))) { masks[n] = masks[n & ~RIGHT_DOWN]; continue; }
+
+      const d = new Uint8Array(b * b);
+      const isL = (n & LEFT) !== 0, isR = (n & RIGHT) !== 0, isU = (n & UP) !== 0, isD = (n & DOWN) !== 0;
+      const isLU = (n & LEFT_UP) !== 0, isLD = (n & LEFT_DOWN) !== 0;
+      const isRU = (n & RIGHT_UP) !== 0, isRD = (n & RIGHT_DOWN) !== 0;
+
+      const SET = (x, y) => { d[x + y * b] = 1; };
+      const RES = (x, y) => { d[x + y * b] = 0; };
+      const HALF = (x, y) => { d[x + y * b] = ((x - y) % 2) ? 1 : 0; };
+      const TWOTHIRDS = (x, y) => { d[x + y * b] = ((x + y - 1) % 3) ? 1 : 0; };
+      const THIRD = (x, y) => { d[x + y * b] = (((x - y - 1) % 3) === 0) ? 1 : 0; };
+      const THREEQ = (x, y) => { d[x + y * b] = ((y % 2) || ((x + 2 + Math.floor(y / 2) + 1) % 2)) ? 1 : 0; };
+
+      // Base shading of the four triangles (top/left/right/bottom of the box).
+      for (let y = 0; y < b; y++) for (let x = 0; x < b; x++) {
+        if (!use3D) {
+          HALF(x, y);
+        } else if ((x >= y && x <= b - y - 1 && isU)
+            || (x <= y && x <= b - y - 1 && y < half && !isL)
+            || (x >= y && x >= b - y - 1 && y < half && !isR)) {
+          SET(x, y);
+        } else if ((x <= y && x <= b - y - 1 && isL)
+            || (x >= y && x <= b - y - 1 && x < half && !isU)
+            || (x <= y && x >= b - y - 1 && x < half && !isD)) {
+          TWOTHIRDS(x, y);
+        } else if ((x >= y && x >= b - y - 1 && isR)
+            || (x >= y && x <= b - y - 1 && x >= half && !isU)
+            || (x <= y && x >= b - y - 1 && x >= half && !isD)) {
+          HALF(x, y);
+        } else if ((x <= y && x >= b - y - 1 && isD)
+            || (x <= y && x <= b - y - 1 && y >= half && !isL)
+            || (x >= y && x >= b - y - 1 && y >= half && !isR)) {
+          THIRD(x, y);
+        }
+      }
+
+      // Solid bright walls along present edges, then clear the outer gap.
+      if (isL) { for (let y = 0; y < b; y++) for (let x = G; x < G + T; x++) SET(x, y); }
+      if (isR) { for (let y = 0; y < b; y++) for (let x = G; x < G + T; x++) SET(b - 1 - x, y); }
+      if (isU) { for (let x = 0; x < b; x++) for (let y = G; y < G + T; y++) SET(x, y); }
+      if (isD) { for (let x = 0; x < b; x++) for (let y = G; y < G + T; y++) SET(x, b - 1 - y); }
+      if (isL) { for (let y = 0; y < b; y++) for (let x = 0; x < G; x++) RES(x, y); }
+      if (isR) { for (let y = 0; y < b; y++) for (let x = 0; x < G; x++) RES(b - 1 - x, y); }
+      if (isU) { for (let x = 0; x < b; x++) for (let y = 0; y < G; y++) RES(x, y); }
+      if (isD) { for (let x = 0; x < b; x++) for (let y = 0; y < G; y++) RES(x, b - 1 - y); }
+
+      // Rounded corners where two edges meet.
+      if (isL && isU) { for (let x = G; x <= G + R; x++) for (let y = G; y <= R + 2 * G - x; y++) { if (x + y > R + 2 * G - RT) SET(x, y); else RES(x, y); } }
+      if (isL && isD) { for (let x = G; x <= G + R; x++) for (let y = G; y <= R + 2 * G - x; y++) { if (x + y > R + 2 * G - RT) SET(x, b - 1 - y); else RES(x, b - 1 - y); } }
+      if (isR && isU) { for (let x = G; x <= G + R; x++) for (let y = G; y <= R + 2 * G - x; y++) { if (x + y > R + 2 * G - RT) SET(b - 1 - x, y); else RES(b - 1 - x, y); } }
+      if (isR && isD) { for (let x = G; x <= G + R; x++) for (let y = G; y <= R + 2 * G - x; y++) { if (x + y > R + 2 * G - RT) SET(b - 1 - x, b - 1 - y); else RES(b - 1 - x, b - 1 - y); } }
+
+      // Concave-corner wall stubs: diagonal neighbour differs, but no straight edge.
+      if (!isL && !isU && isLU) {
+        for (let x = 0; x < G; x++) for (let y = 0; y < G; y++) RES(x, y);
+        for (let x = G; x < G + T; x++) for (let y = 0; y < G; y++) SET(x, y);
+        for (let x = 0; x < G + T; x++) for (let y = G; y < G + T; y++) SET(x, y);
+      }
+      if (!isL && !isD && isLD) {
+        for (let x = 0; x < G; x++) for (let y = 0; y < G; y++) RES(x, b - 1 - y);
+        for (let x = G; x < G + T; x++) for (let y = 0; y < G; y++) SET(x, b - 1 - y);
+        for (let x = 0; x < G + T; x++) for (let y = G; y < G + T; y++) SET(x, b - 1 - y);
+      }
+      if (!isR && !isU && isRU) {
+        for (let x = 0; x < G; x++) for (let y = 0; y < G; y++) RES(b - 1 - x, y);
+        for (let x = G; x < G + T; x++) for (let y = 0; y < G; y++) SET(b - 1 - x, y);
+        for (let x = 0; x < G + T; x++) for (let y = G; y < G + T; y++) SET(b - 1 - x, y);
+      }
+      if (!isR && !isD && isRD) {
+        for (let x = 0; x < G; x++) for (let y = 0; y < G; y++) RES(b - 1 - x, b - 1 - y);
+        for (let x = G; x < G + T; x++) for (let y = 0; y < G; y++) SET(b - 1 - x, b - 1 - y);
+        for (let x = 0; x < G + T; x++) for (let y = G; y < G + T; y++) SET(b - 1 - x, b - 1 - y);
+      }
+
+      // 3-D bellybutton: brighten (3/4 dither) interior quadrants that continue
+      // the piece on both that edge and the diagonal (use3D only).
+      if (use3D) {
+        if (!isL && !isU && !isLU) { for (let x = 0; x < half - RR; x++) for (let y = 0; y < half - RR; y++) THREEQ(x, y); }
+        if (!isL && !isD && !isLD) { for (let x = 0; x < half - RR; x++) for (let y = half + RR; y < b; y++) THREEQ(x, y); }
+        if (!isR && !isU && !isRU) { for (let x = half + RR; x < b; x++) for (let y = 0; y < half - RR; y++) THREEQ(x, y); }
+        if (!isR && !isD && !isRD) { for (let x = half + RR; x < b; x++) for (let y = half + RR; y < b; y++) THREEQ(x, y); }
+      }
+
+      masks[n] = d;
+    }
   }
 
   function buildColors() {
@@ -751,7 +884,10 @@ export function start(canvas) {
     // tiling restart. (The C's mono path -- fewer than 12 colours -> solid
     // black/white tiles -- is not reproduced; see polyominoes.md.)
     const cm = makeSmoothColormapRGB(np);
+    paletteRGB = cm;
     palette = cm.map(([r, g, b]) => `rgb(${r},${g},${b})`);
+    // border_color = MI_PIXEL(NRAND(MI_NPIXELS)) -- a random map colour (init ~2247).
+    borderColorRGB = cm[NRAND(np)];
     colorOf = new Array(nr_polyominoes);
     const perm = randomPermutation(nr_polyominoes);
     const start = NRAND(np);
@@ -770,6 +906,9 @@ export function start(canvas) {
     rot180 = 0;
     counter = 0;
     identical = config.identical;
+    // The live binary is always fullrandom (xlockmore.c:518), so use3D = NRAND(4):
+    // 3-D dithered tiles 75% of puzzles, the flatter HALFBIT bitmap the other 25%.
+    use3D = NRAND(4) !== 0;
 
     if (identical) {
       switch (NRAND(9)) {
@@ -816,11 +955,75 @@ export function start(canvas) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // Full-board repaint: filled cells in their piece hue, blanks black, a thin
-  // dark separator on every edge between differing cells, and a pale border.
-  // (The C draws the rounded 3-D bitmap tiles or, on small boards, flat
-  // rectangles with boundary lines; this is the flat path -- see the .md.)
+  // Full-board repaint. draw_with_bitmaps redraws every filled cell each frame
+  // anyway (blanks only when changed), so a full repaint is faithful; the C's
+  // changed_array (delta tracking) is dropped. See render() for the dispatch.
   function render() {
+    if (useBitmaps) renderBitmaps();
+    else renderFlat();
+  }
+
+  // draw_with_bitmaps (polyominoes.c ~981-1023): each filled cell blits its
+  // adjacency mask (1-bit -> piece colour, 0-bit -> black) into the board pixel
+  // buffer; blank cells are black. Then the border rectangle in border_color.
+  function renderBitmaps() {
+    const b = box;
+    const Wb = b * gw;
+    const data = boardImg.data;
+    for (let cx = 0; cx < gw; cx++) {
+      const baseX = b * cx;
+      for (let cy = 0; cy < gh; cy++) {
+        const baseY = b * cy;
+        const v = A(cx, cy);
+        if (v < 0) {
+          for (let my = 0; my < b; my++) {
+            let di = ((baseY + my) * Wb + baseX) * 4;
+            for (let mx = 0; mx < b; mx++) { data[di] = 0; data[di + 1] = 0; data[di + 2] = 0; data[di + 3] = 255; di += 4; }
+          }
+          continue;
+        }
+        // bitmap_index from the 8 neighbours (lines 1001-1008); ARR()=-2 off-board.
+        let idx = 0;
+        if (v !== ARR(cx - 1, cy)) idx |= LEFT;
+        if (v !== ARR(cx + 1, cy)) idx |= RIGHT;
+        if (v !== ARR(cx, cy - 1)) idx |= UP;
+        if (v !== ARR(cx, cy + 1)) idx |= DOWN;
+        if (v !== ARR(cx - 1, cy - 1)) idx |= LEFT_UP;
+        if (v !== ARR(cx - 1, cy + 1)) idx |= LEFT_DOWN;
+        if (v !== ARR(cx + 1, cy - 1)) idx |= RIGHT_UP;
+        if (v !== ARR(cx + 1, cy + 1)) idx |= RIGHT_DOWN;
+        const mask = masks[idx];
+        const rgb = paletteRGB[colorOf[v]];
+        const r = rgb[0], g = rgb[1], bl = rgb[2];
+        for (let my = 0; my < b; my++) {
+          let di = ((baseY + my) * Wb + baseX) * 4;
+          const mrow = my * b;
+          for (let mx = 0; mx < b; mx++) {
+            if (mask[mrow + mx]) { data[di] = r; data[di + 1] = g; data[di + 2] = bl; }
+            else { data[di] = 0; data[di + 1] = 0; data[di + 2] = 0; }
+            data[di + 3] = 255;
+            di += 4;
+          }
+        }
+      }
+    }
+    ctx.putImageData(boardImg, xMargin, yMargin);
+
+    // Border: T nested 1-px rectangles, offset t+1 outward (lines 1018-1022).
+    const [br, bg, bb] = borderColorRGB;
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = `rgb(${br},${bg},${bb})`;
+    for (let t = bmG; t < bmG + bmT; t++) {
+      ctx.strokeRect(xMargin - t - 1 + 0.5, yMargin - t - 1 + 0.5, b * gw + 1 + 2 * t, b * gh + 1 + 2 * t);
+    }
+  }
+
+  // draw_without_bitmaps (polyominoes.c ~700-784): the small-board (box<12) path
+  // -- flat colour rectangles, then WHITE boundary lines between differing cells
+  // and a WHITE board outline. (The black blank-blank cleanup segments are a
+  // no-op under full repaint, so they are omitted.)
+  function renderFlat() {
     for (let x = 0; x < gw; x++) {
       for (let y = 0; y < gh; y++) {
         const v = A(x, y);
@@ -829,13 +1032,16 @@ export function start(canvas) {
       }
     }
 
-    const sep = Math.max(1, Math.round(box * 0.06));
-    ctx.lineWidth = sep;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.lineWidth = Math.floor(box / 10) + 1;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#fff';
+    ctx.strokeRect(xMargin, yMargin, box * gw, box * gh);
+
     ctx.beginPath();
     for (let x = 0; x < gw - 1; x++) {
       for (let y = 0; y < gh; y++) {
-        if (ARR(x, y) !== ARR(x + 1, y)) {
+        if (A(x, y) !== A(x + 1, y)) {
           ctx.moveTo(xMargin + box * (x + 1), yMargin + box * y);
           ctx.lineTo(xMargin + box * (x + 1), yMargin + box * (y + 1));
         }
@@ -843,17 +1049,13 @@ export function start(canvas) {
     }
     for (let x = 0; x < gw; x++) {
       for (let y = 0; y < gh - 1; y++) {
-        if (ARR(x, y) !== ARR(x, y + 1)) {
+        if (A(x, y) !== A(x, y + 1)) {
           ctx.moveTo(xMargin + box * x, yMargin + box * (y + 1));
           ctx.lineTo(xMargin + box * (x + 1), yMargin + box * (y + 1));
         }
       }
     }
     ctx.stroke();
-
-    ctx.lineWidth = Math.max(2, Math.round(box * 0.1));
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.strokeRect(xMargin, yMargin, box * gw, box * gh);
   }
 
   // ---- Step (the per-frame body of draw_polyominoes) -----------------------
