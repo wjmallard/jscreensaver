@@ -83,7 +83,7 @@ export const title = 'geodesicgears';
 export const info = {
   author: 'Jamie Zawinski',
   year: 2014,
-  description: 'A set of meshed gears arranged on the surface of a sphere.',
+  description: 'A set of meshed gears arranged on the surface of a sphere.\n\nhttps://en.wikipedia.org/wiki/Geodesic_dome\nhttps://en.wikipedia.org/wiki/Involute_gear\nhttps://en.wikipedia.org/wiki/Buckminster_Fuller',
 };
 
 // The gear_templates table (geodesicgears.c), verbatim minus the commented-out

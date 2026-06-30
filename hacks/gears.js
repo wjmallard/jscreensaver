@@ -73,7 +73,7 @@ export const title = 'gears';
 export const info = {
   author: 'Jamie Zawinski',
   year: 2007,
-  description: 'Interlocking gears.',
+  description: 'Interlocking gears.\n\nSee also the "Pinion" and "M\u00f6bius Gears" screen savers.\n\nhttps://en.wikipedia.org/wiki/Involute_gear\nhttps://en.wikipedia.org/wiki/Epicyclic_gearing',
 };
 
 export function start(hostCanvas, opts = {}) {

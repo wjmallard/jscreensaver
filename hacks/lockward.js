@@ -67,7 +67,7 @@ export const title = 'lockward';
 export const info = {
   author: 'Leo L. Schwab',
   year: 2007,
-  description: 'A translucent spinning, blinking thing.',
+  description: 'A translucent spinning, blinking thing. Sort of a cross between the wards in an old combination lock and those old backlit information displays that animated and changed color via polarized light.',
 };
 
 // ---- constants (lockward.c #defines) ----

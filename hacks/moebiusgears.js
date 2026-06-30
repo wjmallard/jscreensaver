@@ -59,7 +59,7 @@ export const title = 'moebiusgears';
 export const info = {
   author: 'Jamie Zawinski',
   year: 2007,
-  description: 'An interlinked loop of rotating gears.',
+  description: 'An interlinked loop of rotating gears. The layout of the gears follows the path of a m\u00f6bius strip.\n\nSee also the "Pinion" and "Gears" screen savers.\n\nhttps://en.wikipedia.org/wiki/Involute_gear\nhttps://en.wikipedia.org/wiki/Moebius_strip',
 };
 
 export function start(hostCanvas, opts = {}) {

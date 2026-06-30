@@ -48,7 +48,7 @@ export const title = 'superquadrics';
 export const info = {
   author: 'Ed Mackey',
   year: 1987,
-  description: 'Morphing 3D mathematical shapes.',
+  description: 'Morphing 3D shapes.',
 };
 
 export function start(hostCanvas, opts = {}) {

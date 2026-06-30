@@ -64,7 +64,7 @@ export const title = 'rubikblocks';
 export const info = {
   author: 'Vasek Potocek',
   year: 2009,
-  description: 'The "Rubik\'s Mirror Blocks" puzzle.',
+  description: 'The "Rubik\'s Mirror Blocks" puzzle.\n\nSee also the "Rubik", "Cube21", and "GLSnake" screen savers.\n\nhttps://en.wikipedia.org/wiki/Combination_puzzles#Irregular_cuboids',
 };
 
 export function start(hostCanvas, opts = {}) {

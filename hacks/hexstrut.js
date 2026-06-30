@@ -67,7 +67,7 @@ export const title = 'hexstrut';
 export const info = {
   author: 'Jamie Zawinski',
   year: 2016,
-  description: 'A honeycomb of rotating Y-shaped struts; waves of rotation and colour propagate across the plane.',
+  description: 'A grid of hexagons composed of rotating Y-shaped struts. Waves of rotation and color changes randomly propagate across the plane.',
 };
 
 export function start(hostCanvas, opts = {}) {

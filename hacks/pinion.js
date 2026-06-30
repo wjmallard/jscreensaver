@@ -67,7 +67,7 @@ export const title = 'pinion';
 export const info = {
   author: 'Jamie Zawinski',
   year: 2004,
-  description: 'A gear system marches across the screen.',
+  description: 'A gear system marches across the screen.\n\nSee also the "Gears" and "M\u00f6bius Gears" screen savers.\n\nhttps://en.wikipedia.org/wiki/Involute_gear',
 };
 
 export function start(hostCanvas, opts = {}) {

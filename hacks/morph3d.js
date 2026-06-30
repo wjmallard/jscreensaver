@@ -51,7 +51,7 @@ export const title = 'morph3d';
 export const info = {
   author: 'Marcelo Vianna',
   year: 1997,
-  description: 'Platonic solids that turn inside out and get spikey.',
+  description: 'Platonic solids that turn inside out and get spikey.\n\nhttps://en.wikipedia.org/wiki/Platonic_solid',
 };
 
 // ---- constants (morph3d.c #defines) ----
