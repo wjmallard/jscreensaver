@@ -36,8 +36,9 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/cynosure.xml. The stock XML exposes
   // delay + ncolors + iterations; shadowWidth / elevation / sway / tweak /
   // gridSize come from the C's cynosure_defaults (same units), surfaced here so
-  // the look is tunable. `delay` is the stock 500000 µs — a paint-and-hold hack
-  // (~0.5 s per layer), so the per-frame compute is negligible (no OVERHEAD term).
+  // the look is tunable. `delay` is the stock 500000 µs (~0.5 s per layer). The
+  // per-layer draw (a full-canvas translucent rounded-rect) is NOT negligible:
+  // the live -fps reads 1.8/s (not 2.0), so a measured OVERHEAD is added below.
   const config = {
     delay: 500000,      // µs between layers (--delay); one paint() per delay
     ncolors: 128,       // size of the smooth colour ramp (--ncolors)
@@ -283,6 +284,10 @@ export function start(canvas) {
   // painted layer) per config.delay, banking leftover time so the speed is the
   // same at any refresh rate. Cap catch-up so a backgrounded tab doesn't fire a
   // burst of layers on refocus.
+  // OVERHEAD: the live -fps overlay reads 1.8 layers/s at Load ~9% (3 clean solo
+  // samples), i.e. a real frame of 1e6/1.8 = 555556 us = 500000 sleep-floor +
+  // ~55556 us of per-layer compute. So pace each layer at (delay + OVERHEAD).
+  const OVERHEAD = 55556;   // microseconds (measured off -fps, not by-eye)
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -294,7 +299,7 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

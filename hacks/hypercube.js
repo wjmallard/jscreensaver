@@ -235,21 +235,17 @@ export function start(canvas) {
     }
   }
 
-  // Seed the basis with a fixed initial rotation so frame 1 already shows a
-  // recognizable hypercube: the xz/yz tilt gives the inner cube depth (not a
-  // flat square) and the xw/yw rotation offsets the w = +-1 cubes apart (the
-  // characteristic cube-within-a-cube look). Independent of the speed sliders,
-  // so the figure is correct even with every rotation frozen at 0.
+  // Seed the basis at the IDENTITY orientation, exactly as the C does (its
+  // ref_a..ref_d start as the four unit axes -- hypercube.c ~197-200 -- with all
+  // rotation angles 0). So frame 1 is the face-on tesseract (the iconic nested
+  // cube-within-a-cube under the w-perspective) and it opens up from there as
+  // the speed sliders rotate it, matching the original's start rather than a
+  // pre-tilted pose.
   function seedOrientation() {
     ref[0][0] = 1; ref[0][1] = 0; ref[0][2] = 0; ref[0][3] = 0;
     ref[1][0] = 0; ref[1][1] = 1; ref[1][2] = 0; ref[1][3] = 0;
     ref[2][0] = 0; ref[2][1] = 0; ref[2][2] = 1; ref[2][3] = 0;
     ref[3][0] = 0; ref[3][1] = 0; ref[3][2] = 0; ref[3][3] = 1;
-    rotatePlane(0, 1, 0.30);   // xy: gentle screen-plane tilt
-    rotatePlane(0, 2, 0.50);   // xz: depth about the y axis
-    rotatePlane(1, 2, 0.30);   // yz: depth about the x axis
-    rotatePlane(0, 3, 0.50);   // xw: offset the w cubes in x
-    rotatePlane(1, 3, 0.50);   // yw: offset the w cubes in y
   }
 
   function init() {

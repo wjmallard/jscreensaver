@@ -2022,7 +2022,7 @@ export function start(canvas) {
       p.lineTo(SX[iq], SY[iq]);
     }
 
-    ctx.lineWidth = S;
+    ctx.lineWidth = Math.max(1, 1.5 * S);   // 1.5x to offset canvas AA dimming on thin lines (cf. hypercube)
     for (let c = 0; c < 8; c++) {
       const rowc = paths[c];
       for (let d = 0; d < 8; d++) {
