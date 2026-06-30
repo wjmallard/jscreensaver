@@ -202,13 +202,15 @@ canvas { display: block; touch-action: none; }
 
 /* Touch control bar — icon+label buttons pinned bottom-centre, revealed by a canvas
    tap on touch devices and auto-hidden after a few seconds (host.js). Five equal
-   cells, so restart (the middle one) sits dead-centre of the screen. White icons
-   with a dark glow stay legible over any hack, matching the title / fps readouts.
-   Hidden outright on fine-pointer (mouse) devices, which use keys + the footer. */
+   action cells flanked by two narrow prev/next chevrons at the ends; restart stays
+   the middle action, so it's dead-centre of the screen. White icons with a dark glow
+   stay legible over any hack, matching the title / fps readouts. Hidden outright on
+   fine-pointer (mouse) devices, which use keys + the footer. */
 #bar {
   position: fixed; z-index: 99999; left: 50%; bottom: 0; transform: translateX(-50%);
   box-sizing: border-box; width: min(440px, 100vw);
   display: flex; justify-content: center; gap: 2px;
+  --bar-nav-grow: 0.5;   /* prev/next chevron grow vs a full action cell (1 = equal width) */
   padding: 10px 6px calc(8px + env(safe-area-inset-bottom));
   background: linear-gradient(to top, rgba(2, 5, 3, 0.92), rgba(2, 5, 3, 0));
   opacity: 0; pointer-events: none; transition: opacity 200ms linear;
@@ -224,6 +226,10 @@ canvas { display: block; touch-action: none; }
 .bar-btn span { text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9); }
 .bar-btn:active { color: var(--phosphor-hi); }
 .bar-btn.disabled { color: rgba(255, 255, 255, 0.3); pointer-events: none; }   /* e.g. a hack with no pause support */
+/* Prev/next chevrons at the two ends step hacks like the arrow keys (swipe was
+   removed). Narrower than a full action cell (tune --bar-nav-grow) and label-less —
+   the chevron speaks for itself; centred vertically rather than top-packed. */
+.bar-nav { flex: var(--bar-nav-grow) 1 0; justify-content: center; }
 /* pause/play button swaps its icon + label with the running hack's state (host.js
    toggles .is-paused on it); only one icon/label of each pair shows at a time. */
 #bar-pause .ic-play, #bar-pause .bar-lb-play { display: none; }

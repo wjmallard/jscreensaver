@@ -718,14 +718,17 @@ document.getElementById('sel-restart').addEventListener('click', () => { if (cur
 document.getElementById('sel-random').addEventListener('click', pickRandom);
 document.getElementById('sel-clear').addEventListener('click', goHome);
 
-// Touch control-bar buttons act on the running hack directly (view mode). info /
-// config open a box over the hack (so the bar hides); restart / pause keep the bar
-// up and re-arm its auto-hide; browse hands off to the picker.
+// Touch control-bar buttons act on the running hack directly (view mode). prev /
+// next step hacks (like the arrow keys) and keep the bar up; info / config open a
+// box over the hack (so the bar hides); restart / pause keep the bar up and re-arm
+// its auto-hide; browse hands off to the picker.
+document.getElementById('bar-prev').addEventListener('click', () => { cycle(-1); armBarHide(); });
 document.getElementById('bar-info').addEventListener('click', () => { hideBar(); openInfo(); });
 document.getElementById('bar-config').addEventListener('click', () => { hideBar(); openConfig(); });
 document.getElementById('bar-restart').addEventListener('click', () => { restart(); armBarHide(); });
 document.getElementById('bar-pause').addEventListener('click', () => { togglePause(); armBarHide(); });
 document.getElementById('bar-browse').addEventListener('click', () => { hideBar(); openSelector(); });
+document.getElementById('bar-next').addEventListener('click', () => { cycle(1); armBarHide(); });
 
 // Click the dimmed area (outside a box) to dismiss.
 selector.addEventListener('click', (e) => { if (e.target === selector) closeSelector(); });
@@ -751,40 +754,18 @@ searchInput.addEventListener('keydown', (e) => {
   else if (e.key === 'Enter') { e.preventDefault(); commitSearch(); }
 });
 
-// View-mode pointer gestures on the canvas (no overlay is up, so the canvas is the
-// hit target): a tap summons the picker, a horizontal swipe cycles prev/next like
-// the arrow keys. We classify a pointer down->up by total movement: within TAP_SLOP
-// px = a tap; a dominant-horizontal drag past SWIPE_MIN = a swipe (left -> next,
-// right -> previous). Swipes that begin at the very screen edge are left to the OS
-// so they don't fight iOS's back/forward edge-swipe. touch-action:none (host.css)
-// hands us the raw gesture instead of the browser scrolling.
-const TAP_SLOP = 10, SWIPE_MIN = 45, EDGE_GUARD = 20;
-let gesture = null;
+// View-mode canvas tap (no overlay is up, so the canvas is the hit target). We act
+// on pointerdown -- the FIRST event of the touch -- instead of waiting for a
+// pointerup to classify: with swipe-to-cycle gone there's nothing to disambiguate,
+// and reacting to the down means the tap still lands when a heavy 3D hack is pegging
+// the main thread (a late pointerdown is harmless; a delayed or cancelled pointerup
+// would silently drop the tap). A fine-pointer (mouse) tap opens the picker; a touch
+// tap toggles the control bar, whose chevrons/buttons then drive everything.
 canvas.addEventListener('pointerdown', (e) => {
-  gesture = { x: e.clientX, y: e.clientY, type: e.pointerType };
-  canvas.setPointerCapture?.(e.pointerId);
-});
-canvas.addEventListener('pointerup', (e) => {
-  const g = gesture; gesture = null;
-  if (!g) return;
-  const dx = e.clientX - g.x, dy = e.clientY - g.y;
-  const adx = Math.abs(dx), ady = Math.abs(dy);
-  if (adx < TAP_SLOP && ady < TAP_SLOP) { onTap(g); return; }
-  if (adx > SWIPE_MIN && adx > ady) {
-    if (g.x <= EDGE_GUARD || g.x >= window.innerWidth - EDGE_GUARD) return;  // edge-swipe: leave to the OS
-    hideBar();
-    cycle(dx < 0 ? 1 : -1);   // swipe left -> next, swipe right -> previous
-  }
-});
-canvas.addEventListener('pointercancel', () => { gesture = null; });
-
-// A canvas tap on a fine pointer (mouse) opens the picker directly; on a touch
-// pointer it toggles the control bar (the touch fast-path — its "browse" button
-// opens the full picker).
-function onTap(g) {
-  if (g.type === 'mouse') { openSelector(); return; }
+  if (!e.isPrimary) return;
+  if (e.pointerType === 'mouse') { openSelector(); return; }
   if (bar.classList.contains('show')) hideBar(); else showBar();
-}
+});
 
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;

@@ -133,10 +133,14 @@
   <div id="fps" hidden>&ndash; ms/f</div>
 
   <!-- Touch control bar: a canvas tap (coarse pointer) reveals it; it auto-hides
-       after a few seconds. restart sits dead-centre (3rd of 5 equal cells). Hidden
-       on mouse devices via a CSS pointer:fine media query. Icons are inline SVG
-       (themeable via currentColor, ASCII-safe, no emoji-presentation surprises). -->
+       after a few seconds. Narrow prev/next chevrons sit at the two ends; restart
+       stays the middle of the five action buttons, so it's dead-centre on screen.
+       Hidden on mouse devices via a CSS pointer:fine media query. Icons are inline
+       SVG (themeable via currentColor, ASCII-safe, no emoji-presentation surprises). -->
   <div id="bar" hidden>
+    <button class="bar-btn bar-nav" id="bar-prev" aria-label="previous">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"/></svg>
+    </button>
     <button class="bar-btn" id="bar-info" aria-label="info">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.6"/></svg>
       <span>info</span>
@@ -159,10 +163,13 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
       <span>browse</span>
     </button>
+    <button class="bar-btn bar-nav" id="bar-next" aria-label="next">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>
+    </button>
   </div>
 
-  <!-- First-visit hint (touch only): a one-time dim nudge about the gestures. -->
-  <div id="hint" hidden>&lsaquo; swipe to change &middot; tap for controls &rsaquo;</div>
+  <!-- First-visit hint (touch only): a one-time dim nudge that the canvas takes a tap. -->
+  <div id="hint" hidden>&lsaquo; tap for controls &rsaquo;</div>
 
   <script type="module" src="./host.js"></script>
 
