@@ -642,7 +642,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2007,
-      "description": "Interlocking gears."
+      "description": "Interlocking gears.\n\nSee also the \"Pinion\" and \"M\u00f6bius Gears\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Involute_gear\nhttps://en.wikipedia.org/wiki/Epicyclic_gearing"
     },
     {
       "title": "geodesicgears",
@@ -653,7 +653,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2014,
-      "description": "A set of meshed gears arranged on the surface of a sphere."
+      "description": "A set of meshed gears arranged on the surface of a sphere.\n\nhttps://en.wikipedia.org/wiki/Geodesic_dome\nhttps://en.wikipedia.org/wiki/Involute_gear\nhttps://en.wikipedia.org/wiki/Buckminster_Fuller"
     },
     {
       "title": "gimbalharmonics",
@@ -779,7 +779,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2016,
-      "description": "A honeycomb of rotating Y-shaped struts; waves of rotation and colour propagate across the plane."
+      "description": "A grid of hexagons composed of rotating Y-shaped struts. Waves of rotation and color changes randomly propagate across the plane."
     },
     {
       "title": "hextrail",
@@ -973,7 +973,7 @@
       ],
       "author": "Leo L. Schwab",
       "year": 2007,
-      "description": "A translucent spinning, blinking thing."
+      "description": "A translucent spinning, blinking thing. Sort of a cross between the wards in an old combination lock and those old backlit information displays that animated and changed color via polarized light."
     },
     {
       "title": "logarithmiccircles",
@@ -1019,7 +1019,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2007,
-      "description": "An interlinked loop of rotating gears."
+      "description": "An interlinked loop of rotating gears. The layout of the gears follows the path of a m\u00f6bius strip.\n\nSee also the \"Pinion\" and \"Gears\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Involute_gear\nhttps://en.wikipedia.org/wiki/Moebius_strip"
     },
     {
       "title": "moire",
@@ -1052,7 +1052,7 @@
       ],
       "author": "Marcelo Vianna",
       "year": 1997,
-      "description": "Platonic solids that turn inside out and get spikey."
+      "description": "Platonic solids that turn inside out and get spikey.\n\nhttps://en.wikipedia.org/wiki/Platonic_solid"
     },
     {
       "title": "mountain",
@@ -1176,7 +1176,7 @@
       ],
       "author": "Jamie Zawinski",
       "year": 2004,
-      "description": "A gear system marches across the screen."
+      "description": "A gear system marches across the screen.\n\nSee also the \"Gears\" and \"M\u00f6bius Gears\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Involute_gear"
     },
     {
       "title": "pipes",
@@ -1336,7 +1336,7 @@
       ],
       "author": "Vasek Potocek",
       "year": 2009,
-      "description": "The \"Rubik's Mirror Blocks\" puzzle."
+      "description": "The \"Rubik's Mirror Blocks\" puzzle.\n\nSee also the \"Rubik\", \"Cube21\", and \"GLSnake\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Combination_puzzles#Irregular_cuboids"
     },
     {
       "title": "scooter",
@@ -1495,7 +1495,7 @@
       ],
       "author": "Ed Mackey",
       "year": 1987,
-      "description": "Morphing 3D mathematical shapes."
+      "description": "Morphing 3D shapes."
     },
     {
       "title": "swirl",
