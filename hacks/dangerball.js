@@ -46,6 +46,13 @@ import { makeYaRandom } from './yarandom.js';
 import { makeRotator } from './rotator.js';
 import { makeSmoothColormap } from './colormap.js';
 
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: colors are used raw (setRGB(..., SRGBColorSpace) becomes a no-op) and
+// the output is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too
+// bright (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
+
 export const title = 'dangerball';
 
 export const info = {

@@ -67,6 +67,11 @@ export function start(canvas) {
 
   const MAXPOLY = 24;     // hard cap on vertices (the C's MAXPOLY is 16)
   const GRAVITY = 0.5;    // dy added per step under gravity (the C adds 3 in <<6 units ~= 0.05 px; bumped to read)
+  // Per-step pacing overhead (microseconds) added to the stock delay floor,
+  // measured off the live binary's -fps overlay: non-transparent qix runs ~54
+  // fps at Load ~45% (delay-bound), so 1e6/54.6 - 10000 ~= 8300. delay is only
+  // a floor, so without this the ribbon swept ~1.8x too fast. See qix.md.
+  const OVERHEAD = 8300;
 
   let S = 1;              // devicePixelRatio
   let W, H;               // canvas size, device px
@@ -81,9 +86,29 @@ export function start(canvas) {
     return Math.floor(Math.random() * n);
   }
 
-  // hsl() string for an integer hue (degrees). Bright, saturated rainbow.
-  function hueColor(h) {
-    return `hsl(${((h % 360) + 360) % 360}, 100%, 55%)`;
+  // hsv_to_rgb (utils/hsv.c) -> an 'rgb(r,g,b)' string. h in degrees, s,v in
+  // [0,1]. The C runs every qix colour through hsv_to_rgb (NOT hsl), so the
+  // port must too: the two spaces only coincide at s=v=1. The X server keeps
+  // 16-bit channels (trunc(C*65535)) and displays the top 8 bits, so the >>8
+  // downsample matches the live binary's colours exactly.
+  function hsvColor(h, s, v) {
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    if (v < 0) v = 0; else if (v > 1) v = 1;
+    const H = (((h % 360) + 360) % 360) / 60;
+    const i = Math.trunc(H);
+    const f = H - i;
+    const p1 = v * (1 - s);
+    const p2 = v * (1 - s * f);
+    const p3 = v * (1 - s * (1 - f));
+    let R, G, B;
+    if      (i === 0) { R = v;  G = p3; B = p1; }
+    else if (i === 1) { R = p2; G = v;  B = p1; }
+    else if (i === 2) { R = p1; G = v;  B = p3; }
+    else if (i === 3) { R = p1; G = p2; B = v;  }
+    else if (i === 4) { R = p3; G = p1; B = v;  }
+    else              { R = v;  G = p1; B = p2; }
+    const c8 = (x) => (Math.trunc(x * 65535) >> 8);
+    return `rgb(${c8(R)}, ${c8(G)}, ${c8(B)})`;
   }
 
   // Seed one qix: a ring buffer of `nlines` frames, each frame holding `npoly`
@@ -131,7 +156,15 @@ export function start(canvas) {
     return {
       frames,
       fp: 0,                                  // next write slot
+      // Per-qix colour, held for the qix's lifetime; only the hue cycles. The C's
+      // init_one_qix seeds each qix with hsv_to_rgb(rand%360, frand(1.0),
+      // frand(0.5)+0.5) and add_qline cycles only the hue by colorShift, so the
+      // saturation/value stay fixed -- hence the live screen's MIX of vivid,
+      // pastel and near-grey ribbons (a low-saturation roll = a grey ribbon),
+      // not the uniform full-vivid rainbow the old hsl() gave.
       hue: nrand(360),                        // current frame hue (degrees)
+      sat: Math.random(),                     // frand(1.0)      -> [0,1)
+      val: 0.5 + Math.random() * 0.5,         // frand(0.5)+0.5  -> [0.5,1)
     };
   }
 
@@ -254,10 +287,11 @@ export function start(canvas) {
     }
 
     // Shift the hue and draw the new polygon (the C cycles the XColor by
-    // colorShift degrees; here the frame just carries an integer hue).
+    // colorShift degrees each frame, holding saturation/value), then convert
+    // through hsv_to_rgb with this qix's fixed s,v.
     q.hue = (q.hue + config.colorShift) % 360;
     f.dead = false;
-    drawFrame(f, frames[ofp], hueColor(q.hue));
+    drawFrame(f, frames[ofp], hsvColor(q.hue, q.sat, q.val));
 
     q.fp = (fp + 1) % nlines;
   }
@@ -275,9 +309,10 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the speed is identical at any refresh rate. Cap
-  // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  // rAF lag-accumulator paced by config.delay + OVERHEAD (µs): run one step()
+  // per period, banking leftover time so the speed is identical at any refresh
+  // rate. Cap catch-up so a backgrounded tab doesn't burst a run of steps on
+  // refocus.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -288,7 +323,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

@@ -46,7 +46,7 @@
 // cspec/PI, shininess 10 -- a controlled glint, not a white disc. WINDING: the .c draws
 // under glFrontFace(GL_CW) + GL_CULL_FACE; we bake flat per-face normals and WIND each
 // triangle to agree with its normal, then render FrontSide -- so the far-facing facets
-// cull exactly as in GL. Colours: GL RGB as sRGB -> linear via setRGB(...,SRGBColorSpace).
+// cull exactly as in GL. Colours used RAW (colour management disabled -> GL framebuffer).
 //
 // PACING as in dangerball.js: render every rAF, motion is continuous; effFps =
 // 1e6/(delay+OVERHEAD), OVERHEAD = 37500; one render frame advances frames = dt*effFps
@@ -58,6 +58,14 @@
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
 import { makeRotator } from './rotator.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE (before start() fills colors) so the
+// setRGB(..., SRGBColorSpace) calls become no-ops and store RAW glColor, and the output
+// is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too bright
+// (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'discoball';
 

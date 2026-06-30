@@ -70,6 +70,14 @@ import {
   INVOLUTE_HUGE as HUGE,
 } from './involute.js';
 
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE (before start() fills colors) so the
+// setRGB(..., SRGBColorSpace) calls become no-ops and store RAW glColor, and the output
+// is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too bright
+// (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
+
 export const title = 'geodesicgears';
 
 export const info = {

@@ -49,13 +49,20 @@ for every `(int)` cast).
 
 ## Deviations from the C
 
-- **No XOR.** `crystal.c` draws with `GXxor`. On macOS/JWXYZ it already clears
-  the window every frame (`XClearWindow` under `HAVE_JWXYZ`) and redraws, rather
-  than XOR-erasing the previous frame; that is the path ported here — clear to
-  black, redraw all atoms each frame. Canvas has no raster XOR, and on a black
-  background XOR-with-black is just the colour, so the look matches. Overlapping
-  polygons within a frame simply paint over each other (the X11 path would XOR
-  them); this is the documented faithful-on-modern behaviour.
+- **No XOR overlap-mixing.** `crystal.c` draws with `GXxor`. On macOS/JWXYZ
+  (the live binary verified against here) it *also* clears the window every frame
+  (`XClearWindow` under `HAVE_JWXYZ`), so there is no cross-frame accumulation —
+  that clear-and-redraw path is what this port mirrors. But within a single frame
+  the C still XORs every polygon against the black background **and against each
+  other**: where two atoms (different colours) overlap, the live binary shows the
+  bitwise-XOR mixed colour, and where same-colour copies overlap they cancel to
+  black. On sparse runs (most groups) overlaps are rare and the look matches
+  exactly; on dense runs (large `count`, big cells) the live binary picks up
+  muddy mixed tones that this plain-fill port does not reproduce — later atoms
+  simply paint over earlier ones. Faithful multi-colour RGB XOR would need a
+  per-pixel software rasterizer (the `Path2D`/`fill()` architecture and Canvas's
+  blend modes can't express bitwise XOR); left as the one known render
+  deviation. The wallpaper-symmetry tiling, palette, and pace are faithful.
 - **Periodic regeneration restored.** The xscreensaver standalone `draw_crystal`
   runs ONE plane group forever (only the atoms drift). The original xlockmore
   crystal — and the `*cycles: 200` default still present in this file's
@@ -65,10 +72,9 @@ for every `(int)` cast).
   re-roll of group, cell, motif, and colours — exactly the "re-seed the motif +
   colours" the brief asks for). Exposed as the **New crystal after** slider; set
   it to its max to approximate the standalone's single-group behaviour.
-- **Colour cycling** is the C's `rotate_colors` re-expressed as a hue-index phase
-  rotation over an HSL palette (Canvas has no writable colormap). It defaults
-  **off**, matching real TrueColor/JWXYZ behaviour (`has_writable_cells` is false
-  there, so `cycle_p` is forced off) even though `DEF_CYCLE` is `True`.
+- **Colour cycling** is the C's `rotate_colors` re-expressed as a colour-index
+  phase rotation over the palette (Canvas has no writable colormap). It defaults
+  **off** to match TrueColor/JWXYZ, where it never runs (see Palette).
 - **Negative-count / -nx / -ny / -size semantics.** The C's defaults are
   negative ("random up to |n|"). The config exposes positive sliders
   (**Max objects** = `-count`, **Horizontal/Vertical symmetries** = `-nx`/`-ny`,
@@ -76,10 +82,53 @@ for every `(int)` cast).
   default behaviour (random variety up to the slider value) matches `count -500`,
   `nx/ny -3`, `size -15`.
 - **`maxsize` is not exposed** (its default is off); the random-size/placement
-  path is the only one ported. Vivid HSL palette over the original's allocated
-  colormap, per the project's house style. `delay` default eased to 50 ms
-  (~20 fps) from the stock 60 ms for smoother drift (the per-step motion is the
-  C's, unscaled — the drift is slow, so this reads smooth, not fast).
+  path is the only one ported.
+
+## Palette
+
+`crystal.c` is an xlockmore hack but does **not** rely on the xlockmore default
+colour scheme: with `MI_IS_INSTALL` hard-wired `True` on xscreensaver and
+`ncolors` 100 (> 2), the hack's own install branch always runs and builds a
+fresh colormap on every `init_crystal`, choosing one of three schemes per run:
+
+- **~10%** `make_random_colormap(bright_p=True)` — vivid random RGB
+  (`makeRandomColormapRGB(n, true)`).
+- **~45%** `make_uniform_colormap` — a full hue ramp at one per-run S,V
+  (`makeUniformColormapRGB(n)`).
+- **~45%** `make_smooth_colormap` — a closed loop through 2–5 HSV anchors, often
+  pastel/muted (`makeSmoothColormapRGB(n)`).
+
+So the live palette is a **limited, per-run map** — frequently muted or
+two-toned (e.g. a gray-purple↔mint smooth run), occasionally vivid — never a
+fixed full-saturation spectrum. The port reproduces this exactly via the three
+`colormap.js` helpers, picked per `init()` with the C's `1/10 … else 1/2 … else`
+probabilities; `ncolors <= 2` is the mono path (white, `MI_WHITE_PIXEL`). Each
+atom's colour index is `NRAND(ncolors - 2) + 2` as in the C. (Verified against
+the live binary: 5 grabs spanned a vivid run, a 13-colour harmonious run, a
+2-hue pastel smooth run, and a cool blue/green/cyan run — all reproduced by the
+port across re-rolls.)
+
+The earlier port used a fixed vivid `hsl(i*360/n, 100%, 55%)` rainbow — the
+systemic vivid-rainbow bug; replaced by the faithful `colormap.js` choice above.
+
+Colour cycling (`rotate_colors`) is forced **off** on TrueColor/JWXYZ
+(`has_writable_cells` is false there, so `cycle_p` is false regardless of
+`DEF_CYCLE True`), so the live binary never cycles; the port mirrors this
+(the **Color cycling** checkbox defaults off).
+
+## Timing
+
+Stock `*delay` is **60000 µs** (`crystal.xml` / `crystal.c` DEFAULTS). `delay` is
+a sleep FLOOR, so the live effective fps is below `1e6/60000 ≈ 16.7`. Measured
+off the live `-fps` overlay across 3 runs: **13.7 / 14.2 / 14.0 fps at Load
+15–17.6%** (Load well under 100% → delay-bound). Mean ≈ 14.0 fps, so
+
+`OVERHEAD = round(1e6 / 14.0) − 60000 ≈ 11600 µs`.
+
+`config.delay` is the stock 60000 (the prior port used a by-eye 50000, *faster*
+than stock) and the rAF loop paces one `step()` per `(config.delay + OVERHEAD)`,
+i.e. ~71.6 ms → ~14 fps, matching the live binary. The per-step drift/spin is the
+C's, unscaled.
 
 ## Correctness self-review
 

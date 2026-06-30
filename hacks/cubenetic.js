@@ -51,6 +51,14 @@ import { makeYaRandom } from './yarandom.js';
 import { makeRotator } from './rotator.js';
 import { makeSmoothColormap } from './colormap.js';
 
+// xscreensaver's GL fixed pipeline does NO color management -- it writes the raw glColor
+// values to the framebuffer (no sRGB encoding) and the screenshots capture them as-is.
+// Disable three's color management so the ports match GL: input colors are used raw (the
+// setRGB(..., SRGBColorSpace) calls below become no-ops) and the output is not sRGB-
+// encoded. Without this, lit/shaded faces render up to ~2.5x too bright (measured against
+// the rubikblocks grayscale ground truth) and additive blends wash to gray.
+THREE.ColorManagement.enabled = false;
+
 export const title = 'cubenetic';
 
 export const info = {
@@ -208,8 +216,8 @@ export function start(hostCanvas, opts = {}) {
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(dpr);
-  // LIT path: keep three's default sRGB output + author colours/textures in sRGB
-  // (the geometry-track convention; lighting math runs in linear space).
+  // LIT path. Colour management is disabled (see the module-scope flag), so the cube
+  // colours and the plasma texture are used RAW and the output is not sRGB-encoded.
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -298,7 +306,7 @@ export function start(hostCanvas, opts = {}) {
   // ===================================================================
   //  simulation state
   // ===================================================================
-  let cubeColors = [];        // NCOLORS THREE.Color (smooth colormap, linearized)
+  let cubeColors = [];        // NCOLORS THREE.Color (smooth colormap, used raw -- CM off)
   let texPal = new Uint8Array(NCOLORS * 3);   // texture_colors as 8-bit RGB
   let heights = new Int32Array(1);            // init_wave heights[] (size waveRadius+1)
   let curRadius = -1;                         // last radius heights[] was built for
@@ -325,7 +333,7 @@ export function start(hostCanvas, opts = {}) {
       texPal[i * 3 + 1] = to255(c.g);
       texPal[i * 3 + 2] = to255(c.b);
     }
-    // cube_colors = make_smooth_colormap; authored sRGB->linear for the lit path.
+    // cube_colors = make_smooth_colormap; used raw (colour management disabled).
     cubeColors = makeSmoothColormap(rng, NCOLORS).map(
       (c) => new THREE.Color().setRGB(c.r, c.g, c.b, THREE.SRGBColorSpace));
   }

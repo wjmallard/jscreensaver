@@ -73,7 +73,11 @@ specular (so both glint, unlike morph3d). The material is `GL_AMBIENT_AND_DIFFUS
 - **Winding:** the .c draws under `glFrontFace(GL_CW)` + `GL_CULL_FACE`, so we bake flat
   per-face normals and WIND each triangle to agree with its normal, then render
   `FrontSide` -- the far-facing facets cull exactly as in GL (and the depth mask hides the
-  rest). Colours are GL RGB as sRGB -> linear via `setRGB(..., SRGBColorSpace)`.
+  rest). Colours are GL RGB written RAW: three's colour management is disabled
+  (`ColorManagement.enabled = false`), so the `setRGB(..., SRGBColorSpace)` store is a
+  no-op, matching GL's fixed pipeline (no sRGB encoding). (The `MeshPhongMaterial`
+  `color: 0x999999` / `specular: 0x444444` constructor literals are dead defaults --
+  `setMaterial()` overwrites both via `setRGB` before the first render.)
 
 ## Pacing / config
 
@@ -86,12 +90,13 @@ ticked at `effFps` and interpolated (dangerball pattern). Config transcribed 1:1
 
 ## Notes / deviations
 
-- **OPEN (shadow brightness):** the unlit facets read a touch brighter (`~0.27` sRGB) than
-  GL's raw-space `0.2*0.6 = 0.12`, because three computes the ambient product in *linear*
-  then converts to sRGB while GL displays it raw. This is the track-wide sRGB-pipeline
-  characteristic of the `intensity = PI` convention (superquadrics/dangerball share it);
-  kept per the systematic rule rather than tuned by eye. The ground truth's near-black top
-  tiles are therefore a little darker than ours.
+- **Shadow brightness (resolved):** disabling three's colour management
+  (`ColorManagement.enabled = false`) makes GL's raw output faithful, so the shaded/unlit
+  facets darken to match the ground truth's near-black top tiles. The ambient product
+  (`0.2 * ~0.6 = ~0.12` raw) is now written RAW rather than being lifted to `~0.27` by a
+  linear->sRGB encode -- the earlier too-bright reading was that encode, not the geometry.
+  (Specular is still divided by `PI` per the `intensity = PI` convention -- independent of
+  colour management.)
 - **Ball size:** the ground-truth gallery image is a ~2x zoom crop (the ball fills the
   frame). The code's `distance 30 / fov 30 / radius 4` camera *necessarily* renders the
   ball at half the frame height, which our capture confirms -- so we render faithfully to

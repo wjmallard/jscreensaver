@@ -37,8 +37,10 @@ Transcribed from `hexstrut.c`:
   the same delay -> an outward wave. Ported line-for-line (incl. the `orot`/`odelay`
   bookkeeping) so the propagation is identical.
 - **Colour:** a 64-entry `make_smooth_colormap` (`colormap.js`), per-cell
-  `colors[ccolor]`, **BRIGHTENED** `c*0.75 + 0.25` (in the sRGB the `.c` writes straight
-  to the framebuffer), then authored `sRGB->linear`. RNG (`yarandom.js`) and motion
+  `colors[ccolor]`, **BRIGHTENED** `c*0.75 + 0.25` and written RAW to the framebuffer:
+  three's colour management is disabled (`ColorManagement.enabled = false`), matching GL's
+  fixed pipeline (no sRGB encoding), so the `setRGB(..., SRGBColorSpace)` store is a no-op
+  and the value the `.c` writes IS the output. RNG (`yarandom.js`) and motion
   (`rotator.js`) draws are in `init_hexstrut`'s order (rotator, then the 2 tilt
   `frand(0.8)`s, then the colormap).
 - **`init` clamps:** `speed <= 2`, `thickness` in `[0.05, 1.7]` -- replicated.

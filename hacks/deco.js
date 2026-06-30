@@ -17,14 +17,16 @@
 // [0, maxDepth) is below the current depth, OR the box is narrower than minWidth,
 // OR shorter than minHeight — so cells get likelier to terminate the deeper you
 // go, giving the characteristic mix of big and small panels. Three colour modes
-// (random hues / a smooth hue ramp / Mondrian's fixed red-yellow-blue-white) and
-// optional golden-ratio splits all map straight across from the original.
+// (a random colormap / a smooth colormap / Mondrian's fixed red-yellow-blue-white)
+// and optional golden-ratio splits all map straight across from the original.
 //
 // Rendering is plain vector ops: ctx.fillRect for each cell's flat fill, then
 // ctx.strokeRect for its border (the canvas analogue of XFillRectangle +
 // XDrawRectangle). Nothing is read back; the canvas is cleared and fully
 // repainted each redraw. See [[squiral]] for the shared skeleton and
 // [[greynetic]] for the rect-fill idiom.
+
+import { makeRandomColormapRGB, makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'deco';
 
@@ -100,39 +102,40 @@ export function start(canvas) {
   let minWidth, minHeight;  // smallest cell, device px
   let lineWidth;        // border width, device px
   let mondrian;         // colorMode === 'mondrian'
+  let mono;             // ncolors <= 2 -> the C's mono_p (black cells, white borders)
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
   }
 
-  // Build the active palette for the current colour mode. `random` is vivid
-  // full-spectrum hues (the C's random colormap, brightened per house style);
-  // `smooth` is an even hue ramp (the C's make_smooth_colormap); `mondrian` is
-  // the fixed red/yellow/blue/white set. ncolors caps the size like the C.
+  // Build the active palette ONCE per run. deco.c builds its colormap in
+  // deco_init and reuses it for every redraw — recomputing per frame is an
+  // explicitly UNimplemented idea in the C — so a fixed set of colours recurs
+  // across layouts. All three paths are faithful ports of deco.c's colour setup,
+  // via the shared colors.c ports in colormap.js:
+  //   mondrian       -> make_mondrian_colormap (the fixed 8-colour set above)
+  //   smoothColors   -> make_smooth_colormap              -> makeSmoothColormapRGB(n)
+  //   else (default) -> make_random_colormap(bright_p=False) -> makeRandomColormapRGB(n, false)
+  // The default scheme is fully-random RGB channels (a muted/dark/bright scatter,
+  // NOT a vivid spectrum); smooth interpolates 2-5 random HSV anchors into a
+  // gentle loop. ncolors <= 2 trips the C's mono_p: no palette, black cells
+  // bordered in white.
   function buildColors() {
     if (mondrian) {
       colors = MONDRIAN.slice();
+      mono = false;
       return;
     }
     const n = clamp(Math.round(config.ncolors), 1, 255);
-    colors = new Array(n);
-    if (config.colorMode === 'smooth') {
-      // A single smooth sweep around the hue wheel — adjacent cells differ only
-      // slightly, so the layout reads as a gentle gradient of panels.
-      const start = Math.random() * 360;
-      for (let i = 0; i < n; i++) {
-        colors[i] = `hsl(${(start + i * 360 / n) % 360}, 70%, 55%)`;
-      }
-    } else {
-      // Random: an independent vivid hue per slot (saturation/lightness jiggled
-      // a little so it doesn't look like a flat rainbow).
-      for (let i = 0; i < n; i++) {
-        const hue = Math.floor(Math.random() * 360);
-        const sat = 60 + Math.floor(Math.random() * 40);
-        const lit = 40 + Math.floor(Math.random() * 30);
-        colors[i] = `hsl(${hue}, ${sat}%, ${lit}%)`;
-      }
+    mono = n <= 2;                                // deco.c: if (ncolors <= 2) mono_p = True
+    if (mono) {
+      colors = null;
+      return;
     }
+    const cm = config.colorMode === 'smooth'
+      ? makeSmoothColormapRGB(n)                  // make_smooth_colormap
+      : makeRandomColormapRGB(n, false);          // make_random_colormap, bright_p = False
+    colors = cm.map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // Mondrian overrides line width and minimum cell size from the screen dims:
@@ -166,9 +169,15 @@ export function start(canvas) {
   // size — so deeper boxes terminate ever more readily.
   function subdivide(x, y, w, h, depth) {
     if (Math.floor(Math.random() * maxDepth) < depth || w < minWidth || h < minHeight) {
-      // Leaf: advance the cycling colour index, flat-fill, then border it.
-      if (++currentColor >= colors.length) currentColor = 0;
-      ctx.fillStyle = colors[currentColor];
+      // Leaf: fill the cell, then border it. In colour mode advance the cycling
+      // palette index (deco.c's per-cell bgc foreground); in mono_p (ncolors<=2)
+      // the C never recolours — the cell stays the black background, bordered white.
+      if (mono) {
+        ctx.fillStyle = '#000';
+      } else {
+        if (++currentColor >= colors.length) currentColor = 0;
+        ctx.fillStyle = colors[currentColor];
+      }
       ctx.fillRect(x, y, w, h);
 
       // XDrawRectangle outlines [x, y, w, h] inclusive; centre the stroke on the
@@ -201,19 +210,21 @@ export function start(canvas) {
     }
   }
 
-  // One step == one complete redraw: clear to black, recompute Mondrian-derived
-  // sizes (cheap; the screen may have resized), build a fresh palette so each
-  // layout gets new colours, then recurse over the whole canvas from depth 0.
+  // One step == one complete redraw (deco.c's deco_draw): clear to black,
+  // recompute Mondrian-derived sizes (cheap; the screen may have resized), then
+  // recurse over the whole canvas from depth 0. The palette is NOT rebuilt here
+  // — it is fixed for the run (built once in init), exactly as the C reuses its
+  // one colormap for every frame; the colour-cycle index likewise carries over.
   function step() {
     applySizes();
-    buildColors();
-    currentColor = 0;
 
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
     ctx.lineJoin = 'bevel';
-    ctx.strokeStyle = '#000';   // the C's fg/border colour is black by default
+    // Border colour = the C's fgc: black in colour mode (fg/bg are swapped), white
+    // in mono_p (no swap, so the foreground stays the default white).
+    ctx.strokeStyle = mono ? '#fff' : '#000';
 
     subdivide(0, 0, W, H, 0);
   }

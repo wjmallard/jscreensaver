@@ -36,6 +36,35 @@ Each step:
 `unit_scale = 0.4 * min(W,H) * sqrt(observer_z^2 - 1)` and the screen centre come
 from `set_sizes()`; `unit_scale` is recomputed each step so **Zoom** is live.
 
+## Palette
+
+Native screenhack — it does **not** use `colormap.js`, and there is no generated
+colour anywhere (the only `make_*` path in the C is the `mono_p` black/white
+fallback, which the port doesn't need). Edge colours are a fixed 8x8 table baked
+into the C's resource defaults (`color00..color77` in `hyperball_defaults[]`),
+indexed `COLORS[col][dep]`: `col` (0..7) is the edge's hard-coded hue from
+`line_table` (`li_color`); `dep` (0..7) is a depth shade from the summed endpoint
+depths (`(dep_p + dep_q) >> 6`), with `dep 0` = front = brightest. The eight hues
+are pink / orange / yellow-green / green / teal / blue / violet / magenta, each
+fading darker with depth. The port transcribes all 64 hex values **verbatim** from
+the defaults block (cross-checked entry-by-entry against the `.c`), so the palette
+is exactly the original's — this is **not** the vivid-`hsl()` rainbow bug. Verified
+against the live binary: the same multi-hued wireframe ball over black.
+
+## Timing
+
+Stock `*delay: 20000` µs (the port's `config.delay` already matches). xscreensaver's
+`*delay` is a sleep *floor*; the real per-frame cost is `delay + compute`, so the
+effective rate is below `1e6/delay`. The live binary's `-fps` overlay reads
+**FPS 33.0 at Load 34.0%** (delay-bound — Load well under 100%), so
+
+    OVERHEAD = round(1e6 / 33.0) - 20000 = 30303 - 20000 = 10303 µs
+
+(self-consistent: 10303 / (10303 + 20000) = 34.0% = the reported Load). The rAF
+lag-accumulator now paces on `(config.delay + OVERHEAD) / 1000` ms/step. Verified
+in a real browser: the port steps at **33.0 steps/sec**, matching the live 33.0 fps.
+Previously it paced on `config.delay` alone and ran at ~50 steps/sec (~1.5x too fast).
+
 ## Deviations from the C
 
 - **XOR/incremental erase -> full-frame repaint.** The C never clears; it erases
@@ -57,9 +86,9 @@ from `set_sizes()`; `unit_scale` is recomputed each step so **Zoom** is live.
   config yields byte-identical rotation.
 - **Encoding.** The micro sign in the Frame-rate unit is the escape `\u00B5`, not
   a literal byte (per the project's ASCII-safe rule).
-- **Defaults match the xml** (delay 20000 us, observer-z 3, xy=3 xz=5 yw=10, rest
-  0). The vivid 8-hue x 8-shade palette is the original's own `color00..color77`
-  table, kept verbatim (already a rainbow, no retuning needed).
+- **Defaults match the xml** (delay 20000 µs, observer-z 3, xy=3 xz=5 yw=10, rest
+  0). See **Palette** for the fixed 8x8 colour table and **Timing** for the
+  delay + measured OVERHEAD calibration.
 
 ## Verbatim data tables (the transcription hazard)
 

@@ -24,6 +24,14 @@
 
 import * as THREE from 'three';
 
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE (before start() fills colors) so the
+// setRGB(..., SRGBColorSpace) calls become no-ops and store RAW glColor, and the output
+// is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too bright
+// (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
+
 export const title = 'cubicgrid';
 
 export const info = {
@@ -80,8 +88,9 @@ export function start(hostCanvas) {
   camera.position.set(0, 0, CAM_Z);   // .c uses 18 (observer inside); pulled back a little
 
   // Build the lattice: TICKS^3 points, centered, scaled to SIZE units. Color =
-  // (x,y,z)/TICKS authored in sRGB and stored linear, so it displays as the
-  // original's direct glColor3f values under the renderer's sRGB output.
+  // (x,y,z)/TICKS; with color management disabled (module scope) the setRGB call
+  // stores the RAW value and the output is not re-encoded, so each point displays
+  // as the original's direct glColor3f(x,y,z) value.
   const count = TICKS * TICKS * TICKS;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);

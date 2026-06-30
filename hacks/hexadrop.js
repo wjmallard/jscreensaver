@@ -22,6 +22,8 @@
 // rather than per-pixel accumulation. See [[truchet]] for the tile-geometry
 // idiom and [[demon]] / [[cloudlife]] for grid-cell colour state.
 
+import { makeSmoothColormapRGB, makeRandomColormapRGB } from './colormap.js';
+
 export const title = 'hexadrop';
 
 export const info = {
@@ -37,7 +39,7 @@ export function start(canvas) {
   // tuning UI maps 1:1 to the original. `delay` is microseconds (xml units);
   // everything else matches the C's resource defaults.
   const config = {
-    delay: 40000,      // microseconds between frames (--delay, xml 30000; calmer here)
+    delay: 30000,      // microseconds between frames -- STOCK *delay (--delay, xml 30000)
     speed: 1.0,        // drop speed multiplier, px/frame baseline (--speed)
     size: 15,          // grid_size: bigger = more, smaller tiles (--size)
     sides: 0,          // 0 = random shape; 3/4/6/8 = tri/square/hex/octagon (--sides)
@@ -50,7 +52,7 @@ export function start(canvas) {
   // live: false -> the value sizes the grid / colours / phases, so a change
   //                re-runs init() via reinit() (a clean black canvas + reseed).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'speed', label: 'Speed', type: 'range', min: 0.1, max: 4.0, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'size', label: 'Tile size', type: 'range', min: 5, max: 50, step: 1, default: 15, invert: true, lowLabel: 'large', highLabel: 'small', live: false },
     { key: 'sides', label: 'Shape', type: 'select', options: [
@@ -270,14 +272,19 @@ export function start(canvas) {
   }
 
   function buildColors() {
-    // Smooth vivid rainbow of `ncolors` hues (the C builds a smooth colormap;
-    // with < 10 colours it uses a random map -- we keep an even hue spread for
-    // calmer waves). Cyclic so the wrap from the last hue back to 0 is seamless.
-    colors = [];
+    // Faithful to hexadrop_init_1's colour setup: it clamps ncolors >= 2, then
+    //   ncolors < 10 -> make_random_colormap(bright_p=False)  (fully-random RGB
+    //                   channels -- the muted/dark/bright scatter, NOT a ramp)
+    //   else          -> make_smooth_colormap                 (2-5 HSV anchors
+    //                   interpolated into a closed loop -- usually a limited,
+    //                   harmonious, often-muted hue arc)
+    // The default ncolors is 128, so the usual palette is the smooth colormap.
+    // (Was a fixed vivid hsl(h,100%,55%) rainbow -- the systemic palette bug.)
     const n = Math.max(2, config.ncolors);
-    for (let k = 0; k < n; k++) {
-      colors.push(`hsl(${(k * 360 / n).toFixed(2)}, 100%, 55%)`);
-    }
+    const rgb = (n < 10)
+      ? makeRandomColormapRGB(n, false)
+      : makeSmoothColormapRGB(n);
+    colors = rgb.map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   function init() {
@@ -314,10 +321,17 @@ export function start(canvas) {
     init();
   }
 
+  // The live *delay is a sleep FLOOR; each real frame also pays a compute/
+  // framework cost, so the effective fps is lower than 1e6/delay. Measured on
+  // the XQuartz build with the -fps overlay (delay-bound, Load ~17-29%): a
+  // self-consistent median of ~26.3 fps across squares + hexagons. So
+  // OVERHEAD = round(1e6 / 26.3) - 30000 ~= 8000 us (>= 0, never faster than spec).
+  const OVERHEAD = 8000;   // microseconds added to config.delay to match live pace
+
   // Drive off requestAnimationFrame but keep the original pace: run one step()
-  // per config.delay ms, banking leftover time so the speed is the same at any
-  // refresh rate. Cap catch-up so a backgrounded tab (where rAF is paused)
-  // doesn't fire a burst of frames when it regains focus.
+  // per (config.delay + OVERHEAD) ms, banking leftover time so the speed is the
+  // same at any refresh rate. Cap catch-up so a backgrounded tab (where rAF is
+  // paused) doesn't fire a burst of frames when it regains focus.
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -329,7 +343,9 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // Add OVERHEAD so the per-step gate equals the live frame PERIOD, not just
+    // the sleep floor (see the OVERHEAD note above).
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

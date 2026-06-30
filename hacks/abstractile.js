@@ -33,13 +33,12 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Units/defaults map to hacks/config/abstractile.xml (speed, sleep, tile) plus
-  // a host-required Frame rate (delay, microseconds). The C paces itself by
-  // returning a per-call microsecond delay; here `delay` is the base time
-  // between draw batches and `speed` scales it (the C's speed 0..5).
+  // Units/defaults mirror hacks/config/abstractile.xml: speed (the C's --speed,
+  // 0..5), sleep (--sleep, linger seconds), tile (--tile). abstractile has NO
+  // *delay resource -- the C paces itself entirely from speed/sleep and the
+  // per-screen `lpu` (lines-per-update), so there is no host "Frame rate" knob.
   const config = {
-    delay: 20000,       // microseconds between draw/erase batches (Frame rate)
-    speed: 3,           // 0..5, the C's --speed (multiplies the batch delay)
+    speed: 3,           // 0..5, the C's --speed (5 = ~instant build, 0 = ~10 s)
     sleep: 3,           // seconds to linger on a finished screen (--sleep)
     tile: 'random',     // tile style (--tile): random/flat/thin/outline/block/neon/tiled
   };
@@ -48,7 +47,6 @@ export function start(canvas) {
   // live: false -> the value changes the build, so a change re-runs init() via
   //                reinit() (a clean black canvas + a fresh mosaic).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 50000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'speed', label: 'Speed', type: 'range', min: 0, max: 5, step: 1, default: 3, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'sleep', label: 'Linger', type: 'range', min: 0, max: 60, step: 1, default: 3, unit: ' s', lowLabel: '0s', highLabel: '60s', live: true },
     { key: 'tile', label: 'Tile style', type: 'select', default: 'random', live: false, options: [
@@ -1078,22 +1076,32 @@ export function start(canvas) {
   // ===================================================================
   function buildScreen() { initScreen(); createScreen(); }
 
-  // per-batch delay in ms: Frame rate scaled by speed (the C's 0..5).
-  function perBatchMs() {
+  // Per-batch delay (ms), transcribed verbatim from abstractile_draw's usleep:
+  //   batch  = (5-speed)*(2-dialog)*100000 / lpu  microseconds  (draw & erase)
+  //   linger = sleep*1000000                      microseconds  (after a full draw)
+  // The C subtracts the work time (mse) before sleeping; the rAF accumulator loop
+  // (below) already absorbs work time by tracking wall-clock, so we return the
+  // target PERIOD itself. The /lpu term is what makes dense screens (small lwid ->
+  // big lpu) build fast and sparse screens build slow, exactly like the live
+  // binary (e.g. -tile thin races, -tile tiled is leisurely). speed 5 -> 0 ms
+  // (as fast as the accumulator cap allows), matching the C's "0 second" goal.
+  function batchDelayMs() {
     const sp = Math.min(5, Math.max(0, config.speed));
-    return (config.delay / 1000) * ((6 - sp) / 3);
+    const lp = lpu > 0 ? lpu : 1;
+    return ((5 - sp) * (2 - dialog) * 100000 / lp) / 1000;
   }
 
   function step() {
     if (cw <= 20 || ch <= 20) return 100;                 // too small -- do nothing
     switch (mode) {
-      case MODE_CREATE: buildScreen(); return perBatchMs();
-      case MODE_ERASE: eraseLines(); return perBatchMs();
+      case MODE_CREATE: buildScreen(); return batchDelayMs();
+      case MODE_ERASE: eraseLines(); return batchDelayMs();
       case MODE_DRAW:
         drawLines();
-        return (mode === MODE_CREATE) ? Math.max(0, config.sleep * 1000) : perBatchMs();
+        // after the final draw batch, drawLines() flips mode to CREATE -> linger
+        return (mode === MODE_CREATE) ? Math.max(0, config.sleep * 1000) : batchDelayMs();
     }
-    return perBatchMs();
+    return batchDelayMs();
   }
 
   function init() {

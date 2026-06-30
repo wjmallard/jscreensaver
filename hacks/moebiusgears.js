@@ -33,7 +33,7 @@
 // th is in RADIANS here (the .c uses radians for moebiusgears' th, unlike gears.c
 // which uses degrees). Color = 0.7+frand(0.3) (lighter pastels than gears'
 // 0.5+frand(0.5)); color2 = color*0.85. Color management + pacing as in gears.js /
-// dangerball.js (sRGB->linear vertex-color diffuse; effFps = 1e6/(delay+OVERHEAD)).
+// dangerball.js (raw vertex-color diffuse, colour management off; effFps = 1e6/(delay+OVERHEAD)).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -45,6 +45,14 @@ import {
   INVOLUTE_LARGE as LARGE,
   INVOLUTE_HUGE as HUGE,
 } from './involute.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE (before start() fills colors) so the
+// setRGB(..., SRGBColorSpace) calls become no-ops and store RAW glColor, and the output
+// is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too bright
+// (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'moebiusgears';
 

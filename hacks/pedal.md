@@ -12,12 +12,22 @@ Same closed-figure curve family as [[helix]] and [[xspirograph]] (polar/parametr
 ## Rendering
 The figure is a genuine filled polygon, not an incremental line sweep — the C issues exactly one `XFillPolygon` per round. So this port accumulates the flat point list into a `Path2D` and calls `ctx.fill(path, 'evenodd')` once per figure. Unlike helix/xspirograph the polygon appears all at once (there is no on-screen point-by-point DRAW phase); the state machine is therefore `NEW_FIGURE` (compute + fill) → `LINGER` (hold) → `CLEAR`.
 
+## Palette
+Native screenhack — colour is a custom `hsv_to_rgb` path, NOT an xlockmore colormap, so the port mirrors it directly (no `colormap.js`). `pedal_draw` colours each figure with `hsv_to_rgb(random() % 360, 1.0, 1.0)` (added by jwz): ONE fresh, **fully-saturated, fully-bright** random hue per figure. So every figure is a *pure spectral hue* — HSL lightness 50%, minimum RGB channel 0 — not a pastel and not a fixed rainbow. The only exception in the C is X's `mono_p` (foreground stays white), which the gallery never hits.
+
+The port uses the same faithful `hsv_to_rgb` helper as [[helix]]/[[xspirograph]] (with the X 16-bit→8-bit downsample) and rolls `h = random()%360, s = 1, v = 1` per figure. Verified against the live binary: live figures measure `(255,0,230)`, `(0,255,115)`, `(0,55,255)` — all `s=1, v=1`, min channel 0 — and the port now produces the same (e.g. `(12,0,255)`, `(0,255,46)`).
+
+Earlier this port drew a fixed 64-entry `hsl(h,100%,60%)` rainbow indexed at random: **washed** (lightness 60% → min channel ≈51, e.g. `(255,51,70)`) and quantised to 64 hues, behind a non-stock `ncolors` knob. All removed — pedal exposes no colour knob, exactly like the original.
+
+## Timing
+**Paint-and-hold**, not a frame-paced sweep. `pedal_draw` computes the whole figure and issues a single `XFillPolygon`, then returns `1000000 * delay` µs — i.e. the `*delay` resource is in **seconds**, default **5 s** (the .xml exposes it as the "Duration" slider, 1 s..1 min). After the hold it runs `erase_window` (~10 ms steps) and then a ~1 s black pause before the next figure. There is **no `subdelay`** and no per-step frame knob in `pedal.c` (unlike the otherwise-similar helix/xspirograph), so there is **no OVERHEAD term**: the multi-second hold dwarfs the one-shot polygon fill, and the `-fps` overlay is near-idle (one draw per ~6 s cycle). The port maps this 1:1 — `linger` (= the C's `delay`, default 5 s) holds the figure, then a 1 s black pause stands in for the erase transition. No `µs` frame-rate string is needed or shown.
+
 ## Deviations from the C
 - **Even-odd fill** maps directly: Canvas `fill(path, 'evenodd')` == `XFillPolygon` with the `Complex` shape mode (even-odd winding). No deviation — this is the whole point of the hack.
 - **Instant clear instead of the erase transition.** The C runs xscreensaver's `erase_window` wipe between figures; here `clearScreen()` blanks to black instantly, then the loop holds black ~1 s (the wipe's rough duration). Same as helix/xspirograph; a wipe is a later candidate.
-- **Colour.** The C rolls a full random hue per figure (`hsv_to_rgb(random()%360, 1, 1)`); this port keeps the gallery's vivid `hsl()` rainbow palette (`ncolors` entries, full saturation, 60% lightness) and picks a random index — same vivid-rainbow convention as the rest of the gallery.
-- **`maxlines` slider** is exposed as **Lines** (xml range 100..5000, default 1000). The xml's `delay` slider (labelled **Duration**, 1s..1min) is the linger. pedal has no per-step frame-rate slider in the original (the only delays are the multi-second linger and the post-erase pause), so this module exposes none — and therefore has no ` µs` string to worry about. Added an off-UI `ncolors` for gallery parity (not live).
+- **`maxlines` slider** is exposed as **Lines** (xml range 100..5000, default 1000); `delay` is the **Duration** linger (see Timing). These are the only two knobs the original has, and the only two this module exposes.
 - **DPR.** Backing store is sized in device pixels; the figure is centred at `W/2, H/2` and scaled by the half-extents `hWidth/hHeight`, so it fills the screen crisply on retina without any explicit `S` scaling of line widths (it's a fill, not a stroke). `S` is read for convention/parity only.
+- **Anti-aliasing.** X polygon fill has hard edges (live captures show exactly 2 colours: black + the figure hue); Canvas anti-aliases the polygon edges, so the port shows a thin rim of blended pixels. Inherent to canvas vector fills and consistent with the rest of the curve family; not a palette change.
 
 ## Correctness self-review (no freeze / no dead-line)
 This is the helix/xspirograph closed-figure family that froze earlier ports, so I traced and then **simulated** the termination/reset path (60k figures across maxlines = 100 / 1000 / 5000):

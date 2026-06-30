@@ -44,9 +44,10 @@
 // no-ops), so this is flat glColor geometry -- MeshBasicMaterial + per-vertex
 // colors, no lights/normals. GL had DEPTH_TEST + CULL_FACE off, so we render
 // DoubleSide with depthTest/Write off: triangles paint in submission order, as GL
-// did. glColor [0,1] values are sRGB display values; we do the .c's color math
-// (fade/border scaling, neighbor averaging) in that space, then convert the final
-// per-vertex color sRGB->linear so three's sRGB output round-trips to the original.
+// did. glColor [0,1] values are written RAW to the framebuffer: three's color
+// management is disabled at module scope (matching GL's fixed pipeline, which does no
+// sRGB encoding), so the .c's color math (fade/border scaling, neighbor averaging) runs
+// in glColor space and that value IS the output -- no conversion.
 //
 // PACING (as in dangerball.js): render every rAF; the simulation ticks at the
 // original cadence effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 37500 (family
@@ -60,6 +61,14 @@ import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
 import { makeRotator } from './rotator.js';
 import { makeSmoothColormap } from './colormap.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE so the renderer's output is not sRGB-encoded.
+// (hextrail colors its vertices through the srgbToLinear() helper below, NOT three's
+// setRGB, so that helper is also neutralized to an identity pass-through to keep glColor
+// raw.) Without this, the flat unlit faces render shifted vs the original.
+THREE.ColorManagement.enabled = false;
 
 export const title = 'hextrail';
 
@@ -81,11 +90,12 @@ const CORNERS = [
   [0, -1], [H, -0.5], [H, 0.5], [0, 1], [-H, 0.5], [-H, -0.5],
 ];
 
-// sRGB -> linear (matches THREE.SRGBColorSpace), applied to the final glColor.
+// Final per-vertex glColor mapping. three's color management is disabled at module scope
+// (GL writes raw glColor, no sRGB encoding), so this is an IDENTITY pass-through, clamped
+// to [0,1] as GL clamps glColor. (It was a real sRGB->linear conversion before the
+// GL-fidelity color fix; kept as a function so the draw_hexagons call sites read unchanged.)
 function srgbToLinear(c) {
-  if (c <= 0) return 0;
-  if (c >= 1) return 1;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  return c < 0 ? 0 : c > 1 ? 1 : c;
 }
 
 // ---- the trackball-reset initial tilt (gltrackball_reset -> trackball(0,0,x,y)).
@@ -419,8 +429,8 @@ export function start(hostCanvas, opts = {}) {
     return vi;
   }
 
-  // draw_hexagons, transcribed. Color math done in glColor (sRGB) space, then the
-  // final per-vertex color converted sRGB->linear.
+  // draw_hexagons, transcribed. Color math done in glColor space and the per-vertex
+  // color used RAW (colour management disabled -> GL-faithful framebuffer).
   function buildGeometry() {
     let vi = 0;
     const cnt = config.count | 0;

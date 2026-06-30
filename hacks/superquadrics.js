@@ -30,11 +30,18 @@
 // CULLING/WINDING: like the LWO models in pipes, the .c draws under glFrontFace(GL_CW);
 // three is CCW-front, so each emitted triangle is wound to AGREE with its (analytic)
 // vertex normals -- otherwise DoubleSide flips the normal and the lit side loses its
-// diffuse. PACING (effFps = 1e6/(delay+OVERHEAD)) + sRGB->linear vertex color as in
-// dangerball.js; the morph + spin advance continuously (smooth render, faithful rate).
+// diffuse. PACING (effFps = 1e6/(delay+OVERHEAD)) + raw vertex color (colour management
+// off) as in dangerball.js; the morph + spin advance continuously (smooth render, faithful rate).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: colors are used raw (setRGB(..., SRGBColorSpace) becomes a no-op) and
+// the output is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too
+// bright (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'superquadrics';
 
@@ -267,7 +274,7 @@ export function start(hostCanvas, opts = {}) {
       }
     }
 
-    // the 4 checkerboard colors, sRGB -> linear.
+    // the 4 checkerboard colors, used raw (colour management off).
     const lc = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
     for (let t = 0; t < 4; t++) {
       _c.setRGB(curmat[t][0], curmat[t][1], curmat[t][2], THREE.SRGBColorSpace);

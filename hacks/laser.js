@@ -18,6 +18,8 @@
 // buffer and CLEAR + REDRAW every live beam each frame (the rotor idiom). The
 // pixels shown are identical to the C's lw-beam fan; see laser.md "Deviations".
 
+import { makeRandomColormapRGB } from './colormap.js';
+
 export const title = 'laser';
 
 export const info = {
@@ -32,17 +34,17 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/laser.xml so the config box maps 1:1,
   // except `delay` is a touch smoother than the stock 40000 us.
   const config = {
-    delay: 50000,   // microseconds between frames (--delay; xml default 40000)
+    delay: 40000,   // microseconds between frames (--delay; xml/stock 40000)
     count: 10,      // number of beams sharing the centre (--count)
     cycles: 200,    // frames a scene lives before it re-seeds (--cycles)
-    ncolors: 64,    // size of the rainbow palette (--ncolors)
+    ncolors: 64,    // size of the random bright colormap (--ncolors)
   };
 
   // live: true  -> the loop reads config every frame (applies instantly).
   // live: false -> the value sizes the beam array / palette, so a change
   //                re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Count', type: 'range', min: 1, max: 20, step: 1, default: 10, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'cycles', label: 'Duration', type: 'range', min: 0, max: 2000, step: 10, default: 200, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
@@ -64,7 +66,7 @@ export function start(canvas) {
   let sw;               // ring fill level (ramps up to lw)
   let so;               // ring write index
   let time;             // frames since the last re-seed
-  let palette;          // ncolors rainbow CSS strings, or null for mono (white)
+  let palette;          // ncolors random-bright CSS strings, or null for mono (white)
   let lasers;           // the live beams
 
   let dirty = true;     // repaint only after the scene advances
@@ -76,8 +78,11 @@ export function start(canvas) {
   function buildPalette() {
     const n = Math.max(2, Math.round(config.ncolors));
     if (n <= 2) { palette = null; return; }   // the C's mono path -> white beams
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 100%, 55%)`;
+    // xlockmore + BRIGHT_COLORS -> make_random_colormap(bright_p=true): each entry
+    // is an independent random bright hue (H 0-360, S 30-100%, V 66-100%), NOT a
+    // hue ramp -- so consecutive beams (COLORSTEP apart) are unrelated bright hues.
+    const cm = makeRandomColormapRGB(n, true);
+    palette = cm.map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // init_laser (minus the GC/alloc): pick the centre, trail length, substep
@@ -255,6 +260,11 @@ export function start(canvas) {
   // rAF lag-accumulator paced by config.delay (us): run one step() per delay,
   // banking leftover time so the sweep is the same at any refresh rate. Cap
   // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  // OVERHEAD: the live binary's *delay is a sleep FLOOR; its real frame is
+  // delay + per-frame compute. The -fps overlay read 20.0 fps at Load ~20 %
+  // (delay-bound) = 50000 us/frame = 40000 floor + 10000 compute, so the
+  // faithful per-frame pace is (delay + 10000)/1000 ms (matches the live ~20/s).
+  const OVERHEAD = 10000;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -265,8 +275,8 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
-    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
+    const delayMs = (config.delay + OVERHEAD) / 1000;
+    lag = Math.min(lag, Math.max(delayMs, 1) * MAX_CATCHUP_STEPS);
 
     let steps = 0;
     while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {

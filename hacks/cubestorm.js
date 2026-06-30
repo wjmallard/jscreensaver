@@ -56,6 +56,13 @@ import { makeYaRandom } from './yarandom.js';
 import { makeRotator } from './rotator.js';
 import { makeSmoothColormap } from './colormap.js';
 
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: colors are used raw (setRGB(..., SRGBColorSpace) becomes a no-op) and
+// the output is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too
+// bright (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
+
 export const title = 'cubestorm';
 
 export const info = {
@@ -211,7 +218,7 @@ export function start(hostCanvas, opts = {}) {
   //  simulation state -- subcubes (rotators), colors, history
   // ===================================================================
   let subcubes = [];              // [{ rot, ccolor }], one per cube (cube 0 = master)
-  let colors = [];                // NCOLORS linear THREE.Color (sRGB-authored)
+  let colors = [];                // NCOLORS THREE.Color (used raw -- colour management off)
   let clearP = false;             // "no vapor trails" mode
 
   // History as flat typed arrays (the .c's histcube[] -- position, rotation, color).
@@ -221,7 +228,7 @@ export function start(hostCanvas, opts = {}) {
   let histCount = 0;
   let histDirty = true;
 
-  // new_cube_colors(): 128-entry smooth colormap (sRGB -> linear), random initial index
+  // new_cube_colors(): 128-entry smooth colormap (used raw -- CM off), random initial index
   // per cube.
   function newCubeColors() {
     colors = makeSmoothColormap(rng, NCOLORS).map(

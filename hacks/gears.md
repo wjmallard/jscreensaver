@@ -62,11 +62,12 @@ are the shared faithful util ports.
   `color2 = color*0.85` for the inset) -- the `.c` swaps them with `glMaterialfv` mid-mesh.
   One three material can't do that, so the per-region diffuse is baked into a vertex-color
   attribute; specular/shininess stay uniform (matching the `.c`, which sets those once).
-- **Color management** mirrors `dangerball.js`: the random pastel (`0.5+frand(0.5)`) is
-  treated as sRGB and converted to linear for the vertex color, light `intensity = PI`
-  cancels three's `1/PI` diffuse. GL fixed-function vs three's lit pipeline cannot match
-  bit-for-bit (see the `yarandom.js` header); this is the same accepted mapping the
-  sibling geometry hacks use -- NOT a per-hack tune.
+- **Color management** is DISABLED (`THREE.ColorManagement.enabled = false`, module scope),
+  so the port matches GL's fixed pipeline: the random pastel (`0.5+frand(0.5)`) vertex color
+  is written RAW (the `setRGB(..., SRGBColorSpace)` becomes a no-op at fill time) and the
+  output is not sRGB-encoded; light `intensity = PI` still cancels three's `1/PI` diffuse.
+  This is the track-wide fix from the 2026 colour-management audit -- the sRGB-output
+  convention rendered shaded faces ~2.5x too bright vs the originals' raw framebuffer.
 
 ## Pacing
 

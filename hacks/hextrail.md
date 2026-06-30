@@ -63,12 +63,13 @@ per-vertex colors, no lights or normals. GL ran with `GL_DEPTH_TEST` and
 `GL_CULL_FACE` **off**, so the mesh is `DoubleSide` with `depthTest`/`depthWrite`
 off -- the triangles paint in submission order, exactly as the GL painter did.
 
-- **Color:** the `glColor` `[0,1]` values are sRGB display values. The .c's color
-  math (the `fade_ratio` and `border_ratio` scaling, the neighbor averaging) is
-  done in that sRGB space, and only the *final* per-vertex color is converted
-  sRGB->linear (the standard transfer function, matching `THREE.SRGBColorSpace`) so
-  three's sRGB output round-trips back to the original `glColor`. Palette entries
-  come straight from `colormap.js` (already the .c's `/65535`-style `[0,1]`).
+- **Color:** the `glColor` `[0,1]` values are written RAW to the framebuffer. three's
+  colour management is **disabled** (`ColorManagement.enabled = false`), matching GL's
+  fixed pipeline (no sRGB encoding), so the .c's color math (the `fade_ratio` /
+  `border_ratio` scaling, the neighbor averaging) runs in `glColor` space and that value
+  IS the output -- the `srgbToLinear()` helper is now an identity pass-through (it was a
+  real sRGB->linear conversion before the GL-fidelity color fix). Palette entries come
+  straight from `colormap.js` (already the .c's `/65535`-style `[0,1]`).
 - The geometry is rebuilt into preallocated `DynamicDraw` buffers sized for the
   grid (`grid_w*grid_h*90` verts: 6 edges x (6 border + 6 line + 3 cap)) only when
   a sim tick (or a live `thickness`/`count` change) dirties it.

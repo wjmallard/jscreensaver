@@ -83,10 +83,11 @@ small loop so a slow frame can't desync them.
 - **OPEN:** `OVERHEAD = 37500` is the track's family default, not a per-hack measurement
   (the GL originals are runtime-blocked here). If the spin/blink cadence reads off, pin it
   against jwz's demo video (youtube `MGwySGVQZ2M`); no eyeball-tuning otherwise.
-- **Colour space:** spinner colours are authored sRGB (`setRGB(r,g,b,SRGBColorSpace)`) and
-  the blink is white, with three's default sRGB output -- so the alpha and the brightening
-  blends happen on sRGB-encoded values in the 8-bit drawbuffer, matching the original's
-  naive (colour-management-free) sRGB blending rather than blending in linear.
+- **Colour space:** three's colour management is **disabled** (`ColorManagement.enabled =
+  false`), matching GL's fixed pipeline (no sRGB encoding), so spinner colours (`setRGB`,
+  now a no-op) and the white blink are written RAW to the 8-bit drawbuffer -- so the alpha
+  and the brightening blends happen on the raw `glColor` values, matching the original's
+  naive (colour-management-free) blending rather than blending in linear.
 
 ## Knobs / omissions
 

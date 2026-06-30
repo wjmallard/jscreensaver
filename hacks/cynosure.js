@@ -20,6 +20,8 @@
 // canvas itself is the persistent pile, nothing is read back). See [[greynetic]]
 // for the rect-stamp idiom and [[squiral]] for the shared module skeleton.
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'cynosure';
 
 export const info = {
@@ -34,9 +36,10 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/cynosure.xml. The stock XML exposes
   // delay + ncolors + iterations; shadowWidth / elevation / sway / tweak /
   // gridSize come from the C's cynosure_defaults (same units), surfaced here so
-  // the look is tunable. `delay` is a touch calmer than the stock 500000 µs.
+  // the look is tunable. `delay` is the stock 500000 µs — a paint-and-hold hack
+  // (~0.5 s per layer), so the per-frame compute is negligible (no OVERHEAD term).
   const config = {
-    delay: 600000,      // µs between layers (--delay); one paint() per delay
+    delay: 500000,      // µs between layers (--delay); one paint() per delay
     ncolors: 128,       // size of the smooth colour ramp (--ncolors)
     iterations: 100,    // layers painted before the screen clears (--iterations)
     shadowWidth: 2,     // bg-edge inset under each rectangle (C: shadowWidth)
@@ -50,7 +53,7 @@ export function start(canvas) {
   // live: false -> the value sizes the palette/grid, so a change re-runs init()
   //                via reinit() (which also clears the canvas).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 1000000, step: 10000, default: 600000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 1000000, step: 10000, default: 500000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'iterations', label: 'Duration', type: 'range', min: 2, max: 200, step: 1, default: 100, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'gridSize', label: 'Grid size', type: 'range', min: 2, max: 30, step: 1, default: 12, lowLabel: 'coarse', highLabel: 'fine', live: true },
     { key: 'tweak', label: 'Color variance', type: 'range', min: 1, max: 60, step: 1, default: 20, lowLabel: 'subtle', highLabel: 'wild', live: true },
@@ -82,18 +85,27 @@ export function start(canvas) {
     return Math.floor(Math.random() * n);
   }
 
-  // Build a smooth rainbow ramp (the canvas analogue of make_smooth_colormap):
-  // ncolors hues evenly around the wheel. shadowColors is the same hue, darker
-  // and translucent — matching the jwxyz dropshadow path (0x77 alpha over a
-  // value-darkened colour), so stacked shadows tint what shows through.
+  // make_smooth_colormap (via colormap.js): pick 2-5 random HSV anchors and
+  // interpolate them into a closed loop of `ncolors` entries — usually
+  // muted/pastel, re-rolled every run, NOT a fixed vivid rainbow. shadowColors
+  // is the C's NON-jwxyz dropshadow path: the same colour with value *= 0.4
+  // (== rgb * 0.4 for fixed h,s), opaque — which is what the live XScreenSaver
+  // binary draws on X11 (HAVE_JWXYZ undefined). n <= 2 takes the C's mono path
+  // (ncolors <= 2 -> mono_p): white fills with black shadows/edges.
   function buildPalette() {
     const n = Math.max(2, Math.round(config.ncolors));
     colors = new Array(n);
     shadowColors = new Array(n);
+    if (n <= 2) {
+      colors.fill('#fff');
+      shadowColors.fill('#000');
+      return;
+    }
+    const cm = makeSmoothColormapRGB(n);
     for (let i = 0; i < n; i++) {
-      const hue = (i * 360 / n) % 360;
-      colors[i] = `hsl(${hue.toFixed(1)}, 85%, 55%)`;
-      shadowColors[i] = `hsla(${hue.toFixed(1)}, 85%, 18%, 0.466)`;
+      const [r, g, b] = cm[i];
+      colors[i] = `rgb(${r}, ${g}, ${b})`;
+      shadowColors[i] = `rgb(${Math.round(r * 0.4)}, ${Math.round(g * 0.4)}, ${Math.round(b * 0.4)})`;
     }
   }
 

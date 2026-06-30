@@ -36,7 +36,7 @@ export function start(canvas) {
   // 1:1 with the original. Rotation speeds are in the C's units (0.001 rad per
   // step, applied via ANGLE_SCALE below); observer-z is the viewer distance.
   const config = {
-    delay: 15000,     // \u00B5s between steps (--delay)
+    delay: 10000,     // \u00B5s between steps (--delay, xml/stock 10000)
     z: 3.0,           // observer-z: viewer distance; bigger = flatter (--observer-z)
     xy: 3,            // rotation speed in the xy plane (--xy)
     xz: 5,            // rotation speed in the xz plane (--xz)
@@ -47,7 +47,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'z', label: 'Zoom', type: 'range', min: 1.125, max: 10.0, step: 0.125, default: 3.0, lowLabel: 'near', highLabel: 'far', live: true },
     { key: 'xy', label: 'XY rotation', type: 'range', min: 0, max: 20, step: 1, default: 3, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'xz', label: 'XZ rotation', type: 'range', min: 0, max: 20, step: 1, default: 5, lowLabel: 'slow', highLabel: 'fast', live: true },
@@ -274,10 +274,15 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator loop paced by config.delay (µs in the xml; divided by
-  // 1000 for the ms rAF clock), with the same catch-up cap as the other ports
-  // so a backgrounded tab doesn't fire a burst of steps on refocus. Each step()
-  // does a full clear+repaint, so we never draw more than we step.
+  // rAF lag-accumulator loop: one step() per config.delay (µs in the xml),
+  // banking leftover time so the pace is the same at any refresh rate; cap
+  // catch-up so a backgrounded tab can't burst. Each step() does a full
+  // clear+repaint, so we never draw more than we step.
+  // OVERHEAD: the live binary's *delay is a sleep FLOOR; its real frame is
+  // delay + per-step compute. The -fps overlay read 56.7 / 60.4 fps at Load
+  // 43.3 / 39.6 % (delay-bound) = ~17097 µs/frame = 10000 floor + 7097 compute,
+  // so the faithful per-step pace is (delay + 7097)/1000 ms (matches live ~58/s).
+  const OVERHEAD = 7097;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -288,8 +293,8 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
-    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
+    const delayMs = (config.delay + OVERHEAD) / 1000;
+    lag = Math.min(lag, Math.max(delayMs, 1) * MAX_CATCHUP_STEPS);
 
     let steps = 0;
     while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {

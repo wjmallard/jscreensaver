@@ -1,7 +1,7 @@
 # laser
 
 Spinning lasers: a shared origin shoots a handful of radiating beams whose far
-ends sweep around the screen's perimeter, each trailing a short rainbow fan.
+ends sweep around the screen's perimeter, each trailing a short bright-coloured fan.
 "Moving radiating lines, that look vaguely like scanning laser beams. (Frankie
 say relax.)"
 
@@ -29,13 +29,40 @@ once the ring is full, erases the oldest beam before drawing the newest. After
 `cycles` frames the whole scene re-seeds: a new origin, a new `lw`/`lr`, and fresh
 per-beam border / direction / speed / colour.
 
-Colours: a vivid `hsl()` rainbow of `ncolors` entries; consecutive beams step
-`COLORSTEP` (2) apart from a random start, so a scene is a tight band of hues. With
+Colours are an `ncolors`-entry bright random colormap (see **Palette**); consecutive
+beams take `MI_PIXEL` from a random start, stepping `COLORSTEP` (2) per beam. With
 `ncolors <= 2` the C's mono path draws white beams.
 
 Speed is `(rand(2..16) * width / 1000) + 1` in device pixels, so it scales with
 resolution automatically (no extra `S` factor needed); `cx/cy` and the line width
 are scaled for retina the usual way.
+
+## Palette — xlockmore BRIGHT_COLORS (faithful)
+
+laser is an xlockmore hack and `#define`s **`BRIGHT_COLORS`**, so `xlockmore.c` builds
+its colormap with `make_random_colormap(bright_p = True)` — `ncolors` colours of
+**independent random bright HSV** (hue 0–360, saturation 30–100 %, value 66–100 %),
+*not* an ordered hue ramp. The port builds it with the shared
+**`makeRandomColormapRGB(ncolors, true)`** (`colormap.js`, a faithful port of
+`utils/colors.c`) mapped to `rgb()` strings; `ncolors <= 2` falls back to white (the
+C's `MI_WHITE_PIXEL` mono path). Each beam takes `MI_PIXEL(c)` from a random start,
+stepping `COLORSTEP` (2) per beam — and because the entries are independent random
+hues, the beams come out as a **wide spread of distinct bright colours** (verified
+against the live binary), not a tight band. *(The earlier port used a fixed vivid
+`hsl(h,100%,55%)` rainbow ramp — that was the systemic palette bug: the ramp +
+`COLORSTEP` produced a tight band of adjacent hues, whereas the real palette scatters
+bright hues across the wheel.)*
+
+## Timing — stock delay + measured OVERHEAD
+
+The live `-fps` overlay reads **20.0 fps at Load ~20 %** (delay-bound, well under
+100 %): a real frame of `1e6 / 20 = 50000 µs = 40000 µs` sleep-floor `+ 10000 µs`
+per-frame compute. So `config.delay` is the **stock 40000 µs** (the xml / `DEFAULTS`
+value, slider 1:1) and the loop paces each frame at `(config.delay + OVERHEAD) / 1000`
+ms with **`OVERHEAD = 10000`**, giving the live ~20 frames/s. *(The earlier port used
+a by-eye `delay = 50000` with no overhead; it happened to land on the same ~50000 µs
+effective frame, but it mis-mapped the slider — the stock 40000 default now reads
+correctly off the xml.)*
 
 ## Deviations from the C
 
@@ -50,8 +77,8 @@ are scaled for retina the usual way.
   frame already shows a complete fan; the C builds the fan up over its first `lw`
   substeps. Cosmetic.
 - **Pacing.** One `step()` = one C frame (`lr` substeps + the re-seed timer), paced
-  by `config.delay`. Default `delay` is 50000 us (stock 40000) for a slightly
-  smoother sweep cadence. `cycles` counts frames exactly as the C does.
+  by `config.delay` (stock 40000 µs) + a measured `OVERHEAD` (see **Timing**), not a
+  by-eye value. `cycles` counts frames exactly as the C does.
 - **Encoding.** The micro sign in the "Frame rate" unit is the `µ` escape, not
   a literal byte (ASCII-safe source rule).
 - **Params.** Exposes exactly the xml's tunables (delay, count, cycles, ncolors).

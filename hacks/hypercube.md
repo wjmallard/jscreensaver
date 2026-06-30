@@ -36,8 +36,14 @@ Verified with a headless numeric harness (the core rotation+projection, no canva
 - **On-screen and centred.** Projected coords stay well inside the canvas (`x in [531, 1390]` of 1920, `y in [112, 971]` of 1080) for the whole run — the `unitScale` normalisation keeps the figure a bounded fraction of the window at any zoom, so it never flies off-screen.
 - **No freeze / no over-draw.** There is no closure or termination condition to mis-fire — every step rotates, projects all 16 vertices, and repaints all 32 edges unconditionally; the rAF lag-accumulator caps catch-up at `MAX_CATCHUP_STEPS = 8`. `pause()` then `resume()` resets `lastTime = 0` so there is no catch-up burst; `reinit()` clears to black and re-seeds the orientation for a clean fresh screen. Setting every rotation slider to 0 freezes the (still-correct) figure rather than breaking it.
 
+## Palette
+Native screenhack (`#include "screenhack.h"`) — **no colormap**, so no `colormap.js`. The eight edge colours are the C's fixed `color0..color7` resources from `hypercube_defaults[]`, copied verbatim: magenta `#FF00FF`, yellow `#FFFF00`, orange `#FF9300`, pink `#FF0093`, green `#00FF00` (the X11 `green`, deliberately not CSS `#008000`), periwinkle `#8080FF`, cyan-blue `#00D0FF`, cyan-green `#00FFD0`. Each of the 32 edges carries one of these via the `line_table` `li_color` field (one hue per face/cube), so the colour encodes the tesseract's structure. They are vivid by the author's design — **not** an invented `hsl()` rainbow — and the port has zero `hsl()`. Verified against the live binary: same eight hues, same per-face grouping.
+
+## Timing
+Stock `*delay 10000` µs (the C default and the xml). The live `-fps` overlay read **56.7 fps @ Load 43.3 %** and **60.4 fps @ Load 39.6 %** across two runs — well under 100 % Load, so the hack is delay-bound (the 32-line draw is nearly free). Mean frame ≈ 17097 µs, so `OVERHEAD = round(1e6/58.5) - 10000 ≈ 7097` µs, and the loop paces on `(config.delay + OVERHEAD)/1000` ms. The port previously used a by-eye `delay 15000` with no overhead (≈ 67 steps/s, too fast); after the fix it measures **58.5 steps/s**, matching the live ~58/s. (`OVERHEAD >= 0`, as required.)
+
 ## Config
 Ranges mirror `hacks/config/hypercube.xml`:
-- **Frame rate** — `delay`, 0..100000 µs, default 15000, invert (drag right = faster). Live.
+- **Frame rate** — `delay`, 0..100000 µs, default 10000 (the C/xml stock; was a by-eye 15000), invert (drag right = faster); paced at `(delay + OVERHEAD)/1000` ms — see Timing. Live.
 - **Zoom** — `observer-z`, 1.125..10.0, default 3.0; near = stronger perspective, far = flatter/orthographic. Live.
 - **XY / XZ / YZ / XW / YW / ZW rotation** — the six 4D plane speeds, 0..20 each (`· 0.001` rad/step), defaults `xy=3, xz=5, yw=10` (the rest 0), exactly the C's. Live.

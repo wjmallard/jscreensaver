@@ -2046,10 +2046,15 @@ export function start(canvas) {
     clear();
   }
 
-  // rAF lag-accumulator loop paced by config.delay (µs in the xml; divided by
-  // 1000 for the ms rAF clock), with the same catch-up cap as scooter so a
-  // backgrounded tab doesn't fire a burst of steps on refocus. Each step() does
-  // a full clear+repaint, so we never draw more than we step.
+  // rAF lag-accumulator loop paced by config.delay + a measured framework
+  // OVERHEAD. The xscreensaver *delay (20000 µs) is a sleep FLOOR; the real
+  // per-frame cost is delay + compute, so effective fps is lower than
+  // 1e6/delay. The live binary's -fps overlay reads FPS 33.0 at Load 34%
+  // (delay-bound), so OVERHEAD = round(1e6/33.0) - 20000 = 10303 µs. (Without
+  // it the port stepped at ~50 fps — ~1.5x too fast.) Same catch-up cap as
+  // scooter so a backgrounded tab doesn't fire a burst of steps on refocus;
+  // each step() does a full clear+repaint, so we never draw more than we step.
+  const OVERHEAD = 10303;   // µs; calibrated against the live -fps overlay
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -2060,7 +2065,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

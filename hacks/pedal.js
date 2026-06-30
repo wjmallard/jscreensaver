@@ -36,17 +36,17 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/pedal.xml (1:1 with the original).
   // The xml's `delay` slider is the seconds-long hold (labelled "Duration",
   // 1s..1min); `maxlines` (labelled "Lines") caps the integer parameter d and
-  // hence how dense/petally a figure can get.
+  // hence how dense/petally a figure can get. The original exposes NO colour
+  // knob -- it rolls ONE fully-saturated random hue per figure (see newColor) --
+  // so neither do we.
   const config = {
     linger: 5,         // seconds to hold the finished figure before erasing (--delay)
     maxlines: 1000,    // upper bound on d, the figure's period (--maxlines)
-    ncolors: 64,       // hue-cycle size (not in stock UI; for parity with the gallery)
   };
 
   const params = [
     { key: 'linger', label: 'Duration', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
     { key: 'maxlines', label: 'Lines', type: 'range', min: 100, max: 5000, step: 100, default: 1000, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // The C's MINLINES: a figure with fewer lines than this "must be ugly and we
@@ -62,24 +62,47 @@ export function start(canvas) {
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
   let hWidth, hHeight;       // half extents (figure centre + radius)
-  let palette;               // ncolors smooth-rainbow CSS strings
 
   // Current figure state (mirrors the C's struct fields).
   let drawstate;             // 'NEW_FIGURE' | 'LINGER' | 'CLEAR'
   let fillStyle;             // current figure's colour
   let pts;                   // flat [x0,y0, x1,y1, ...] point list for the polygon
 
-  function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    // Vivid rainbow; white when ncolors <= 1 (the C's mono path).
-    for (let k = 0; k < n; k++) palette[k] = n > 1 ? `hsl(${k * 360 / n}, 100%, 60%)` : '#fff';
+  // hsv_to_rgb (utils/hsv.c) -> a CSS "rgb(r,g,b)" string, with the X server's
+  // 16-bit -> 8-bit downsample folded in (matches colormap.js's quantization).
+  // Same helper as helix.js/xspirograph.js (the curve-family colour path).
+  // h in degrees; s, v in [0,1].
+  function hsvToRgb255(h, s, v) {
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    if (v < 0) v = 0; else if (v > 1) v = 1;
+    const H = (Math.trunc(h) % 360) / 60;
+    const i = Math.trunc(H);
+    const f = H - i;
+    const p1 = v * (1 - s);
+    const p2 = v * (1 - s * f);
+    const p3 = v * (1 - s * (1 - f));
+    let r, g, b;
+    if      (i === 0) { r = v;  g = p3; b = p1; }
+    else if (i === 1) { r = p2; g = v;  b = p1; }
+    else if (i === 2) { r = p1; g = v;  b = p3; }
+    else if (i === 3) { r = p1; g = p2; b = v;  }
+    else if (i === 4) { r = p3; g = p1; b = v;  }
+    else              { r = v;  g = p1; b = p2; }
+    const q = (c) => {
+      const t = Math.trunc(c * 65535) / 65536;
+      return t <= 0 ? 0 : t >= 1 ? 255 : Math.floor(t * 256);
+    };
+    return 'rgb(' + q(r) + ',' + q(g) + ',' + q(b) + ')';
   }
 
-  // The C rolls a full random hue per figure (hsv_to_rgb(random()%360,1,1)); we
-  // keep the gallery's vivid hsl() rainbow — a random index into the palette.
+  // The C's per-figure colour (added by jwz): hsv_to_rgb(random()%360, 1.0, 1.0)
+  // -- ONE fresh, fully-saturated, fully-bright random hue per figure. NOT a
+  // fixed palette and NOT washed: s = v = 1 means each figure is a pure vivid hue
+  // (HSL lightness 50%, min RGB channel 0), matching the live binary's measured
+  // figure colour (e.g. (0,55,255): s=1, v=1). The C only skips this under X's
+  // mono visual (`if (! mono_p)`), which the gallery never has.
   function newColor() {
-    fillStyle = palette[Math.floor(Math.random() * palette.length)];
+    fillStyle = hsvToRgb255(Math.floor(Math.random() * 360), 1, 1);   // random() % 360
   }
 
   // Euclid's GCD on positive ints — the C's gcd() (its inputs d, b are always
@@ -209,7 +232,6 @@ export function start(canvas) {
 
   // Begin a fresh sequence with the current config.
   function reset() {
-    buildPalette();
     drawstate = 'NEW_FIGURE';
     clearScreen();
   }

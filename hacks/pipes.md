@@ -81,7 +81,8 @@ Transcribed from `pipes.c`:
 
 ## Notes
 
-- Color management + pacing as in gears.js / dangerball (`effFps = 1e6/(delay+OVERHEAD)`,
+- Color management disabled (`THREE.ColorManagement.enabled = false` -- GL-faithful raw
+  output, as in gears.js / dangerball); pacing as in gears.js / dangerball (`effFps = 1e6/(delay+OVERHEAD)`,
   `OVERHEAD = 37500`). **OPEN:** the full reveal is slow -- size 500 x cycles 5 = up to
   ~2500 segments at ~21fps ≈ 2 min to build, then fade + rebuild. Faithful (1 segment/
   frame), but pipes' low default delay (10000) implies the original ran at a higher

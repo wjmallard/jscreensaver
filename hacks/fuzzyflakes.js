@@ -19,8 +19,10 @@
 // every flake shares the same line width and the two colours, so all of a
 // layer's arms are accumulated into two Path2Ds (border pass, then fore pass) and
 // stroked once each — 2 strokes per layer instead of one per arm. lineCap
-// 'round' gives the fuzzy rounded arm tips and central disc. See [[truchet]] for
-// the Path2D bucketing idiom and [[squiral]] for the shared module skeleton.
+// 'square' matches the C's CapProjecting (square arm tips); since every arm
+// shares the flake centre, the overlapping inner projections fill a central
+// core. See [[truchet]] for the Path2D bucketing idiom and [[squiral]] for the
+// shared module skeleton.
 
 export const title = 'fuzzyflakes';
 
@@ -76,31 +78,38 @@ export function start(canvas) {
     { key: 'randomColors', label: 'Random colors', type: 'checkbox', default: false, live: false },
   ];
 
-  // Base colour presets, transcribed from the xml's <select id="color"> options.
-  // The C's colour helper takes the chosen background colour's (hue, sat, lig)
-  // and builds the two flake colours at the same sat/lig but +120 deg and +240
-  // deg hue (an equidistant triad). "Pink" is the C default #efbea5 -> a soft
-  // peach (high lightness => the muted pastel look); the explicit hues are pure
-  // primaries (sat 100, lig 50 => vivid). h/s/l drive the triad below.
+  // Base colour presets, the exact base colours from the xml's <select
+  // id="color"> options (Pink = the C default #efbea5; the rest are the
+  // arg-set hexes). The background is painted in the base colour verbatim and
+  // the two flake colours are derived from it by flakeColors() below — NOT a
+  // tidy hue rotation; see that function.
   const COLOR_PRESETS = {
-    red: { h: 0, s: 100, l: 50 },
-    pink: { h: 20, s: 70, l: 79 },
-    yellow: { h: 60, s: 100, l: 50 },
-    green: { h: 120, s: 100, l: 50 },
-    cyan: { h: 180, s: 100, l: 50 },
-    blue: { h: 240, s: 100, l: 50 },
-    magenta: { h: 300, s: 100, l: 50 },
+    red: 0xff0000,
+    pink: 0xefbea5,
+    yellow: 0xffff00,
+    green: 0x00ff00,
+    cyan: 0x00ffff,
+    blue: 0x0000ff,
+    magenta: 0xff00ff,
   };
 
   const TAU = Math.PI * 2;
   const DEG = Math.PI / 180;
 
+  // Per-step compute overhead beyond the *delay sleep floor, measured off the
+  // live binary's -fps overlay. A clean SOLO re-measure (no concurrent load)
+  // reads ~48-49 fps at ~50% Load (sleep floor holding at 10000 us), below the
+  // earlier contended/vsync-influenced 54.1, so OVERHEAD = round(1e6/49) - 10000
+  // ~= 10400. The loop paces on (config.delay + OVERHEAD) so the field falls at
+  // the author's rate, not the display refresh rate.
+  const OVERHEAD = 10400;  // microseconds
+
   let S = 1;            // devicePixelRatio
   let cw, ch;           // canvas backing-store size (device px)
   let layers;           // array of layers; each is an array of flake objects
-  let bgColor;          // background fill (the chosen base colour)
-  let foreColor;        // arm core colour (base hue + 120 deg)
-  let bordColor;        // arm outline colour (base hue + 240 deg)
+  let bgColor;          // background fill (the chosen base colour, verbatim)
+  let foreColor;        // arm core colour (FuzzyFlakesColorHelper "fore")
+  let bordColor;        // arm outline colour (FuzzyFlakesColorHelper "bord")
 
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
@@ -108,21 +117,79 @@ export function start(canvas) {
 
   const irand = (n) => Math.floor(Math.random() * n);
 
-  // Build the background + two flake colours from the chosen base hue (or a
-  // random one). All three share saturation/lightness; the flakes sit +120 deg
-  // and +240 deg around the wheel, matching FuzzyFlakesColorHelper's triad.
+  // Exact port of fuzzyflakes.c's FuzzyFlakesColorHelper. Decompose the base
+  // RGB to HSL, then rebuild the two flake colours with the C's OWN (peculiar,
+  // non-standard) reconstruction: tempR=(H+1)/3, tempG=H, tempB=(H-1)/3 fed
+  // through the usual HSL piecewise. This is NOT a clean +120/+240 hue rotation
+  // — e.g. base #efbea5 yields a pale-yellow "fore" and a dusty-rose "bord",
+  // matching the live binary (verified to within +/-1 per channel). Returns
+  // null when the base is too desaturated (Sat < 0.03), the C's failure case.
+  function flakeColors(r, g, b) {
+    const fR = r / 255, fG = g / 255, fB = b / 255;
+    let Max = 0, Min = 0;
+    if (fR >= fG && fR >= fB) Max = fR;
+    if (fG >= fR && fG >= fB) Max = fG;
+    if (fB >= fR && fB >= fG) Max = fB;
+    if (fR <= fG && fR <= fB) Min = fR;
+    if (fG <= fR && fG <= fB) Min = fG;
+    if (fB <= fR && fB <= fG) Min = fB;
+    const Lig = (Max + Min) / 2;
+    let Sat;
+    if (Max === Min) Sat = 0;
+    else if (Lig < 0.5) Sat = (Max - Min) / (Max + Min);
+    else Sat = (Max - Min) / (2 - Max - Min);
+    if (Sat < 0.03) return null;
+    let Hue;
+    if (fR === Max) Hue = (fG - fB) / (Max - Min);
+    else if (fG === Max) Hue = 2 + (fB - fR) / (Max - Min);
+    else Hue = 4 + (fR - fG) / (Max - Min);
+    Hue /= 6;
+    let Hue0 = Hue + 1 / 3; if (Hue0 > 1) Hue0 -= 1;
+    let Hue1 = Hue0 + 1 / 3; if (Hue1 > 1) Hue1 -= 1;
+    const f2 = Lig < 0.5 ? Lig * (1 + Sat) : (Lig + Sat) - (Lig * Sat);
+    const f1 = (2 * Lig) - f2;
+    // One HSL channel from a wrapped temp (matches the C's per-channel block).
+    const chan = (t) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (6 * t < 1) return f1 + (f2 - f1) * 6 * t;
+      if (2 * t < 1) return f2;
+      if (3 * t < 2) return f1 + (f2 - f1) * (2 / 3 - t) * 6;
+      return f1;
+    };
+    // The C truncates (float -> unsigned int) before the hex round-trip.
+    const toRGB = (h) => {
+      const cr = Math.floor(chan((h + 1) / 3) * 255);
+      const cg = Math.floor(chan(h) * 255);
+      const cb = Math.floor(chan((h - 1) / 3) * 255);
+      return `rgb(${cr}, ${cg}, ${cb})`;
+    };
+    return { fore: toRGB(Hue0), bord: toRGB(Hue1) };
+  }
+
+  // Pick the base colour (a preset hex, or a fully random RGB like the C) and
+  // derive the flake colours from it. The C rolls a random RGB and retries the
+  // helper when it returns failure (Sat < 0.03); we do the same.
   function buildColors() {
-    let base;
+    let r, g, b, fb;
     if (config.randomColors) {
-      // A pleasant random base (vivid but not too dark, so the triad stays
-      // visible) — the C rolls a fully random RGB, which we keep in a calm band.
-      base = { h: irand(360), s: 55 + irand(35), l: 50 + irand(25) };
+      do {
+        r = irand(256); g = irand(256); b = irand(256);
+        fb = flakeColors(r, g, b);
+      } while (!fb);
     } else {
-      base = COLOR_PRESETS[config.color] || COLOR_PRESETS.pink;
+      const hex = COLOR_PRESETS[config.color] != null ? COLOR_PRESETS[config.color] : COLOR_PRESETS.pink;
+      r = (hex >> 16) & 255; g = (hex >> 8) & 255; b = hex & 255;
+      fb = flakeColors(r, g, b);
+      if (!fb) {   // a too-grey base -> the C reverts to a random colour
+        do {
+          r = irand(256); g = irand(256); b = irand(256);
+          fb = flakeColors(r, g, b);
+        } while (!fb);
+      }
     }
-    bgColor = `hsl(${base.h}, ${base.s}%, ${base.l}%)`;
-    foreColor = `hsl(${(base.h + 120) % 360}, ${base.s}%, ${base.l}%)`;
-    bordColor = `hsl(${(base.h + 240) % 360}, ${base.s}%, ${base.l}%)`;
+    bgColor = `rgb(${r}, ${g}, ${b})`;
+    foreColor = fb.fore;
+    bordColor = fb.bord;
   }
 
   // Seed a full, evenly-spread field so frame 1 already looks right. Per-layer
@@ -196,8 +263,8 @@ export function start(canvas) {
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, cw, ch);
 
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.lineCap = 'square';   // C's CapProjecting (square arm tips)
+    ctx.lineJoin = 'miter';   // C's JoinMiter (no joins occur on 2-point arms)
 
     const arms = clamp(Math.round(config.arms), 1, 100);
     const thickness = config.thickness;
@@ -273,7 +340,9 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // Add OVERHEAD so the step rate matches the live binary's effective fps
+    // (delay is a sleep floor, not the whole frame cost).
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

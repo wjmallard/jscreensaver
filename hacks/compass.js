@@ -319,9 +319,19 @@ export function start(canvas) {
   }
 
   // Fixed-timestep lag accumulator (squiral/rotor style): one step() per
-  // config.delay microseconds, banked so the pace is the same at any refresh
-  // rate, with a catch-up cap so a backgrounded tab can't burst. Redraw once per
-  // frame, only when a step actually advanced the discs.
+  // (config.delay + OVERHEAD) microseconds, banked so the pace is the same at any
+  // refresh rate, with a catch-up cap so a backgrounded tab can't burst. Redraw
+  // once per frame, only when a step actually advanced the discs.
+  //
+  // OVERHEAD = the live binary's per-frame compute slice. The xml *delay is a
+  // sleep FLOOR, so the effective fps is 1e6/(delay+overhead), NOT 1e6/delay.
+  // Measured off the live -fps overlay. A clean SOLO re-measure (no concurrent
+  // load) reads a tight ~35 fps cluster (34.4/34.6/35.9) at Load ~30%, sleep
+  // floor holding at 20000 us, so OVERHEAD = round(1e6/35.0) - 20000 = 8571.
+  // (An earlier batch reading of 38.9 fps was a contended/EMA over-pick; the
+  // clean rate is lower, i.e. a touch more per-frame compute.) Without it the
+  // discs precessed at ~50/s instead of the live binary's ~35/s. See compass.md.
+  const OVERHEAD = 8571;          // microseconds (measured off -fps, not by-eye)
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -332,7 +342,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

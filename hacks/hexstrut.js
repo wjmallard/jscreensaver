@@ -33,7 +33,7 @@
 //     lasting effect is the colour shift); when a cell's delay counts down to 0 it
 //     kicks its idle neighbours into the same-signed rotation -> an outward wave.
 //   * the per-cell colour = a 64-entry make_smooth_colormap entry, BRIGHTENED
-//     (c*0.75 + 0.25), then authored sRGB->linear.
+//     (c*0.75 + 0.25), used raw (colour management off).
 //   * draw modelview: gluLookAt(0,0,30) * portrait-fit S(s) * T(wander) * trackball
 //     tilt * Rz(roll*360) * S(30); gluPerspective(30). The "let's tilt the scene"
 //     fixed initial trackball orientation (trackball(0,0,x,y), x,y = -0.4+frand(0.8))
@@ -53,6 +53,14 @@ import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
 import { makeRotator } from './rotator.js';
 import { makeSmoothColormap } from './colormap.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE (before start() fills colors) so the
+// setRGB(..., SRGBColorSpace) calls become no-ops and store RAW glColor, and the output
+// is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too bright
+// (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'hexstrut';
 
@@ -113,14 +121,14 @@ export function start(hostCanvas, opts = {}) {
   const tiltX = -0.4 + rng.frand(0.8);
   const tiltY = -0.4 + rng.frand(0.8);
 
-  // 64-entry smooth colormap, brightened then sRGB->linear, as a per-index LUT.
+  // 64-entry smooth colormap, brightened (used raw -- colour management off), as a per-index LUT.
   const _c = new THREE.Color();
   let lut = new Float32Array(NCOLORS * 3);
   function rebuildLut() {
     const cm = makeSmoothColormap(rng, NCOLORS);
     for (let i = 0; i < NCOLORS; i++) {
-      // draw_triangles "Brighter": color = color*0.75 + 0.25 (in the sRGB the .c
-      // writes straight to the framebuffer), then author sRGB->linear.
+      // draw_triangles "Brighter": color = color*0.75 + 0.25 (the glColor space the .c
+      // writes straight to the framebuffer); used raw (colour management off).
       _c.setRGB(cm[i].r * 0.75 + 0.25, cm[i].g * 0.75 + 0.25, cm[i].b * 0.75 + 0.25, THREE.SRGBColorSpace);
       lut[i * 3] = _c.r; lut[i * 3 + 1] = _c.g; lut[i * 3 + 2] = _c.b;
     }

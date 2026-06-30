@@ -36,7 +36,8 @@ Transcribed from `cubestorm.c`:
   `T*R*S(4) == compose(pos, eulerXYZ, 4)` and `S(4)` commutes with `R`). The rotations
   `glRotatef(rx*360,X) ... == three Euler 'XYZ'`.
 - **Camera/lighting:** `gluPerspective(30, w/h, 1, 100)` + `gluLookAt(0,0,45, 0, +y)`;
-  128-entry `make_smooth_colormap` (sRGB->linear); one white directional light from
+  128-entry `make_smooth_colormap` (used raw -- three's colour management is disabled,
+  GL-faithful output); one white directional light from
   `(1,1,1)` `intensity = PI`; ambient floor = GL default global `0.2` * the material
   ambient (= the per-cube colour, since the material is `GL_AMBIENT_AND_DIFFUSE`) ->
   `AmbientLight(white, 0.2*PI)`.

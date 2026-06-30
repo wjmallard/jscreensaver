@@ -15,11 +15,18 @@
 // Rendering: SPARSE vector. Each atom's symmetry copies are convex polygons
 // filled on the canvas — one Path2D + one ctx.fill() per atom, so fills bucket
 // by colour (the braid.js / penrose.js idiom). The whole field is cleared and
-// redrawn every frame (matching crystal.c's HAVE_JWXYZ double-buffered path,
-// which clears each frame instead of using X11's GXxor erase-redraw).
+// redrawn every frame, as crystal.c does under HAVE_JWXYZ. (The C also XOR-mixes
+// overlapping polygons within a frame, via GXxor; this plain-fill port does not
+// reproduce that overlap mixing — see the .md.)
 //
 // See [[penrose]] (5-D integer wallpaper tiling) and [[truchet]] (square-cell
 // tiling) for the closest technique twins.
+
+import {
+  makeRandomColormapRGB,
+  makeSmoothColormapRGB,
+  makeUniformColormapRGB,
+} from './colormap.js';
 
 export const title = 'crystal';
 
@@ -32,11 +39,11 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/crystal.xml (1:1 with the original),
-  // except `delay` is tuned to ~33 ms (smoother drift than the stock 60 ms) and
-  // `cycles` restores xlockmore's periodic regeneration (see the .md).
+  // Defaults/ranges mirror hacks/crystal.xml (1:1 with the original); `delay` is
+  // the STOCK value and the loop adds a measured OVERHEAD (see the .md Timing
+  // section). `cycles` restores xlockmore's periodic regeneration (see the .md).
   const config = {
-    delay: 50000,    // microseconds between steps (--delay, xml 60000)
+    delay: 60000,    // microseconds between steps (--delay, xml/C default 60000)
     ncolors: 100,    // size of the hue palette (--ncolors)
     count: 500,      // max number of on-screen objects (--count, xml -500)
     nx: 3,           // max number of unit cells across (--nx, xml -3)
@@ -53,7 +60,7 @@ export function start(canvas) {
   // live: false -> the value sizes the lattice / colours, so a change re-runs
   //                init() via reinit() (a clean black canvas + a fresh crystal).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 60000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 100, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'count', label: 'Max objects', type: 'range', min: 1, max: 1000, step: 1, default: 500, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'nx', label: 'Horizontal symmetries', type: 'range', min: 1, max: 8, step: 1, default: 3, live: false },
@@ -175,7 +182,7 @@ export function start(canvas) {
   let num_atom;               // number of motif atoms
   let atoms;                  // the atoms
   let ncolors;                // palette size
-  let palette;                // hsl strings
+  let palette;                // per-run colormap.js palette (rgb() strings)
   let gridPixel;              // colour index for the cell/grid outline
   let inx, iny;               // which single cell to outline (cell mode)
   let direction, colorPhase;  // colour-cycling state
@@ -366,10 +373,27 @@ export function start(canvas) {
   }
 
   // ---- Colours -------------------------------------------------------------
+  // crystal.c builds its OWN colormap each init (MI_IS_INSTALL is hard-wired
+  // True on xscreensaver and ncolors=100 > 2, so the install branch always
+  // runs), picking among three schemes per run: 1/10 make_random_colormap with
+  // bright_p=True, else 1/2 make_uniform_colormap, else make_smooth_colormap
+  // -> ~10% bright-random / ~45% uniform / ~45% smooth. So the live palette is a
+  // LIMITED, often muted/pastel per-run map (not a fixed full-saturation
+  // rainbow). ncolors <= 2 is the mono path -> white (MI_WHITE_PIXEL). Faithful
+  // ports of all three live in colormap.js. Re-rolled every init, so a plain
+  // Math.random stream reproduces the distribution (see colormap.js).
   function buildPalette() {
     palette = new Array(ncolors);
+    if (ncolors <= 2) {
+      palette.fill('#fff');
+      return;
+    }
+    let cm;
+    if (nrand(10) === 0) cm = makeRandomColormapRGB(ncolors, true);   // ~10% bright random
+    else if (nrand(2) === 0) cm = makeUniformColormapRGB(ncolors);    // ~45% uniform hue ramp
+    else cm = makeSmoothColormapRGB(ncolors);                         // ~45% smooth HSV loop
     for (let i = 0; i < ncolors; i++) {
-      palette[i] = `hsl(${Math.round(i * 360 / ncolors)}, 100%, 55%)`;
+      palette[i] = 'rgb(' + cm[i][0] + ',' + cm[i][1] + ',' + cm[i][2] + ')';
     }
   }
 
@@ -469,7 +493,8 @@ export function start(canvas) {
       else sizeAt = nrand(-sizeAtom) + 1;
       sizeAt++;
       const atom = {
-        colour: nrand(ncolors),
+        // C: NRAND(ncolors - 2) + 2 (skips the first two map entries); mono -> 1.
+        colour: (ncolors > 2) ? nrand(ncolors - 2) + 2 : 1,
         x0: nrand(A),
         y0: nrand(B),
         velocity: [nrand(7) - 3, nrand(7) - 3],
@@ -554,9 +579,15 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator loop: one step() per config.delay (microseconds),
-  // banking leftover time so the pace is the same at any refresh rate; cap
-  // catch-up so a backgrounded tab can't burst.
+  // OVERHEAD: the live binary's *delay is a sleep FLOOR; its real per-frame cost
+  // is delay + framework/compute, so effective fps is below 1e6/delay. Measured
+  // off the live `-fps` overlay: 3 runs averaged ~14.0 fps at Load ~16% (delay-
+  // bound), so OVERHEAD = round(1e6/14.0) - 60000 ~= 11600 us. See the .md.
+  const OVERHEAD = 11600;
+
+  // rAF lag-accumulator loop: one step() per (config.delay + OVERHEAD), banking
+  // leftover time so the pace is the same at any refresh rate; cap catch-up so a
+  // backgrounded tab can't burst.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -567,7 +598,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, Math.max(delayMs, 1) * MAX_CATCHUP_STEPS);
 
     let steps = 0;

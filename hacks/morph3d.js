@@ -34,10 +34,17 @@
 //     spikes-disable-cull (THREE.DoubleSide); specular 0.7 gray, shininess 60.
 //
 // Winding doesn't matter here (DoubleSide + explicit per-vertex normals). Color
-// management / pacing as in gears.js / dangerball (sRGB->linear; effFps).
+// management / pacing as in gears.js / dangerball (colour management OFF -> raw colors; effFps).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: colors are used raw (setRGB(..., SRGBColorSpace) becomes a no-op) and
+// the output is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too
+// bright (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'morph3d';
 

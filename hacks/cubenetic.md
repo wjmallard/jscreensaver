@@ -57,10 +57,13 @@ multiplicative on colour (no specular/emission), `tex * (0.4 + NdotL) * colour` 
 whether the texture multiplies before or after lighting. So a face shows the blob pattern
 tinted by that box's (cycling) colour and shaded by the one light.
 
-Colour space follows the LIT convention: keep three's default sRGB output; author the cube
-colours `sRGB->linear` (`setRGB(..., SRGBColorSpace)`) and tag the colour texture
-`SRGBColorSpace`. (This is the opposite of the additive UNLIT hacks like `cubestack`, which
-opt OUT of colour management.)
+Colour space: three's colour management is DISABLED (`THREE.ColorManagement.enabled =
+false`, module scope) so the renderer matches GL's fixed pipeline -- raw glColor written to
+the framebuffer with no sRGB encoding. The `setRGB(..., SRGBColorSpace)` cube colours and
+the `SRGBColorSpace` texture tag become no-ops at fill time (raw glColor), and the output is
+not sRGB-encoded -- so the shaded box faces are not over-brightened. (The track-wide fix
+from the 2026 colour-management audit; the additive UNLIT hacks like `cubestack` reach the
+same raw output the same way.)
 
 `hsv_to_rgb` and `make_color_path` (== `make_color_loop` over 3 HSV points) are **ported
 inline** -- `colormap.js` exports `makeSmoothColormap` (used for the cube colours) but not

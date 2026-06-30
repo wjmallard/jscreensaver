@@ -32,10 +32,11 @@
 //     side walls go dark), material specular = the light's cyan {0,1,1}, shininess
 //     128.
 //
-// COLOR MANAGEMENT mirrors dangerball.js: each gear's two random pastel colors
-// (color = 0.5+frand(0.5); color2 = color*0.85) are treated as sRGB and converted
-// to linear for the per-vertex diffuse (involute.js carries diffuse by VERTEX
-// COLORS so one material reproduces the .c's per-region glMaterialfv swaps).
+// COLOR MANAGEMENT mirrors dangerball.js: three's colour management is DISABLED (see the
+// flag below), so each gear's two random pastel colors (color = 0.5+frand(0.5);
+// color2 = color*0.85) are used RAW for the per-vertex diffuse -- matching GL's
+// framebuffer (involute.js carries diffuse by VERTEX COLORS so one material reproduces
+// the .c's per-region glMaterialfv swaps).
 //
 // PACING (same model as dangerball): render every rAF; motion is continuous.
 // `delay` (us) -> effFps = 1e6/(delay+OVERHEAD); each render advances
@@ -58,6 +59,14 @@ import {
   INVOLUTE_LARGE as LARGE,
   INVOLUTE_HUGE as HUGE,
 } from './involute.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: set at MODULE SCOPE (before start() fills colors) so the
+// setRGB(..., SRGBColorSpace) calls become no-ops and store RAW glColor, and the output
+// is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too bright
+// (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'gears';
 
@@ -101,7 +110,7 @@ export function start(hostCanvas, opts = {}) {
   const BELLRAND = (n) => (frand(n) + frand(n) + frand(n)) / 3;   // ~triangular bell
   const RND = (n) => rng.random() % n;
 
-  // sRGB pastel -> linear [r,g,b] for vertex-color diffuse (see header).
+  // raw glColor [r,g,b] for vertex-color diffuse (colour management off; see header).
   const _c = new THREE.Color();
   const toLin = (r, g, b) => { _c.setRGB(r, g, b, THREE.SRGBColorSpace); return [_c.r, _c.g, _c.b]; };
 

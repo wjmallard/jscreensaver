@@ -44,8 +44,8 @@
 //     ~0.18 gray (modeled as material.emissive); specular 0.7, shininess 60;
 //     two-sided (THREE.DoubleSide).
 //
-// COLOR / PACING as in gears.js / dangerball (sRGB->linear vertex-color diffuse;
-// effFps = 1e6/(delay+OVERHEAD)).
+// COLOR / PACING as in gears.js / dangerball (raw vertex-color diffuse, colour
+// management off; effFps = 1e6/(delay+OVERHEAD)).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -56,6 +56,13 @@ import {
   BigValve, Bolts3D, GuageConnector, GuageDial, GuageFace,
   GuageHead, PipeBetweenBolts, ElbowBolts, ElbowCoins,
 } from './pipeobjs.js';
+
+// xscreensaver's GL fixed pipeline does NO color management -- it writes raw glColor
+// values to the framebuffer (no sRGB encoding). Disable three's color management so the
+// port matches GL: colors are used raw (setRGB(..., SRGBColorSpace) becomes a no-op) and
+// the output is not sRGB-encoded. Without this, lit/shaded faces render up to ~2.5x too
+// bright (measured vs the rubikblocks grayscale ground truth).
+THREE.ColorManagement.enabled = false;
 
 export const title = 'pipes';
 

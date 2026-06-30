@@ -17,6 +17,8 @@
 // the canvas is double-buffered, so this full repaint is flicker-free and
 // replaces the C's incremental draw-only-CHANGED + erase-around bookkeeping.
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'boxfit';
 
 export const info = {
@@ -31,7 +33,7 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/boxfit.xml. (`colors` isn't in the stock
   // boxfit UI — it hardcodes 64 — but we expose it for parity with the others.)
   const config = {
-    delay: 40000,     // \u00B5s between steps (--delay)
+    delay: 20000,     // \u00B5s between steps (--delay; xml/stock 20000)
     mode: 'random',   // 'random' | 'squares' | 'circles' (--mode)
     boxCount: 50,     // number of boxes growing at once (--count)
     growBy: 1,        // px each side grows per step (--growby)
@@ -41,7 +43,7 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'mode', label: 'Shape', type: 'select', default: 'random', live: false, options: [
         { value: 'random', label: 'boxes or circles' },
         { value: 'squares', label: 'boxes only' },
@@ -59,13 +61,22 @@ export function start(canvas) {
   const PAUSE_AFTER_ROUND = 1000;   // blank gap before the next round grows
   const MAX_BOXES = 65535;          // the C's hard cap (then fade out)
 
+  // Per-step pace: the live *delay (stock 20000 us) is a sleep FLOOR; each
+  // grow/shrink step also costs O(n^2) collision compute, so the effective
+  // pace is delay + overhead. The -fps overlay read ~35 fps at Load ~28%
+  // (delay-bound) across several rounds => frame ~= 28400 us = 20000 floor +
+  // ~8400 compute, so a faithful step waits (delay + OVERHEAD)/1000 ms. (The
+  // phase pauses above are the C's own literal 2 s / 1 s returns, unchanged.)
+  const OVERHEAD = 8400;
+  const stepMs = () => (config.delay + OVERHEAD) / 1000;
+
   let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
   let boxes;                 // { x, y, w, h, ci, alive }
   let growing;               // true = packing, false = shrinking the field away
   let colorHoriz;            // gradient runs across (true) or down (false)
   let circles;               // this round draws circles vs squares
-  let palette;               // ncolors smooth-rainbow CSS strings
+  let palette;               // ncolors smooth-colormap CSS strings (make_smooth_colormap)
   let dirty;                 // a step changed something; redraw this frame
 
   // inc / spacing / border scaled to device px so the look holds on retina.
@@ -75,10 +86,14 @@ export function start(canvas) {
   // Collision/placement padding: one grow-step plus the gap we want to keep.
   const pad = () => inc() + spacing() + border();
 
+  // Palette: boxfit.c is a native screenhack that colours its boxes from
+  // make_smooth_colormap (2-5 random HSV anchors interpolated into a loop —
+  // muted/pastel, NOT a full-hue rainbow). Re-rolled each round, so plain
+  // Math.random in makeSmoothColormapRGB reproduces the same distribution.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${i * 360 / n}, 80%, 55%)`;
+    const cm = makeSmoothColormapRGB(n);
+    palette = cm.map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // Begin a fresh round: clear to black, pick this round's shape + gradient axis.
@@ -160,7 +175,7 @@ export function start(canvas) {
     }
 
     dirty = true;
-    return config.delay / 1000;
+    return stepMs();
   }
 
   // Shrink every box back toward nothing; start a fresh round once all are gone.
@@ -178,7 +193,7 @@ export function start(canvas) {
     }
     dirty = true;
     if (remaining === 0) { resetBoxes(); return PAUSE_AFTER_ROUND; }
-    return config.delay / 1000;
+    return stepMs();
   }
 
   function step() {
@@ -230,7 +245,8 @@ export function start(canvas) {
   }
 
   // Variable-delay loop: step() returns the ms to wait before the next step
-  // (config.delay normally, or a longer pause at a phase change), matching the
+  // (the delay+OVERHEAD step pace normally, or a longer pause at a phase
+  // change), matching the
   // C's "return microseconds until next call". Redraw once per frame if a step
   // changed anything; idle (no redraw) through the between-phase pauses.
   const MAX_CATCHUP_STEPS = 8;

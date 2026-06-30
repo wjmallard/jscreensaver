@@ -18,6 +18,8 @@
 // puzzle is seeded. See [[squiral]] for the shared skeleton and [[penrose]]
 // for the other incremental tiler (forced growth vs. exhaustive backtracking).
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'polyominoes';
 
 export const info = {
@@ -29,11 +31,9 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/polyominoes.xml (1:1 with the
-  // original), except `delay` is tuned a touch calmer than the stock 10 ms so
-  // the placement cadence reads as "watching it solve".
+  // Defaults/ranges mirror hacks/config/polyominoes.xml (1:1 with the original).
   const config = {
-    delay: 50000,      // microseconds between solver steps (--delay, xml 10000)
+    delay: 10000,      // microseconds between solver steps (--delay, xml/stock 10000)
     cycles: 2000,      // frames before a fresh random puzzle (--cycles)
     ncolors: 64,       // size of the hue cycle pieces are coloured from (--ncolors)
     identical: false,  // use puzzles where every piece is the same shape (--identical)
@@ -43,7 +43,7 @@ export function start(canvas) {
   // live: false -> the value sizes colours / selects the puzzle set, so a
   //                change re-runs initPuzzle() via reinit() (clears + re-seeds).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Duration', type: 'range', min: 500, max: 5000, step: 100, default: 2000, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'identical', label: 'Identical pieces', type: 'checkbox', default: false, live: false },
@@ -742,8 +742,16 @@ export function start(canvas) {
 
   function buildColors() {
     const np = Math.max(2, config.ncolors);
-    palette = new Array(np);
-    for (let i = 0; i < np; i++) palette[i] = `hsl(${Math.round(360 * i / np)}, 80%, 55%)`;
+    // SMOOTH_COLORS: polyominoes.c is an xlockmore hack with a `#define
+    // SMOOTH_COLORS`, so xlockmore.c builds its colormap with
+    // make_smooth_colormap -- 2-5 random HSV anchors interpolated into a closed
+    // loop (muted/pastel, often just two hues), NOT a vivid full-saturation hue
+    // ramp. Pieces index this map exactly as the C does (perm + start offset,
+    // below). Re-rolled per puzzle, like penrose re-rolls its colormap per
+    // tiling restart. (The C's mono path -- fewer than 12 colours -> solid
+    // black/white tiles -- is not reproduced; see polyominoes.md.)
+    const cm = makeSmoothColormapRGB(np);
+    palette = cm.map(([r, g, b]) => `rgb(${r},${g},${b})`);
     colorOf = new Array(nr_polyominoes);
     const perm = randomPermutation(nr_polyominoes);
     const start = NRAND(np);
@@ -891,10 +899,21 @@ export function start(canvas) {
     initPuzzle();
   }
 
-  // rAF lag-accumulator loop: one step() per config.delay (microseconds),
-  // banking leftover time so the pace is the same at any refresh rate; the
-  // catch-up cap keeps a backgrounded tab (or a transiently heavy find_blank
-  // on a wide-open board) from firing a burst of steps.
+  // rAF lag-accumulator loop: one step() per (config.delay + OVERHEAD), banking
+  // leftover time so the pace is the same at any refresh rate; the catch-up cap
+  // keeps a backgrounded tab (or a transiently heavy find_blank on a wide-open
+  // board) from firing a burst of steps.
+  //
+  // OVERHEAD: the live binary's *delay (10000 us) is a sleep FLOOR; its real
+  // frame is delay + the per-step solver compute (find_blank / score_point /
+  // attach / repaint). The -fps overlay held the sleep floor at ~10000 us
+  // across boards while fps swung 39-62 with the board's fill level (an emptier
+  // board floods/scores more cells -> Load 60% -> ~39 fps; a near-full or
+  // holding board -> Load 38% -> ~62 fps). The typical reading clustered at
+  // 58.8 fps (= 17007 us/frame = 10000 floor + 7007 compute), so the faithful
+  // per-step pace is (delay + 7007)/1000 ms; the port's own score_point compute
+  // adds the same fill-level slowdown on the heavier boards.
+  const OVERHEAD = 7007;
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -905,7 +924,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, Math.max(delayMs, 1) * MAX_CATCHUP_STEPS);
 
     let steps = 0;
