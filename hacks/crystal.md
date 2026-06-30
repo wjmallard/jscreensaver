@@ -38,31 +38,49 @@ tiling in exact integer coords) and `[[truchet]]` (a cell-grid tiling).
 
 ## Rendering
 
-SPARSE vector. Per atom, all of its symmetry/lattice copies (same colour) are
-accumulated into one `Path2D` and filled once, so fills bucket by colour (the
-`braid.js`/`penrose.js` idiom). At default `count` that is a few hundred small
-convex polygons per frame. All algorithm math runs in **logical (CSS) px**
-(matching the C's window-pixel coordinates) and only the final screen point is
-multiplied by `devicePixelRatio`, so motion speed and proportions are
-resolution-independent and the C math is byte-for-byte faithful (`Math.trunc`
-for every `(int)` cast).
+SOFTWARE rasterizer into an offscreen RGBA buffer, blitted with one
+`putImageData` per frame. `crystal.c` draws with `XSetFunction(GXxor)`, so every
+cell copy **bitwise-XORs** its colour into the framebuffer: where two different
+colours overlap you get their XOR (a mixed / complementary tone), and where two
+identical copies coincide they cancel to **black**. Canvas 2D has no bitwise XOR
+(`'xor'` is alpha-coverage, `'difference'` is `|a-b|`), so the frame is composed
+by hand:
+
+1. Clear the buffer to opaque black (the `HAVE_JWXYZ` `XClearWindow`).
+2. **GXcopy pass** — draw the unit-cell / grid outline by writing `dst = colour`
+   along each line (the C draws this while the GC is still `GXcopy`, *before*
+   switching to `GXxor`, so the atoms XOR over it).
+3. **GXxor pass** — for every atom, scanline-fill each of its symmetry / lattice
+   copies writing `dst ^= colour` per R,G,B channel. Each copy is a **separate**
+   fill (one `XFillPolygon` in the C), so two overlapping copies of the *same*
+   atom XOR-cancel — they are not merged into one path.
+
+XORing each RGB byte independently equals XORing the packed 24-bit TrueColor
+pixel value, which is what the C's `GXxor` does. The scanline fill samples pixel
+centres with a half-open edge test (no double-XOR seams between neighbouring
+polygons). At default `count` that is a few hundred small convex fills per frame.
+All algorithm math runs in **logical (CSS) px** (matching the C's window-pixel
+coordinates) and only the final screen point is multiplied by `devicePixelRatio`,
+with the buffer sized to the device canvas, so the blit is crisp at any DPR and
+the C math is byte-for-byte faithful (`Math.trunc` for every `(int)` cast).
 
 ## Deviations from the C
 
-- **No XOR overlap-mixing.** `crystal.c` draws with `GXxor`. On macOS/JWXYZ
-  (the live binary verified against here) it *also* clears the window every frame
-  (`XClearWindow` under `HAVE_JWXYZ`), so there is no cross-frame accumulation —
-  that clear-and-redraw path is what this port mirrors. But within a single frame
-  the C still XORs every polygon against the black background **and against each
-  other**: where two atoms (different colours) overlap, the live binary shows the
-  bitwise-XOR mixed colour, and where same-colour copies overlap they cancel to
-  black. On sparse runs (most groups) overlaps are rare and the look matches
-  exactly; on dense runs (large `count`, big cells) the live binary picks up
-  muddy mixed tones that this plain-fill port does not reproduce — later atoms
-  simply paint over earlier ones. Faithful multi-colour RGB XOR would need a
-  per-pixel software rasterizer (the `Path2D`/`fill()` architecture and Canvas's
-  blend modes can't express bitwise XOR); left as the one known render
-  deviation. The wallpaper-symmetry tiling, palette, and pace are faithful.
+- **XOR overlap-mixing (software rasterizer).** `crystal.c` draws with `GXxor`.
+  On macOS/JWXYZ (the live binary verified against here) it *also* clears the
+  window every frame (`XClearWindow` under `HAVE_JWXYZ`), so there is no
+  cross-frame accumulation — that clear-and-redraw path is what this port mirrors.
+  Within a frame the C XORs every polygon against black **and against each other**:
+  different-colour overlaps show the bitwise-XOR mixed tone, and same-colour
+  overlaps cancel to black. Canvas 2D cannot bitwise-XOR, so the port composes the
+  whole frame in a software RGBA buffer (`dst ^= colour` per channel) and blits it
+  with `putImageData` — see **Rendering**. Verified against the live binary: with
+  `--ncolors 4` (atoms use exactly two palette entries) the overlap colour is their
+  exact bitwise XOR — e.g. `#34FAF7 ^ #9434FA = #A0CE0D`, *not* the `'difference'`
+  blend `#60C603` — and dense runs reproduce the live binary's mixed-tone interior
+  plus black cancellation. The 1-px-boundary pixels of a JS scanline fill are not
+  byte-identical to X11's `XFillPolygon`, but the overlap mixing and cancellation
+  match. The wallpaper-symmetry tiling, palette, and pace are faithful.
 - **Periodic regeneration restored.** The xscreensaver standalone `draw_crystal`
   runs ONE plane group forever (only the atoms drift). The original xlockmore
   crystal — and the `*cycles: 200` default still present in this file's
