@@ -14,7 +14,10 @@
 // GL_SRC_ALPHA, GL_ONE, so overlapping struts GLOW (sum toward white) and you see through
 // the frames. We reproduce that exactly: an unlit MeshBasicMaterial with
 // THREE.AdditiveBlending, depthTest/depthWrite off, vertex colors carrying the
-// alpha-premultiplied (sRGB->linear) cube color. No lighting, no normals.
+// alpha-premultiplied raw glColor. CRUCIAL: the renderer is opted out of three's color
+// management (outputColorSpace = Linear, raw un-linearized colors) so additive overlaps
+// accumulate in the same encoded space GL uses -- otherwise the hue washes to gray far
+// too fast. No lighting, no normals.
 //
 // Self-contained three.js (own overlay canvas + renderer + loop), like cubestorm.js /
 // dangerball.js. RNG = yarandom.js, wander = rotator.js, palette = colormap.js, the
@@ -95,6 +98,14 @@ export function start(hostCanvas, opts = {}) {
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(dpr);
+  // The .c is the GL fixed pipeline with NO color management: it blends the raw glColor
+  // values (GL_SRC_ALPHA, GL_ONE) directly in display space and shows them as-is. Three
+  // defaults to blending in LINEAR space + an sRGB output gamma, which makes additive
+  // overlaps desaturate to white far too fast (the dominant channel saturates, the output
+  // curve lifts the others -> gray). Opt this renderer out: feed it the raw glColor values
+  // (un-linearized) and skip the output conversion, so additive accumulation happens in
+  // the same encoded space GL uses and the result passes straight to the sRGB canvas.
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -105,9 +116,9 @@ export function start(hostCanvas, opts = {}) {
   camera.up.set(0, 1, 0);
   camera.lookAt(0, 0, 0);
 
-  // The whole hack is unlit: color = the glColor value (sRGB), drawn with GL_SRC_ALPHA,
-  // GL_ONE additive blending and no depth test. Vertex colors carry alpha-premultiplied
-  // linear color (alpha folded in, opacity stays 1) so AdditiveBlending adds color*alpha.
+  // The whole hack is unlit: color = the glColor value, drawn with GL_SRC_ALPHA, GL_ONE
+  // additive blending and no depth test. Vertex colors carry alpha-premultiplied raw
+  // glColor (alpha folded in, opacity stays 1) so AdditiveBlending adds color*alpha.
   const positions = new Float32Array(MAX_VERTS * 3);
   const colorsArr = new Float32Array(MAX_VERTS * 3);
   const geom = new THREE.BufferGeometry();
@@ -132,22 +143,21 @@ export function start(hostCanvas, opts = {}) {
   // ===================================================================
   //  simulation state
   // ===================================================================
-  let colorsLin = [];   // NCOLORS linear {r,g,b} (sRGB glColor -> linear)
+  let palette = [];   // NCOLORS raw glColor {r,g,b} in [0,1) (blended in encoded space)
   let state = -1;       // bp->state: unfold progress of the top cube (-1 .. 6)
   let spin = 0;         // bp->r: slow z-rotation, degrees
   let length = 0;       // bp->length: committed cubes in the stack
   let ccolor = 0;       // bp->ccolor: current color index
 
-  const _scol = new THREE.Color();
+  // Store the raw glColor values (the .c divides hsv_to_rgb's 16-bit channels by 65536
+  // and feeds them straight to glColor). With outputColorSpace = Linear above, these blend
+  // additively in encoded space and display as-is -- exactly the GL fixed-pipeline result.
   function rollColors() {
-    colorsLin = makeSmoothColormap(rng, NCOLORS).map((c) => {
-      _scol.setRGB(c.r, c.g, c.b, THREE.SRGBColorSpace);
-      return { r: _scol.r, g: _scol.g, b: _scol.b };
-    });
+    palette = makeSmoothColormap(rng, NCOLORS).map((c) => ({ r: c.r, g: c.g, b: c.b }));
   }
   // colors[] indexed as a ring (the .c's ccolor can transiently reach ncolors and read
   // one slot past the array; we wrap, since the colormap is a closed loop anyway).
-  function col(i) { return colorsLin[((i % NCOLORS) + NCOLORS) % NCOLORS]; }
+  function col(i) { return palette[((i % NCOLORS) + NCOLORS) % NCOLORS]; }
 
   // wander rotator: make_rotator(0,0,0,0, 0.005, False) -- wander only, no spin, no RNG
   // in get_position. Built once at 0.005; the `wander` toggle gates the OUTPUT live.
