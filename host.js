@@ -665,7 +665,7 @@ function toggleFps() {
 // auto-hides after BAR_HIDE_MS; a swipe, the picker, or another tap dismisses it.
 // It's per-hack, so with nothing running a tap opens the picker instead. Each
 // button mirrors a footer/keyboard action; "browse" opens the full picker.
-const BAR_HIDE_MS = 3200;
+const BAR_HIDE_MS = 5000;
 let barTimer = 0;
 function armBarHide() {
   if (barTimer) clearTimeout(barTimer);
