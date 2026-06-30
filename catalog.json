@@ -133,6 +133,17 @@
       "description": "A system of path tracing particles evolves continuously from an initial creation, alternating dark and light colors."
     },
     {
+      "title": "blinkbox",
+      "module": "./hacks/blinkbox.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jeremy English",
+      "year": 2003,
+      "description": "A motion-blurred ball bounces inside a box whose tiles only become visible upon impact."
+    },
+    {
       "title": "bouboule",
       "module": "./hacks/bouboule.js",
       "dim": "2d",
@@ -270,6 +281,18 @@
       "description": "Moving polygons, similar to a kaleidoscope.\n\nSee also the \"Kaleidescope\" and \"GLeidescope\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Kaleidoscope"
     },
     {
+      "title": "cubenetic",
+      "module": "./hacks/cubenetic.js",
+      "dim": "3d",
+      "categories": [
+        "geometry",
+        "plasma"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2002,
+      "description": "A cubist Lavalite, sort of. A pulsating set of overlapping boxes with ever-changing blobby patterns undulating across their surfaces."
+    },
+    {
       "title": "cubestack",
       "module": "./hacks/cubestack.js",
       "dim": "3d",
@@ -290,6 +313,17 @@
       "author": "Jamie Zawinski",
       "year": 2003,
       "description": "Boxes change shape and intersect each other, filling space."
+    },
+    {
+      "title": "cubetwist",
+      "module": "./hacks/cubetwist.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2016,
+      "description": "A series of nested cubes rotate and slide recursively."
     },
     {
       "title": "cubicgrid",
@@ -1292,6 +1326,17 @@
       "author": "Tom Lawrence",
       "year": 1997,
       "description": "This screen saver was removed from the XScreenSaver distribution as of version 5.08.\n\nDraws a line segment moving along a complex spiraling curve."
+    },
+    {
+      "title": "rubikblocks",
+      "module": "./hacks/rubikblocks.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Vasek Potocek",
+      "year": 2009,
+      "description": "The \"Rubik's Mirror Blocks\" puzzle."
     },
     {
       "title": "scooter",
