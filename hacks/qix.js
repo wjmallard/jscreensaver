@@ -7,14 +7,27 @@
 // Bounces a polygonal "line" (a ring of `poly` vertices, default 2 = a plain
 // segment) around the screen: each frame every vertex advances by its velocity
 // and reflects off the walls, the new polygon is drawn, and the oldest of a
-// fixed-length trailing queue is erased — the classic Qix ribbon. The hue shifts
-// a little each frame, so the live trail is a smooth rainbow band. With `solid`
+// fixed-length trailing queue is erased — the classic Qix ribbon. With `solid`
 // (default) and a 2-vertex line, consecutive frames are joined into filled quads
 // for the solid-ribbon look; `hollow` strokes the polygon outline instead.
 //
-// Rendering: sparse vector ops (one quad fill or one polyline per frame per qix),
-// matching the C's draw-newest / erase-oldest scheme — far cheaper than clearing
-// and redrawing the whole queue every frame, and it keeps the older trail intact.
+// Two colour models, matching qix.c's defaults:
+//   - TRANSPARENT (the stock default, `*transparent: true`, `*count: 4`): each
+//     qix is one FIXED random colour and the `count` ribbons OVERLAP and MIX.
+//     On the live X11/XQuartz binary's TrueColor visual this is done with random
+//     RGB-bit plane masks (alpha.c, the `!cmap` branch): drawing ORs the qix's
+//     colour bits into the framebuffer, erasing ANDs them out, so overlaps are a
+//     per-channel bitwise OR and an erasing ribbon reveals whatever lies under
+//     it. Canvas 2D can't bitwise-OR, so the port keeps a software RGBA buffer
+//     and rasterises into it (OR to draw, AND-NOT to erase), blitting the dirty
+//     rect each step — the quasicrystal/crystal-class software-raster approach.
+//   - HUE-CYCLE (`transparent` off): each qix is one opaque colour whose hue
+//     shifts by `colorShift` each frame, drawn with sparse canvas vector ops.
+//     This is the C's non-transparent path.
+//
+// The bounce/trail geometry (ring buffer, wiggle, draw-newest / erase-oldest) is
+// shared by both models — far cheaper than clearing and redrawing the whole
+// queue every frame, and it keeps the older trail intact.
 
 export const title = 'qix';
 
@@ -27,20 +40,20 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/qix.xml so the config box maps 1:1,
-  // except `count` is dialled down (4 overlapping ribbons is busy on a bright
-  // canvas) and `delay` is left at the stock 10 ms.
+  // Defaults/ranges mirror hacks/config/qix.xml so the config box maps 1:1
+  // (incl. the stock count:4 and transparent:true); `delay` is the stock 10 ms.
   const config = {
     delay: 10000,    // \u00B5s between steps (--delay)
     segments: 250,   // trail length: polygons kept on screen (--segments)
     spread: 8,       // max per-vertex velocity, logical px/step (--spread)
-    colorShift: 3,   // hue degrees added per frame (--color-shift)
+    colorShift: 3,   // hue degrees added per frame, hue-cycle mode only (--color-shift)
     size: 200,       // max extent between the 2 points; only for poly=2 (--size)
     poly: 2,         // vertices per polygon; 2 = a line segment (--poly)
-    count: 2,        // number of independent qixes (--count)
+    count: 4,        // number of independent qixes (--count)
     fill: 'solid',   // 'solid' = fill quads between frames (poly=2) vs. 'hollow' outline (--solid/--hollow)
     motion: 'linear', // 'linear' = clean bounces vs. 'random' velocity jitter (--linear/--random)
     gravity: false,  // pull every vertex downward each step (--gravity)
+    transparent: true, // true = fixed-colour ribbons that overlap/mix (stock default); false = hue-cycle (--transparent/--non-transparent)
   };
 
   // live: true  -> the loop reads config every step (applies instantly).
@@ -51,7 +64,7 @@ export function start(canvas) {
     { key: 'segments', label: 'Segments', type: 'range', min: 10, max: 500, step: 10, default: 250, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'spread', label: 'Density', type: 'range', min: 1, max: 50, step: 1, default: 8, invert: true, lowLabel: 'sparse', highLabel: 'dense', live: true },
     { key: 'colorShift', label: 'Color contrast', type: 'range', min: 0, max: 25, step: 1, default: 3, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Count', type: 'range', min: 1, max: 12, step: 1, default: 2, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'count', label: 'Count', type: 'range', min: 1, max: 12, step: 1, default: 4, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'size', label: 'Max size', type: 'range', min: 50, max: 1000, step: 10, default: 200, lowLabel: 'small', highLabel: 'large', live: false },
     { key: 'poly', label: 'Poly corners', type: 'range', min: 2, max: 24, step: 1, default: 2, lowLabel: 'line', highLabel: 'many', live: false },
     { key: 'fill', label: 'Fill', type: 'select', options: [
@@ -63,15 +76,20 @@ export function start(canvas) {
         { value: 'random', label: 'Random motion' },
       ], default: 'linear', live: true },
     { key: 'gravity', label: 'Gravity', type: 'checkbox', default: false, live: true },
+    { key: 'transparent', label: 'Transparent', type: 'checkbox', default: true, live: false },
   ];
 
   const MAXPOLY = 24;     // hard cap on vertices (the C's MAXPOLY is 16)
   const GRAVITY = 0.5;    // dy added per step under gravity (the C adds 3 in <<6 units ~= 0.05 px; bumped to read)
   // Per-step pacing overhead (microseconds) added to the stock delay floor,
-  // measured off the live binary's -fps overlay: non-transparent qix runs ~54
-  // fps at Load ~45% (delay-bound), so 1e6/54.6 - 10000 ~= 8300. delay is only
-  // a floor, so without this the ribbon swept ~1.8x too fast. See qix.md.
-  const OVERHEAD = 8300;
+  // measured off the live binary's -fps overlay (Batch 1G, retained here): the
+  // live runs ~50-54 fps at Load ~50% (delay-bound). The TRANSPARENT mode -- now
+  // the default -- reads 50.5 fps (sleep slice 10000 = the stock delay), so
+  // OVERHEAD = round(1e6/50.5) - 10000 = 9802, calibrated to the DEFAULT mode.
+  // (The non-transparent hue-cycle alt runs ~54 fps, so it ends up a hair slow
+  // with this value -- negligible.) delay is only a floor, so without OVERHEAD
+  // the ribbon swept ~1.8x too fast. See qix.md.
+  const OVERHEAD = 9802;
 
   let S = 1;              // devicePixelRatio
   let W, H;               // canvas size, device px
@@ -80,7 +98,10 @@ export function start(canvas) {
   let npoly;              // effective vertices per polygon (after constraints)
   let nlines;             // queue length (== config.segments)
   let solid;              // effective solid flag (forced off when npoly > 2)
+  let transparent;        // effective transparent flag (fixed-colour OR-mix vs hue-cycle)
   let qixes;              // array of independent qix states
+  let img = null;         // ImageData over the whole canvas (transparent mode only)
+  let buf = null;         // img.data — the software RGBA framebuffer we OR/AND-NOT into
 
   function nrand(n) {
     return Math.floor(Math.random() * n);
@@ -162,9 +183,16 @@ export function start(canvas) {
       // saturation/value stay fixed -- hence the live screen's MIX of vivid,
       // pastel and near-grey ribbons (a low-saturation roll = a grey ribbon),
       // not the uniform full-vivid rainbow the old hsl() gave.
-      hue: nrand(360),                        // current frame hue (degrees)
+      hue: nrand(360),                        // current frame hue (degrees) -- hue-cycle mode
       sat: Math.random(),                     // frand(1.0)      -> [0,1)
       val: 0.5 + Math.random() * 0.5,         // frand(0.5)+0.5  -> [0.5,1)
+      // Transparent mode: one FIXED colour, used both as the colour and as the
+      // X11 plane mask. On the live TrueColor visual alpha.c sets each qix's
+      // plane_mask = random() & (R|G|B bits) = a uniformly random 24-bit RGB
+      // value (alpha.c:178); drawing ORs these bits in, erasing ANDs them out.
+      r: nrand(256),
+      g: nrand(256),
+      b: nrand(256),
     };
   }
 
@@ -176,6 +204,7 @@ export function start(canvas) {
     nlines = Math.max(2, Math.round(config.segments));
     maxSpread = Math.max(1, config.spread) * S;
     solid = config.fill === 'solid';
+    transparent = !!config.transparent;
 
     // Constraint resolution, straight from qix_init():
     //   - solid forces a 2-vertex polygon (the quad fill needs exactly 2 points);
@@ -189,8 +218,147 @@ export function start(canvas) {
     qixes = [];
     for (let i = 0; i < count; i++) qixes.push(initOneQix());
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
+    if (transparent) {
+      // Software framebuffer for the OR/AND-NOT plane-mask compositing.
+      img = ctx.createImageData(W, H);
+      buf = img.data;
+      clearBuffer();
+    } else {
+      img = null;
+      buf = null;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // ---- transparent (plane-mask) software rasteriser -------------------------
+  // The framebuffer holds the X11 pixel bits directly: draw = OR the qix's
+  // colour bits in (so overlaps mix as a per-channel bitwise OR), erase = AND
+  // the bits out (revealing any other qix underneath, never forcing black).
+
+  function clearBuffer() {
+    buf.fill(0);
+    for (let i = 3; i < buf.length; i += 4) buf[i] = 255; // opaque
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // Even-odd scanline fill of an n-point polygon into buf, OR (draw) or AND-NOT
+  // (erase). Same routine + convention for both, so an erase exactly clears the
+  // pixels its earlier draw set (see Correctness in qix.md).
+  function fillPolyOp(pts, n, r, g, b, erase) {
+    const nr = ~r & 255, ng = ~g & 255, nb = ~b & 255;
+    let ymin = Infinity, ymax = -Infinity;
+    for (let k = 0; k < n; k++) { const y = pts[k].y; if (y < ymin) ymin = y; if (y > ymax) ymax = y; }
+    let y0 = Math.ceil(ymin - 0.5); if (y0 < 0) y0 = 0;
+    let y1 = Math.floor(ymax - 0.5); if (y1 > H - 1) y1 = H - 1;
+    const xs = [];
+    for (let y = y0; y <= y1; y++) {
+      const yc = y + 0.5;
+      xs.length = 0;
+      for (let k = 0; k < n; k++) {
+        const a = pts[k], c = pts[(k + 1) % n];
+        const ay = a.y, cy = c.y;
+        if ((ay <= yc && cy > yc) || (cy <= yc && ay > yc))
+          xs.push(a.x + ((yc - ay) / (cy - ay)) * (c.x - a.x));
+      }
+      if (xs.length < 2) continue;
+      xs.sort((p, q) => p - q);
+      const rowBase = y * W * 4;
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        let xa = Math.ceil(xs[k] - 0.5), xb = Math.ceil(xs[k + 1] - 0.5) - 1;
+        if (xa < 0) xa = 0;
+        if (xb > W - 1) xb = W - 1;
+        for (let x = xa; x <= xb; x++) {
+          const idx = rowBase + x * 4;
+          if (erase) { buf[idx] &= nr; buf[idx + 1] &= ng; buf[idx + 2] &= nb; }
+          else { buf[idx] |= r; buf[idx + 1] |= g; buf[idx + 2] |= b; }
+        }
+      }
+    }
+  }
+
+  // Thick (S-px) Bresenham line into buf, OR/AND-NOT — for hollow + transparent.
+  function drawLineOp(x0, y0, x1, y1, r, g, b, erase) {
+    const nr = ~r & 255, ng = ~g & 255, nb = ~b & 255;
+    const t = Math.max(1, Math.round(S));
+    x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      for (let oy = 0; oy < t; oy++) {
+        const yy = y0 + oy;
+        if (yy < 0 || yy >= H) continue;
+        const rowBase = yy * W * 4;
+        for (let ox = 0; ox < t; ox++) {
+          const xx = x0 + ox;
+          if (xx < 0 || xx >= W) continue;
+          const idx = rowBase + xx * 4;
+          if (erase) { buf[idx] &= nr; buf[idx + 1] &= ng; buf[idx + 2] &= nb; }
+          else { buf[idx] |= r; buf[idx + 1] |= g; buf[idx + 2] |= b; }
+        }
+      }
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  }
+
+  function polyBBox(pts, n) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k < n; k++) {
+      const p = pts[k];
+      if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
+    }
+    return { x0, y0, x1, y1 };
+  }
+
+  function unionBB(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    return {
+      x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0),
+      x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1),
+    };
+  }
+
+  // Blit only the changed rectangle (padded 1px for the line width / rounding).
+  function blitBB(bb) {
+    if (!bb) return;
+    let x0 = Math.floor(bb.x0) - 1, y0 = Math.floor(bb.y0) - 1;
+    let x1 = Math.ceil(bb.x1) + 1, y1 = Math.ceil(bb.y1) + 1;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > W - 1) x1 = W - 1;
+    if (y1 > H - 1) y1 = H - 1;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    if (w <= 0 || h <= 0) return;
+    ctx.putImageData(img, 0, 0, x0, y0, w, h);
+  }
+
+  // Draw/erase one polygon frame into the software buffer with qix q's fixed
+  // colour; returns the affected bbox (or null if nothing was drawn).
+  function drawFrameBuffer(frame, prev, q, erase) {
+    if (solid) {
+      if (!prev || prev.dead) return null;
+      const pts = [
+        { x: frame.x[0], y: frame.y[0] },
+        { x: frame.x[1], y: frame.y[1] },
+        { x: prev.x[1], y: prev.y[1] },
+        { x: prev.x[0], y: prev.y[0] },
+      ];
+      fillPolyOp(pts, 4, q.r, q.g, q.b, erase);
+      return polyBBox(pts, 4);
+    }
+    const pts = [];
+    for (let i = 0; i < npoly; i++) pts.push({ x: frame.x[i], y: frame.y[i] });
+    for (let i = 0; i < npoly; i++) {
+      const a = pts[i], c = pts[(i + 1) % npoly];
+      drawLineOp(a.x, a.y, c.x, c.y, q.r, q.g, q.b, erase);
+    }
+    return polyBBox(pts, npoly);
   }
 
   // Advance one vertex coordinate by its velocity and reflect off [0, max].
@@ -239,21 +407,26 @@ export function start(canvas) {
     }
   }
 
-  // One step for one qix (the C's qix1 + add_qline + free_qline, with redraw-
-  // erase instead of X11 GCs): erase the polygon about to be overwritten, build
-  // the new polygon from the previous frame's vertices (bounced + hue-shifted),
-  // draw it, and advance the write pointer.
+  // One step for one qix (the C's qix1 + add_qline + free_qline): erase the
+  // polygon about to be overwritten, build the new polygon from the previous
+  // frame's vertices (bounced, then coloured per the active model — fixed
+  // OR-mask in transparent mode, cycling hue otherwise), draw it, advance fp.
   function stepQix(q) {
     const frames = q.frames;
     const fp = q.fp;
     const ofp = (fp - 1 + nlines) % nlines;      // previous (source) frame
     const old = frames[fp];                      // oldest frame, being recycled
     const oldPrev = frames[(fp + 1) % nlines];   // its solid-quad partner
+    let bb = null;                               // transparent-mode dirty rect
 
-    // Erase the outgoing polygon in black (the C's free_qline). Skip while the
-    // trail is still collapsed on its seed frame (dead), so we don't erase what
-    // we haven't drawn yet.
-    if (!old.dead) drawFrame(old, oldPrev, '#000');
+    // Erase the outgoing polygon (the C's free_qline). Skip while the trail is
+    // still collapsed on its seed frame (dead), so we don't erase what we
+    // haven't drawn yet. Transparent: AND the qix's bits out of the buffer
+    // (revealing any qix underneath); hue-cycle: repaint it black.
+    if (!old.dead) {
+      if (transparent) bb = unionBB(bb, drawFrameBuffer(old, oldPrev, q, true));
+      else drawFrame(old, oldPrev, '#000');
+    }
 
     // Build the new frame from the previous one (the C's add_qline).
     const src = frames[ofp];
@@ -286,12 +459,17 @@ export function start(canvas) {
       else if (f.y[1] - f.y[0] > maxSize) f.y[1] = f.y[0] + maxSize - jitter();
     }
 
-    // Shift the hue and draw the new polygon (the C cycles the XColor by
-    // colorShift degrees each frame, holding saturation/value), then convert
-    // through hsv_to_rgb with this qix's fixed s,v.
-    q.hue = (q.hue + config.colorShift) % 360;
+    // Draw the new polygon. Transparent: OR the qix's fixed colour bits into the
+    // buffer, then blit the changed rect. Hue-cycle: cycle the hue by colorShift
+    // (the C advances the XColor each frame, holding saturation/value) and paint.
     f.dead = false;
-    drawFrame(f, frames[ofp], hsvColor(q.hue, q.sat, q.val));
+    if (transparent) {
+      bb = unionBB(bb, drawFrameBuffer(f, frames[ofp], q, false));
+      blitBB(bb);
+    } else {
+      q.hue = (q.hue + config.colorShift) % 360;
+      drawFrame(f, frames[ofp], hsvColor(q.hue, q.sat, q.val));
+    }
 
     q.fp = (fp + 1) % nlines;
   }
