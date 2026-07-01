@@ -49,12 +49,20 @@ export function start(canvas) {
 
   const BLACK = 0xFF000000;
 
+  // delay is a sleep FLOOR in the C; the effective frame time also carries the
+  // (heavy) per-frame stamp compute. OVERHEAD (us) is added to delay so our much
+  // lighter port paces like the live binary. Live shadebobs (820x560, -fps) ran
+  // 33.9 fps at Load 66.1% (sleep slice 10000us == stock delay, a clean reading):
+  // OVERHEAD = round(1e6/33.9) - 10000 = 19499. See shadebobs.md "Timing" and
+  // [[framerate-calibration]].
+  const OVERHEAD = 19499;
+
   let S;                 // devicePixelRatio
   let gw, gh;            // accumulation field size, LOGICAL px (== canvas px / S)
   let imageData, pixels; // Uint32 buffer at field resolution
   let scratch, sctx;     // offscreen canvas holding the field, upscaled to main canvas
 
-  let buf;               // Uint8Array(gw*gh): per-pixel palette INDEX (the accumulator)
+  let buf;               // Float32Array(gw*gh): per-pixel FRACTIONAL intensity (the accumulator; index = floor)
   let bobs;              // [{ posX, posY, angle, angleDelta, angleInc, map, dark }, ...]
 
   let sinTable, cosTable; // Float64Array(degreeCount): a unit circle over degreeCount steps
@@ -64,36 +72,25 @@ export function start(canvas) {
 
   let ncolors;            // captured colour count (2..255)
   let palette;            // Uint32Array(ncolors) packed ABGR: black -> base -> white
-  let drawI;              // frames since the last reset (drives "Duration")
+  let stepAccum;          // C-steps elapsed since the last reset (float; drives "Duration")
 
-  // hsl (h in [0,1)) -> [r,g,b] each 0-255. Used to pick a vivid random base
-  // colour for the ramp each cycle (the C picks a raw random RGB; we use a
-  // saturated HSL pick so the bobs read as neon — see the .md).
-  function hslToRgb(h, s, l) {
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-    const m = l - c / 2;
-    let r = 0, g = 0, b = 0;
-    const seg = Math.floor(h * 6) % 6;
-    if (seg === 0) { r = c; g = x; }
-    else if (seg === 1) { r = x; g = c; }
-    else if (seg === 2) { g = c; b = x; }
-    else if (seg === 3) { g = x; b = c; }
-    else if (seg === 4) { r = x; b = c; }
-    else { r = c; b = x; }
-    return [
-      Math.round((r + m) * 255),
-      Math.round((g + m) * 255),
-      Math.round((b + m) * 255),
-    ];
+  // randInt(n) -> integer in [0, n). Used to pick the palette base colour as
+  // three independent random channels, matching the C's random() % 0xFFFF per
+  // channel (here at 8-bit-per-channel resolution).
+  function randInt(n) {
+    return Math.floor(Math.random() * n);
   }
 
-  // Build the ncolors-entry palette exactly as the C's SetPalette: a vivid
-  // random base colour, with index 0..ncolors/2 ramping black -> base and
-  // ncolors/2..ncolors ramping base -> white. Index 0 is always black so the
-  // background (zero-intensity pixels) stays unlit. Packed little-endian ABGR.
+  // Build the ncolors-entry palette exactly as the C's SetPalette: pick a random
+  // base colour as three independent random channels (the C picks each channel
+  // as random() % 0xFFFF, an independent uniform-random channel -- so the base is
+  // often muted/dark/pastel, not a fully-saturated vivid hue), then index
+  // 0..ncolors/2 ramps black -> base and ncolors/2..ncolors ramps base -> white.
+  // Index 0 is forced to black so the background (zero-intensity pixels) stays
+  // unlit. The base is re-rolled at every Duration reset, so the hue changes
+  // across runs (faithful to the C -- NOT a vivid rainbow). Packed ABGR.
   function buildPalette() {
-    const [br, bg, bb] = hslToRgb(Math.random(), 1, 0.5);
+    const [br, bg, bb] = [randInt(256), randInt(256), randInt(256)];
     palette = new Uint32Array(ncolors);
     const half = ncolors / 2;
     for (let i = 0; i < ncolors; i++) {
@@ -165,12 +162,14 @@ export function start(canvas) {
     resetBob(bob);
   }
 
-  // Advance a bob along its path (the C's MoveShadeBob): turn by angleInc,
-  // re-roll the delta/inc when angleDelta crosses angleInc, then step by
-  // velocity along (sin, cos) of the current angle, wrapping around the field.
-  function moveBob(bob) {
-    bob.angle += bob.angleInc;
-    bob.angleDelta -= bob.angleInc;
+  // Advance a bob along its path (the C's MoveShadeBob) by a fraction `f` of one
+  // full step: turn by angleInc*f, re-roll the delta/inc when angleDelta crosses
+  // angleInc, then move velocity*f along (sin, cos) of the current angle, wrapping
+  // around the field. f == 1 reproduces the C exactly; fractional f is how the
+  // time-based loop advances smoothly (see the frame loop / shadebobs.md).
+  function moveBob(bob, f) {
+    bob.angle += bob.angleInc * f;
+    bob.angleDelta -= bob.angleInc * f;
 
     // Marginal 0.5 so the float wrap matches the C's integer table index.
     if (bob.angle + 0.5 >= degreeCount) bob.angle -= degreeCount;
@@ -188,8 +187,8 @@ export function start(canvas) {
     if (ai < 0) ai = 0;
     else if (ai >= degreeCount) ai = degreeCount - 1;
 
-    bob.posX += sinTable[ai] * velocity;
-    bob.posY += cosTable[ai] * velocity;
+    bob.posX += sinTable[ai] * velocity * f;
+    bob.posY += cosTable[ai] * velocity * f;
 
     // Wrap around the field (one subtract/add suffices, as in the C).
     if (bob.posX >= gw) bob.posX -= gw;
@@ -198,13 +197,15 @@ export function start(canvas) {
     else if (bob.posY < 0) bob.posY += gh;
   }
 
-  // Stamp one bob into the accumulation buffer (the C's Execute): move it, then
-  // for every cell of its kernel add the kernel value to that pixel's index,
-  // CLAMP to [0, ncolors-1], store it back, and write the mapped colour into the
-  // pixel buffer. Wraps the stamp around the field edges like the C.
-  function execute(bob) {
-    moveBob(bob);
-
+  // Deposit one bob's shaded kernel into the accumulation buffer (the C's Execute
+  // stamp), scaled by `f` -- the fraction of a full C step this sub-step covers.
+  // For every kernel cell add f * the kernel value to that pixel's (fractional)
+  // intensity, CLAMP to [0, ncolors-1], and write the mapped colour (floor of the
+  // intensity -> palette index). Because we deposit every frame but each deposit
+  // is scaled by f, the accumulated intensity per unit length matches the C's
+  // (one full kernel per velocity of travel) -- so tubes don't over-saturate to
+  // white. Wraps the stamp around the field edges like the C.
+  function stamp(bob, f) {
     const px0 = bob.posX | 0;  // floor (posX >= 0): matches (int)(nPosX + iWidth)
     const py0 = bob.posY | 0;
     const maxIdx = ncolors - 1;
@@ -220,11 +221,11 @@ export function start(canvas) {
         if (px >= gw) px -= gw;
         if (px < 0 || px >= gw) continue;
         const pos = rowBase + px;
-        let v = buf[pos] + map[w * diameter + h];
+        let v = buf[pos] + map[w * diameter + h] * f;
         if (v >= ncolors) v = maxIdx;  // clamp on every add (no LUT overflow/wrap)
         else if (v < 0) v = 0;
         buf[pos] = v;
-        pixels[pos] = palette[v];
+        pixels[pos] = palette[v | 0];
       }
     }
   }
@@ -239,21 +240,28 @@ export function start(canvas) {
     }
   }
 
-  // One frame of the C's shadebobs_draw: every cycles*degreeCount frames clear
-  // the buffer to black, reset the bobs, and roll a fresh palette base colour
-  // (the C's draw_i >= cycles branch — this is what keeps the field from ever
-  // saturating to a solid block). Then stamp every bob and blit.
-  function step() {
+  // Advance the simulation by `f` C-steps-worth of time, then blit. Every
+  // cycles*degreeCount steps clear the buffer to black, reset the bobs, and roll
+  // a fresh palette base colour (the C's draw_i >= cycles branch — what keeps the
+  // field from saturating to a solid block). Each bob is advanced in sub-steps no
+  // longer than the kernel radius so its trail stays a continuous tube and its
+  // head lands on the exact (smooth) sub-frame position every frame.
+  function step(f) {
     const resetPeriod = Math.max(0, Math.floor(config.cycles) * degreeCount);
-    if (drawI++ >= resetPeriod) {
-      drawI = 0;
+    stepAccum += f;
+    if (stepAccum >= resetPeriod) {
+      stepAccum = 0;
       buf.fill(0);
       pixels.fill(BLACK);
       for (const bob of bobs) resetBob(bob);
       buildPalette();
     }
 
-    for (const bob of bobs) execute(bob);
+    const subs = Math.max(1, Math.ceil((velocity * f) / radius));
+    const sf = f / subs;
+    for (const bob of bobs) {
+      for (let s = 0; s < subs; s++) { moveBob(bob, sf); stamp(bob, sf); }
+    }
     blit();
   }
 
@@ -282,7 +290,7 @@ export function start(canvas) {
     ncolors = Math.max(2, Math.min(255, Math.round(config.ncolors)));
     buildPalette();
 
-    buf = new Uint8Array(gw * gh);
+    buf = new Float32Array(gw * gh);
 
     const count = Math.max(1, Math.min(64, Math.round(config.count)));
     bobs = new Array(count);
@@ -303,7 +311,7 @@ export function start(canvas) {
     pixels = new Uint32Array(imageData.data.buffer);
     pixels.fill(BLACK);
 
-    drawI = 0;
+    stepAccum = 0;
 
     // Clear the visible canvas to black so frame zero starts clean.
     ctx.fillStyle = '#000';
@@ -319,28 +327,24 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the pace is identical at any refresh rate. Cap
-  // catch-up so a backgrounded tab doesn't fire a burst of steps on refocus.
-  const MAX_CATCHUP_STEPS = 8;
+  // TIME-BASED motion (not a discrete one-step-per-tick loop). Each rAF frame
+  // advances the simulation by `f` = elapsed / (delay + OVERHEAD) C-steps -- the
+  // fraction of a step the wall-time represents -- so the bobs move a smooth EVEN
+  // amount every displayed frame. The live binary runs ~33.9 fps, well under a
+  // 60 Hz refresh, so a discrete loop would step the bob head only every other
+  // frame and read as jerky; fractional stepping (with each deposit's intensity
+  // scaled by f, see stamp) keeps the head gliding while matching the C's density.
+  // f is capped so a backgrounded tab doesn't lurch a long way on refocus.
+  const MAX_STEP_F = 4;
   let lastTime = 0;
-  let lag = 0;
   let rafId = 0;
 
   function frame(now) {
     if (lastTime === 0) lastTime = now;
-    lag += now - lastTime;
+    let f = (now - lastTime) / ((config.delay + OVERHEAD) / 1000);
     lastTime = now;
-
-    const delayMs = config.delay / 1000;
-    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
-
-    let steps = 0;
-    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
-      step();
-      lag -= delayMs;
-      steps++;
-    }
+    if (f > MAX_STEP_F) f = MAX_STEP_F;
+    if (f > 0) step(f);
 
     rafId = requestAnimationFrame(frame);
   }
