@@ -226,6 +226,17 @@
       "description": "Repeatedly draws random Celtic cross-stitch patterns.\n\nhttps://en.wikipedia.org/wiki/Celtic_knot\nhttps://en.wikipedia.org/wiki/Knots_and_graphs"
     },
     {
+      "title": "circuit",
+      "module": "./hacks/circuit.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Ben Buxton",
+      "year": 2001,
+      "description": "Electronic components float around."
+    },
+    {
       "title": "cloudlife",
       "module": "./hacks/cloudlife.js",
       "dim": "2d",
@@ -484,6 +495,17 @@
       "description": "A rotating ring knots and un-knots itself.\n\nhttps://www.shadertoy.com/view/MsVXDt"
     },
     {
+      "title": "engine",
+      "module": "./hacks/engine.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Ben Buxton",
+      "year": 2001,
+      "description": "Internal combusion engines.\n\nhttps://en.wikipedia.org/wiki/Internal_combustion_engine#Operation"
+    },
+    {
       "title": "epicycle",
       "module": "./hacks/epicycle.js",
       "dim": "2d",
@@ -515,6 +537,17 @@
       "author": "Stephen Montgomery-Smith",
       "year": 2000,
       "description": "Simulates two dimensional incompressible inviscid fluid flow.\n\nhttps://en.wikipedia.org/wiki/Euler_equations_%28fluid_dynamics%29\nhttps://en.wikipedia.org/wiki/Inviscid_flow"
+    },
+    {
+      "title": "extrusion",
+      "module": "./hacks/extrusion.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Linas Vepstas",
+      "year": 1999,
+      "description": "Various extruded shapes twist and turn inside out."
     },
     {
       "title": "fadeplot",
@@ -665,6 +698,28 @@
       "author": "otaviogood",
       "year": 2015,
       "description": "Disc-based visualization of different frequencies next to each other.\n\nhttps://www.shadertoy.com/view/llS3zd"
+    },
+    {
+      "title": "glknots",
+      "module": "./hacks/glknots.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 2003,
+      "description": "Generates some twisting 3d knot patterns. Spins 'em around.\n\nhttps://en.wikipedia.org/wiki/Knot_theory"
+    },
+    {
+      "title": "glsnake",
+      "module": "./hacks/glsnake.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Wilkinson",
+      "year": 2002,
+      "description": "The \"Rubik's Snake\" puzzle.\n\nSee also the \"Rubik\" and \"Cube21\" screen savers.\n\nhttps://en.wikipedia.org/wiki/Rubik%27s_Snake"
     },
     {
       "title": "goldenapollian",
@@ -897,6 +952,29 @@
       "description": "Blinking dots interact with each other circularly.\n\nA surface is filled with a hundred medium to small sized circles. Each circle has a different size and direction, but moves at the same slow rate. Displays the instantaneous intersections of the circles as well as the aggregate intersections of the circles.\n\nThe circles begin with a radius of 1 pixel and slowly increase to some arbitrary size. Circles are drawn with small moving points along the perimeter. The intersections are rendered as glowing orbs. Glowing orbs are rendered only when a perimeter point moves past the intersection point."
     },
     {
+      "title": "julia",
+      "module": "./hacks/julia.js",
+      "dim": "2d",
+      "categories": [
+        "fractals"
+      ],
+      "author": "Sean McCullough",
+      "year": 1997,
+      "description": "The Julia set is a close relative of the Mandelbrot set. The small moving dot indicates the control point from which the rest of the image was generated.\n\nSee also the \"Discrete\" screen saver.\n\nhttps://en.wikipedia.org/wiki/Julia_set"
+    },
+    {
+      "title": "kaleidescope",
+      "module": "./hacks/kaleidescope.js",
+      "dim": "2d",
+      "categories": [
+        "optical",
+        "curves"
+      ],
+      "author": "Ron Tapia",
+      "year": 1997,
+      "description": "A simple kaleidoscope made of line segments.\n\nSee \"GLeidescope\" for a more sophisticated take.\n\nhttps://en.wikipedia.org/wiki/Kaleidoscope"
+    },
+    {
       "title": "kumppa",
       "module": "./hacks/kumppa.js",
       "dim": "2d",
@@ -906,6 +984,17 @@
       "author": "Teemu Suutari",
       "year": 1998,
       "description": "Spiraling, spinning, and very, very fast splashes of color rush toward the screen."
+    },
+    {
+      "title": "lament",
+      "module": "./hacks/lament.js",
+      "dim": "3d",
+      "categories": [
+        "geometry"
+      ],
+      "author": "Jamie Zawinski",
+      "year": 1998,
+      "description": "Lemarchand's Box, the Lament Configuration.\n\nWarning: occasionally opens doors.\n\nhttps://en.wikipedia.org/wiki/Lemarchand%27s_box"
     },
     {
       "title": "laser",
@@ -997,6 +1086,18 @@
       "author": "David Bagley",
       "year": 1999,
       "description": "A cellular automaton that generates loop-shaped colonies that spawn, age, and eventually die.\n\nhttps://en.wikipedia.org/wiki/Langton%27s_loops"
+    },
+    {
+      "title": "marbling",
+      "module": "./hacks/marbling.js",
+      "dim": "2d",
+      "categories": [
+        "plasma",
+        "fractals"
+      ],
+      "author": "Jamie Zawinski and Dave Odell",
+      "year": 2021,
+      "description": "Marble-like or cloud-like patterns generated using Perlin Noise and Fractal Brownian Motion."
     },
     {
       "title": "metaballs",
@@ -1360,6 +1461,18 @@
       "author": "mrange",
       "year": 2024,
       "description": "Platonic solids with inner mirrors.\n\nhttps://www.shadertoy.com/view/XfyXRV"
+    },
+    {
+      "title": "shadebobs",
+      "module": "./hacks/shadebobs.js",
+      "dim": "2d",
+      "categories": [
+        "plasma",
+        "particles"
+      ],
+      "author": "Shane Smit",
+      "year": 1999,
+      "description": "Oscillating oval patterns that look something like vapor trails or neon tubes."
     },
     {
       "title": "sierpinski",
