@@ -54,17 +54,23 @@ non-finite values. Set `maxCycles = 0` to disable the restart (runs forever).
   in logical px (unscaled `STEP`/`0.81`), matching the original pixel cadence.
 - **Sand blending** via `globalAlpha` instead of the C's manual `off_img` lerp (identical
   result); `off_img` removed. Off-screen grains are skipped (the C's `XDrawPoint` clips).
-- **Colormap**: the 122-entry Pollock map from `substrate.c` is included verbatim as the
-  default `palette: 'sand'`; an optional `'rainbow'` HSL palette is added (sand colours
-  only — crack lines stay black, like the C's `fgcolor`).
+- **Colormap**: the 122-entry Pollock map from `substrate.c` is included verbatim — it is
+  the C's **only** colour mode (crack lines are black `fgcolor`; the sand grains carry the
+  Pollock tones). No colour slider: an earlier draft added a non-stock `'rainbow'` HSL
+  palette behind a `palette` select; both were **removed 2026-07-01** as invented (the C
+  has no such option — Rule 3, drop invented knobs).
 - **Angle compare is raw degrees** (no modulo), exactly as the C — a curved crack's `t`
   accumulates past 360 before its `degrees_drawn > 360` restart fires, but stays well below
   the `OPEN = 10001` sentinel, so occupied/empty never alias.
-- **Units / defaults**: `delay` µs as in the xml; default nudged `18000 -> 16000` (one
-  display frame) so it steps ~once per frame and motion stays smooth (the brief's pacing
-  rule). substrate is intentionally slow/meditative; raise **Frame rate** to speed growth,
-  **Initial cracks** for a busier start. `maxCracks` exposed as "Max cracks" (stock 100;
-  not in the stock UI). Keypress-to-restart dropped (the host owns keys + `reinit`).
+- **Units / defaults**: `delay` µs as in the xml, at the **stock default 18000** plus a
+  live-measured `OVERHEAD = 8385` µs, so the rAF lag-accumulator paces one step per
+  `(delay + OVERHEAD)` and reproduces the live binary's **37.9 fps** (measured via `-fps`
+  at 820x560: Load 31.8%, a clean delay-bound reading — the sleep slice `26385 * (1-0.318)
+  = 17994` ≈ stock 18000, so contention-free). The earlier by-eye `18000 -> 16000` nudge is
+  gone; see [[framerate-calibration]]. substrate is intentionally slow/meditative; raise
+  **Frame rate** to speed growth, **Initial cracks** for a busier start. `maxCracks` exposed
+  as "Max cracks" (stock 100; not in the stock UI). Keypress-to-restart dropped (the host
+  owns keys + `reinit`).
 
 ## Correctness self-review
 - **Termination/closure**: every stop branch (collision, out-of-bounds, closed circle)

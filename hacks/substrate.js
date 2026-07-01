@@ -35,7 +35,7 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/substrate.xml. Units match the xml so
   // the tuning UI maps 1:1 to the original (delay in microseconds).
   const config = {
-    delay: 16000,         // \u00B5s between steps (--growth-delay; stock 18000)
+    delay: 18000,         // \u00B5s between steps (--growth-delay; stock)
     maxCycles: 10000,     // steps before the field clears + reseeds (--max-cycles)
     sandGrains: 64,       // grains in each sand-painting wash (--sand-grains)
     circlePercent: 33,    // % of new cracks that curve into arcs (--circle-percent)
@@ -43,14 +43,13 @@ export function start(canvas) {
     maxCracks: 100,       // hard cap on simultaneously live cracks (--max-cracks)
     wireframe: false,     // true = bare crack lines, no sand wash (--wireframe)
     seamless: false,      // wrap cracks around the edges (--seamless)
-    palette: 'sand',      // 'sand' = the original Pollock colormap, or 'rainbow'
   };
 
   // live: true  -> the loop reads config[key] every step (applies instantly).
   // live: false -> the value sizes the grid / reseeds the round, so a change
   //                re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 18000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'maxCycles', label: 'Duration', type: 'range', min: 2000, max: 25000, step: 500, default: 10000, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'sandGrains', label: 'Sand grains', type: 'range', min: 16, max: 128, step: 1, default: 64, lowLabel: 'few', highLabel: 'lots', live: true },
     { key: 'circlePercent', label: 'Circle percentage', type: 'range', min: 0, max: 100, step: 1, default: 33, unit: '%', lowLabel: '0%', highLabel: '100%', live: true },
@@ -58,14 +57,13 @@ export function start(canvas) {
     { key: 'maxCracks', label: 'Max cracks', type: 'range', min: 11, max: 400, step: 1, default: 100, lowLabel: 'few', highLabel: 'many', live: true },
     { key: 'wireframe', label: 'Wireframe only', type: 'checkbox', default: false, live: true },
     { key: 'seamless', label: 'Seamless mode', type: 'checkbox', default: false, live: true },
-    { key: 'palette', label: 'Palette', type: 'select', default: 'sand', live: false, options: [
-        { value: 'sand', label: 'sand (Pollock)' },
-        { value: 'rainbow', label: 'rainbow' },
-      ] },
   ];
 
   // Per-step crack advance (C's STEP); the perpendicular sand walk uses 0.81.
   const STEP = 0.42;
+  // Live-measured framework overhead: stock delay 18000us + this reproduces the
+  // live binary's 37.9fps (Load 31.8% = a clean delay-bound reading). See substrate.md.
+  const OVERHEAD = 8385;
   const D2R = Math.PI / 180;
   // cgrid sentinel: cells >= OPEN are empty; an occupied cell stores its crack's
   // integer angle (always < ~810 deg, so never collides with the sentinel).
@@ -111,7 +109,7 @@ export function start(canvas) {
   let W, H;           // logical grid dimensions (canvas size / S)
   let cgrid;          // Int32Array(W*H): occupancy grid (OPEN or a crack angle)
   let cracks;         // live crack pool (grows from initialCracks up to maxCracks)
-  let colormap;       // sand colours (Pollock or rainbow)
+  let colormap;       // sand colours (the Pollock table)
   let cycles;         // steps since this round began; drives the periodic reset
 
   const frand = (x) => Math.random() * x;
@@ -119,16 +117,6 @@ export function start(canvas) {
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   // Positive modulo (fmod-style wrap, always in [0, n)) for seamless geometry.
   const wrap = (a, n) => ((a % n) + n) % n;
-
-  function buildPalette() {
-    if (config.palette === 'rainbow') {
-      colormap = [];
-      const n = 96;
-      for (let i = 0; i < n; i++) colormap.push(`hsl(${Math.round(i * 360 / n)}, 70%, 55%)`);
-    } else {
-      colormap = POLLOCK;
-    }
-  }
 
   // Crack::findStart() + Crack::startCrack(): re-seed a crack from a random
   // EXISTING crack cell, heading perpendicular (+/-90 deg) to it. If none is
@@ -343,7 +331,7 @@ export function start(canvas) {
     S = window.devicePixelRatio || 1;
     W = Math.max(1, Math.floor(canvas.width / S));
     H = Math.max(1, Math.floor(canvas.height / S));
-    buildPalette();
+    colormap = POLLOCK;
     cgrid = new Int32Array(W * H);
     reseed();
   }
@@ -370,7 +358,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
