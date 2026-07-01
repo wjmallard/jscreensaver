@@ -22,24 +22,25 @@
 // kcycle_color is a no-op outside "greedy" mode), so the trail is a solid-colour
 // ribbon, NOT a fading rainbow. See kaleidescope.md.
 //
-// Rendering: the C draws the newest trail node and erases the oldest each frame
-// with two X GCs. Canvas has no persistent-overdraw GC, and erasing anti-aliased
-// strokes in place leaves residue, so the whole live ring is re-stroked each time
-// on a cleared canvas -- one beginPath per segment (all its nodes * symmetry
-// copies), stroked once in the segment's colour. Same pixels, no XOR / erase-GC.
+// Rendering (faithful to the C): a persistent Uint32 framebuffer IS the X window.
+// The C draws, per object per step, the NEWEST trail node with draw_gc and erases
+// the OLDEST (cur->next) with erase_gc (foreground = background = black),
+// overdrawing IN PLACE with antialiasing OFF (jwxyz_XSetAntiAliasing False),
+// line_width = lw, round caps. We do exactly that: a Uint32Array over an ImageData
+// is the persistent buffer (opaque black, never cleared except on init/resize/
+// reset — the C clears the window only at start); each node caches its `symmetry`
+// integer screen segments (the C's xsegments[]); per step we rasterise the newest
+// node's segments in the segment's colour with a non-AA line rasteriser (hard-set
+// pixels, no blending — an X GC with AA off) and, if the oldest node was drawn,
+// rasterise its CACHED segments in black. That is TWO line-sets per segment per
+// step (~154 lines total at the defaults), NOT a full-figure re-stroke: the ~98
+// middle nodes persist untouched in the buffer. The black erase punching gaps
+// where it crosses live lines is the correct erosion character, not a bug.
 //
-// The stroking is the cost: ~nsegments * ntrails * symmetry anti-aliased lines
-// (~7,700 at the defaults). But those lines are STATIC -- propagate() writes each
-// node once; only the head grows and the tail drops each sim STEP, ~30x/s. So we
-// re-stroke the figure onto an OFFSCREEN cache only when the sim advances, and
-// cheaply blit that cache to the visible canvas every rAF frame. That decouples
-// the expensive stroke (sim rate, ~30 Hz) from presentation (display rate), so
-// the static figure is not re-rasterised on the frames where nothing changed.
-//   (Why not a dirty-rect clip of just the head/tail? Because every node's
-//   `symmetry` copies RING the centre -- its 11 copies sit at 11 angles around
-//   the centre at the node's radius -- so a single node's damage already spans
-//   ~the whole canvas; measured ~96% of it per step. There is no small region to
-//   clip to, so a clip can't localise the re-stroke. Cache + blit is the win.)
+// Presentation: putImageData the buffer into an offscreen canvas only when the sim
+// advances (~30 Hz), then drawImage that 1:1 onto the visible canvas EVERY frame
+// (a cheap GPU blit that keeps the compositor presenting a live layer — sparse
+// canvas updates otherwise stall the present). See kaleidescope.md.
 
 export const title = 'kaleidescope';
 
@@ -50,12 +51,13 @@ export const info = {
 };
 
 export function start(canvas) {
-  // Visible context: only ever blits the offscreen cache (a cheap image copy).
+  // Visible context: only ever blits the offscreen canvas (a cheap 1:1 GPU copy).
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;   // 1:1 blit, no resampling
 
-  // Offscreen cache: the full mandala is stroked here, and only when the sim
-  // advances (see the render note up top). Same backing-store size as the visible
-  // canvas, so the blit is a 1:1 copy with no scaling.
+  // Offscreen present canvas: the framebuffer (see the render note up top) is
+  // putImageData'd here on each sim step, then drawImage'd to the visible canvas
+  // every frame. Same backing-store size, so the blit is 1:1 with no scaling.
   const off = document.createElement('canvas');
   const offctx = off.getContext('2d');
 
@@ -88,11 +90,10 @@ export function start(canvas) {
   // adds (xoff, yoff) = (width/2, height/2) at draw time. We keep that.
   const TAU = 2 * Math.PI;
 
-  // Each trail node is a STATIC rotated copy: propagate() writes it once and the
-  // spiral just extends at the head, so draw() re-strokes the SAME nodes and the
-  // body sits perfectly still (only the head grows / tail drops per step). That
-  // staticness is why the offscreen cache pays off: the figure only needs
-  // re-stroking when the sim advances, not on every presentation frame.
+  // Each trail node is written ONCE by propagate() and rasterised ONCE into the
+  // persistent framebuffer (then erased once, ntrails steps later) — the body
+  // never moves, so there is nothing to re-draw between steps. That is why the
+  // raster is per-step (draw newest / erase oldest), not a per-frame re-stroke.
   // OVERHEAD paces the step rate to the live binary's ~30.2 fps (measured: 30.2
   // fps / 39.6% load, sleep slice = stock delay).
   //   An earlier experiment set SUBK>1: sub-step the sim finer for a smoother head,
@@ -110,6 +111,10 @@ export function start(canvas) {
   const GREENMIN = 30000, GREENRANGE = 20000;
   const BLUEMIN = 30000, BLUERANGE = 20000;
 
+  // Opaque black, packed little-endian RGBA (A=0xFF, B=G=R=0). Background /
+  // erase_gc colour, and the value the buffer is cleared to.
+  const BLACK = 0xFF000000;
+
   let xoff, yoff;         // screen centre, device px
   let nseg, nsym, ntr;    // resolved counts (from config, clamped)
   let ringLen;            // trail ring size = ntr * SUBK (arc unchanged, sampled finer)
@@ -117,6 +122,11 @@ export function start(canvas) {
   let lineWidth;
   let segs;               // the drifting segments (see makeSeg)
   let started;            // the C's done_once: first step draws the root in place
+
+  let W, H;               // framebuffer dimensions (device px)
+  let imageData, buf;     // the persistent framebuffer: Uint32 words over ImageData
+  let rasterLine;         // non-AA line rasteriser, chosen by lineWidth (init)
+  let discDX = null, discDY = null;  // round-cap disc offsets for lineWidth > 1
 
   // INTRAND-style helper: integer in [0, n).
   function nrand(n) {
@@ -136,11 +146,14 @@ export function start(canvas) {
   // each channel random in [min, min+range) of the 16-bit space, then the X
   // server's >>8 downsample to 8-bit. Channels land in ~[117,195) — mid-tones,
   // never the vivid full-saturation rainbow. The colour is fixed for the run.
+  // Returned PACKED into the framebuffer's native little-endian RGBA Uint32 word
+  // (A=0xFF); the three (nrand(range)+min)>>8 channel draws, in R,G,B order, are
+  // byte-identical to the C — only the return type is packed instead of a string.
   function segColor() {
     const r = (nrand(REDRANGE) + REDMIN) >> 8;
     const g = (nrand(GREENRANGE) + GREENMIN) >> 8;
     const b = (nrand(BLUERANGE) + BLUEMIN) >> 8;
-    return `rgb(${r}, ${g}, ${b})`;
+    return (0xFF000000 | (b << 16) | (g << 8) | r) >>> 0;
   }
 
   // Random endpoints for one ring node, in the positive quadrant up to half the
@@ -157,12 +170,16 @@ export function start(canvas) {
   // (the C's Ksegment ring, sampled SUBK x finer), the index of the live (newest)
   // node, a grow-in counter, and one fixed colour. Only the root node is seeded;
   // the rest fill in as `cur` advances (grows over the first ringLen sub-steps).
+  // Two RENDER-only per-node buffers mirror the C's Ksegment: a `drawn` flag and
+  // `xseg`, the cached integer screen segments (the C's xsegments[]).
   function makeSeg() {
     const seg = {
       trail: new Float64Array(ringLen * 4),  // [x1,y1,x2,y2] per node, natural coords
       cur: 0,                            // index of the live (newest) node
-      nlive: 0,                          // nodes visited so far (grows to ringLen)
-      color: segColor(),                 // one muted colour for the whole ribbon
+      nlive: 0,                          // SIM bookkeeping (render grows in via drawn[])
+      color: segColor(),                 // one muted colour for the whole ribbon (packed RGBA)
+      drawn: new Uint8Array(ringLen),    // the C's per-node `drawn` flag (0 / 1)
+      xseg: new Int32Array(ringLen * nsym * 4),  // cached screen segments (the C's xsegments[])
     };
     initNode(seg, 0);                    // seed the root (the C's init_objects)
     return seg;
@@ -209,8 +226,7 @@ export function start(canvas) {
 
   // One simulation step: propagate every segment (skipping the very first step,
   // the C's done_once), reset any that collapsed, and grow the trails in. This is
-  // the SIM only -- no drawing; the caller re-strokes the offscreen cache after a
-  // step (or steps) have advanced the figure.
+  // the SIM only -- no drawing; the caller renders each step's delta afterward.
   function step() {
     // One SUB-step: 1/SUBK of a live step's local/global rotation, so SUBK of them
     // equal one C step (the C recomputes these every propigate; fixed here).
@@ -227,64 +243,130 @@ export function start(canvas) {
     started = true;
   }
 
-  // Re-stroke every segment's live ring onto the OFFSCREEN cache, cleared to
-  // black. Each node is one line segment replicated across the symmetry group via
-  // the C's iterated NEWX/NEWY rotation (truncated to short per copy), then offset
-  // to the screen centre. One beginPath per segment, stroked once in its colour.
-  // Called only when the sim has advanced (not every presentation frame).
-  function draw() {
-    offctx.fillStyle = '#000';
-    offctx.fillRect(0, 0, off.width, off.height);
-    offctx.lineWidth = lineWidth;
-    offctx.lineCap = 'round';     // the C's CapRound
-    offctx.lineJoin = 'round';
+  // ---- Non-AA line rasteriser (an X GC with antialiasing OFF) -----------------
 
-    // Stroke straight into the context's own (reused) path -- NOT a per-frame
-    // `new Path2D()` per segment. Those allocations were steady garbage (7/frame,
-    // each ~700 segments) whose periodic GC hitched the WHOLE image; beginPath()
-    // reuses one internal buffer, so draw() is now allocation-free.
-    for (const seg of segs) {
-      offctx.beginPath();
-      const live = Math.min(Math.ceil(seg.nlive / SUBK), ntr);
-      for (let a = 0; a < live; a++) {
-        // newest (a = 0) .. oldest, one LIVE step (SUBK sub-nodes) apart: the sim
-        // runs SUBK x finer for smooth motion, but we DRAW only every SUBK-th node
-        // so the ribbon keeps the C's line density (not SUBK x too dense). As cur
-        // advances one sub-step per frame the whole decimated ribbon shifts by
-        // 1/SUBK of a step -> smooth spin at the faithful density.
-        let idx = seg.cur - a * SUBK;
-        idx = ((idx % ringLen) + ringLen) % ringLen;
-        const b = idx * 4;
-        let x1 = seg.trail[b + 0], y1 = seg.trail[b + 1];
-        let x2 = seg.trail[b + 2], y2 = seg.trail[b + 3];
-        for (let k = 0; k < nsym; k++) {
-          // Rotate by one more theta (the C's NEWX/NEWY), truncate to short, then
-          // offset to screen. The truncated copy feeds the next iteration, so
-          // copy k is rotated by (k+1) steps — iterated, exactly as the C does.
-          const a1 = trunc16(x1 * costheta + y1 * sintheta);   // NEWX
-          const b1 = trunc16(y1 * costheta - x1 * sintheta);   // NEWY
-          const a2 = trunc16(x2 * costheta + y2 * sintheta);
-          const b2 = trunc16(y2 * costheta - x2 * sintheta);
-          x1 = a1; y1 = b1; x2 = a2; y2 = b2;
-          offctx.moveTo(x1 + xoff, y1 + yoff);
-          offctx.lineTo(x2 + xoff, y2 + yoff);
-        }
-      }
-      offctx.strokeStyle = seg.color;
-      offctx.stroke();
+  // Hard-set one framebuffer pixel to a packed RGBA word (no blending), bounds-
+  // checked. This IS the pixel op of a non-AA X GC.
+  function setPixel(x, y, color) {
+    if (x < 0 || x >= W || y < 0 || y >= H) return;
+    buf[y * W + x] = color;
+  }
+
+  // Integer Bresenham line, one hard-set pixel per step. For a 1px GC this is an
+  // exact XDrawSegments with AA off (a width-1 CapRound line is a bare Bresenham).
+  function drawLine1(x0, y0, x1, y1, color) {
+    let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    for (;;) {
+      setPixel(x0, y0, color);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 < dx) { err += dx; y0 += sy; }
     }
   }
 
-  // Blit the offscreen cache to the visible canvas (1:1, no scaling). Cheap image
-  // copy; run every presentation frame so the compositor keeps presenting a live
-  // layer (which avoids the per-present stall that sparse canvas updates incur).
+  // Round-cap disc offsets for lineWidth > 1 (the C's CapRound wide line == the
+  // Minkowski sum of the centre line with a disc of radius lw/2). Built in init().
+  function buildDisc(r) {
+    const dxs = [], dys = [];
+    const ri = Math.ceil(r), r2 = r * r;
+    for (let dy = -ri; dy <= ri; dy++) {
+      for (let dx = -ri; dx <= ri; dx++) {
+        if (dx * dx + dy * dy <= r2) { dxs.push(dx); dys.push(dy); }
+      }
+    }
+    discDX = Int32Array.from(dxs);
+    discDY = Int32Array.from(dys);
+  }
+
+  // Thick Bresenham line: stamp the round-cap disc at every centre pixel — a
+  // faithful width-lw CapRound line, still hard-set (no AA).
+  function drawLineThick(x0, y0, x1, y1, color) {
+    let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    const n = discDX.length;
+    for (;;) {
+      for (let i = 0; i < n; i++) setPixel(x0 + discDX[i], y0 + discDY[i], color);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 < dx) { err += dx; y0 += sy; }
+    }
+  }
+
+  // Compute node k's `symmetry` screen segments from its natural endpoints and
+  // cache them on the node (the C's xsegments[]): the iterated NEWX/NEWY rotation
+  // (truncated to short per copy, exactly as the C), then offset to the centre.
+  // Copy k is rotated (k+1) times because each iteration feeds its truncated
+  // result forward — the small per-step rounding of the original is reproduced.
+  function cacheSegments(seg, k) {
+    const b = k * 4;
+    let x1 = seg.trail[b + 0], y1 = seg.trail[b + 1];
+    let x2 = seg.trail[b + 2], y2 = seg.trail[b + 3];
+    const base = k * nsym * 4;
+    const xs = seg.xseg;
+    for (let i = 0; i < nsym; i++) {
+      const a1 = trunc16(x1 * costheta + y1 * sintheta);   // NEWX
+      const c1 = trunc16(y1 * costheta - x1 * sintheta);   // NEWY
+      const a2 = trunc16(x2 * costheta + y2 * sintheta);
+      const c2 = trunc16(y2 * costheta - x2 * sintheta);
+      x1 = a1; y1 = c1; x2 = a2; y2 = c2;
+      const o = base + i * 4;
+      xs[o + 0] = x1 + xoff;
+      xs[o + 1] = y1 + yoff;
+      xs[o + 2] = x2 + xoff;
+      xs[o + 3] = y2 + yoff;
+    }
+  }
+
+  // Rasterise node k's cached symmetry segments in `color` (the C's XDrawSegments
+  // of one node's xsegments[] with a single GC).
+  function rasterNode(seg, k, color) {
+    const base = k * nsym * 4;
+    const xs = seg.xseg;
+    for (let i = 0; i < nsym; i++) {
+      const o = base + i * 4;
+      rasterLine(xs[o + 0], xs[o + 1], xs[o + 2], xs[o + 3], color);
+    }
+  }
+
+  // One render pass == the C's draw_objects, in object order across the segments.
+  // For each segment: cache + draw the NEWEST node (cur) in its colour and flag it
+  // drawn; then, if the OLDEST live node (cur->next) was ever drawn, erase it in
+  // black using its CACHED segments. That is the C's draw_gc-then-erase_gc pair,
+  // in the same order — so the black erase correctly erodes any live line it
+  // crosses. Called once per sim step (after step()), NOT per presentation frame.
+  function render() {
+    for (const seg of segs) {
+      const cur = seg.cur;
+      cacheSegments(seg, cur);
+      rasterNode(seg, cur, seg.color);          // draw_gc: newest node, its colour
+      seg.drawn[cur] = 1;
+      const nxt = (cur + 1) % ringLen;          // cur->next == the oldest ring node
+      if (seg.drawn[nxt]) rasterNode(seg, nxt, BLACK);   // erase_gc: black
+    }
+  }
+
+  // Push the framebuffer word array into the offscreen canvas (a full upload, run
+  // only when the sim advanced, ~30 Hz).
+  function blitBuffer() {
+    offctx.putImageData(imageData, 0, 0);
+  }
+
+  // Show the offscreen canvas on the visible canvas: a 1:1 GPU blit, run every
+  // presentation frame so the compositor keeps presenting a live layer (sparse
+  // canvas updates otherwise stall the present — the prior finding).
   function present() {
     ctx.drawImage(off, 0, 0);
   }
 
   // Seed everything from the current canvas size (the C's init_g + create/init
-  // objects). Sizes + clears the offscreen cache, strokes the (empty) figure into
-  // it, and shows it.
+  // objects). Allocates the persistent framebuffer, clears it to black, and shows
+  // it. No nodes are drawn yet — the first draw is the first sim step (as in the C,
+  // where the first kaleidescope_draw draws the root in place).
   function init() {
     xoff = Math.floor(canvas.width / 2);
     yoff = Math.floor(canvas.height / 2);
@@ -297,20 +379,28 @@ export function start(canvas) {
     costheta = Math.cos(TAU / nsym);
     sintheta = Math.sin(TAU / nsym);
 
-    // The C: line width 1 device px, 3 on Retina (>2560 px). canvas.width/height
-    // are device px here, so the threshold maps directly (kaleidescope_reshape).
+    // The C's kaleidescope_reshape: line width 1 device px, 3 above 2560 px
+    // (Retina). canvas.width/height are device px, so the threshold maps directly.
     lineWidth = (canvas.width > 2560 || canvas.height > 2560) ? 3 : 1;
+    if (lineWidth > 1) { buildDisc(lineWidth / 2); rasterLine = drawLineThick; }
+    else rasterLine = drawLine1;
 
-    // Offscreen cache tracks the visible backing-store size (setting width clears).
-    off.width = canvas.width;
-    off.height = canvas.height;
+    // The persistent framebuffer == the X window: one Uint32 word per device pixel
+    // over an ImageData, background opaque black, never cleared except here.
+    W = canvas.width;
+    H = canvas.height;
+    off.width = W;
+    off.height = H;
+    imageData = offctx.createImageData(W, H);
+    buf = new Uint32Array(imageData.data.buffer);
+    buf.fill(BLACK);
 
     started = false;
     segs = [];
     for (let i = 0; i < nseg; i++) segs.push(makeSeg());
 
-    draw();       // stroke the initial (empty) figure into the cache
-    present();    // and show it
+    blitBuffer();   // push the (black) buffer to the offscreen canvas
+    present();      // and show it
   }
 
   function reinit() {
@@ -327,11 +417,12 @@ export function start(canvas) {
   }
 
   // rAF lag-accumulator paced by (delay + OVERHEAD)/SUBK: one SUB-step per that
-  // interval, i.e. SUBK sub-steps per live step at the live 30.2 fps. When any
-  // step ran this frame the figure changed, so re-stroke the offscreen cache once
-  // (regardless of how many steps); every frame then blits the cache to screen.
-  // That keeps the expensive stroke at the sim rate (~30 Hz) while presentation
-  // stays at the display rate. Catch-up capped so a backgrounded tab can't burst.
+  // interval, i.e. SUBK sub-steps per live step at the live 30.2 fps. Each step
+  // rasterises its own delta (draw newest / erase oldest) into the persistent
+  // framebuffer; when any step ran we upload the buffer to the offscreen canvas
+  // ONCE (blitBuffer), and every frame blit that offscreen to screen (present). So
+  // the raster stays at the sim rate (~30 Hz) while presentation is the display
+  // rate. Catch-up capped so a backgrounded tab can't burst.
   const MAX_CATCHUP_STEPS = 16;
   let lastTime = 0;
   let lag = 0;
@@ -347,13 +438,14 @@ export function start(canvas) {
 
     let steps = 0;
     while (lag >= subStepMs && steps < MAX_CATCHUP_STEPS) {
-      step();
+      step();      // advance the sim one step (propagate + reset, all segments)
+      render();    // rasterise THIS step's delta (draw newest, erase oldest)
       lag -= subStepMs;
       steps++;
     }
 
-    if (steps > 0) draw();   // re-stroke the cache only when the sim advanced
-    present();               // blit the cache to screen every frame
+    if (steps > 0) blitBuffer();   // upload the changed framebuffer once
+    present();                     // 1:1 blit to screen every frame
     rafId = requestAnimationFrame(frame);
   }
 
