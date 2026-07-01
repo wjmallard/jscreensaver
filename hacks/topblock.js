@@ -46,8 +46,9 @@
 //     cancel three's 1/PI Lambert (the glknots/dangerball convention).
 //
 // PACING -- render every rAF; tick the block simulation (spawn + rotate + fall/collide) at
-// effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 37500 (the GL track's shared measured overhead;
-// xml delay 10000 -> ~21fps). The falling is continuous, so falling heights + the world
+// effFps = 1e6/(delay+OVERHEAD). OVERHEAD is 6667 (~60fps), NOT the GL track's shared 37500:
+// spawn/fall are frame-coupled here, so the slow default starved block drops (see below). The
+// falling is continuous, so falling heights + the world
 // rotation + the eyeLine/eye camera scalars are INTERPOLATED between ticks (1-tick-behind,
 // catch-up capped at 8) for smooth motion (the dangerball.js pattern).
 
@@ -71,7 +72,13 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;          // us; GL track shared overhead. xml delay 10000 -> ~21fps.
+  // topblock's spawn AND fall are FRAME-COUPLED (generateNewBlock rolls random()%spawn once
+  // per sim-tick, blocks fall by dropSpeed per tick), so the sim rate IS the animation speed
+  // and the block-drop cadence. The GL track's shared 37500 (-> ~21fps) is far below the .c's
+  // true rate for this LIGHT hack (delay 10000 -> tens of fps) and starves spawns: ~0.4/s and
+  // a many-second lag to the first block. Recalibrated to the .c's intended ~60fps (also what
+  // the reference screenshot's dense pile implies): 1e6/(10000+6667) ~= 60. See topblock.md.
+  const OVERHEAD = 6667;           // us; ~60fps at the xml delay of 10000 (NOT the 37500 default)
   const MAX_TICKS = 8;             // sim catch-up cap (avoids spiral after a stall)
 
   // ---- constants (topblock.h) ----

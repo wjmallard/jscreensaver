@@ -111,10 +111,20 @@ both (bricks span a large volume and the matrices are set manually).
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 37500` (the GL track's shared measured overhead; the live binary can't be timed
-under this machine's XQuartz Apple-DRI block). xml `delay = 10000` -> `effFps =
-1e6/(10000+37500) ~= 21fps`. `delay` is the frame-rate knob; render is every rAF, the sim
-advances `dt*effFps` ticks per frame.
+`OVERHEAD = 6667` (**recalibrated 2026-07-01, was 37500**). `delay` is the frame-rate knob;
+render is every rAF, the sim advances `dt*effFps` ticks per frame, `effFps =
+1e6/(delay+OVERHEAD)`.
+
+Why NOT the GL track's shared 37500 (`~21fps`): topblock's spawn AND fall are **frame-coupled**
+-- `generateNewBlock` rolls `random()%spawn` once per sim-tick and bricks fall by `dropSpeed`
+per tick -- so the sim rate IS the block-drop cadence. At `~21fps` the spawn gate fires only
+~21x/s * 1/50 = ~0.4 blocks/s, giving a multi-second (observed ~15s) lag to the FIRST block and
+a too-sparse pile vs the reference. The `.c` is a light hack (`delay=10000` -> tens of fps), so
+`~21fps` is far too slow. Recalibrated to the `.c`'s intended **~60fps** (`1e6/(10000+6667)`),
+which the reference screenshot's dense pile also implies: first block <1s, ~1.2 blocks/s. The
+live binary can't be timed here (XQuartz Apple-DRI block) so 60 is the light-hack target rate,
+not a measurement -- eyeball in a real browser. (If a slow machine's frame rate still starves
+spawns via the `dt`-clamp + 8-tick catch-up cap, the fallback is a real-time spawn clock.)
 
 ## Config
 
