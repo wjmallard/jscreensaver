@@ -5,12 +5,17 @@
 // https://www.jwz.org/xscreensaver/
 //
 // "To move in a worm-like manner" — a handful of worms crawl across the screen
-// with smoothly turning headings, each laying down a thick coloured line trail.
-// Each worm is a fixed-length snake: it plots a new segment at its head every
-// step and erases the segment at its tail, so it slithers without saturating the
-// field. Worms bounce off the screen border and off each other's trails (but
-// pass through their own), ricocheting around until they jam, at which point the
-// screen clears and a fresh set of worms is seeded.
+// with smoothly turning headings, each laying down a thin coloured line trail.
+// Worms bounce off each other's trails (but pass through their own) and off an
+// optional border, ricocheting around the field. The C runs one of ~10 random
+// sample programs at startup, and about half of them turn "erasing" off; we mirror
+// that by picking one of two modes at random on each reset:
+//   - SLITHER (erasing on): each worm is a fixed-length snake — it plots a segment
+//     at its head and erases the one at its tail every step, so it slithers without
+//     ever saturating the field, and (as in the C) never resets.
+//   - ACCUMULATE (erasing off): the tail is not erased but frozen into a PERMANENT
+//     trail; a worm dies once it wedges (its whole trail collapses to a point), and
+//     when all worms have died the field clears, re-rolls the palette, and re-seeds.
 //
 // The meander is the whole point: each worm has one of seven "turn modes" — the
 // random-walk-with-momentum / curvature engines from move() in the C — which is
@@ -20,14 +25,20 @@
 // behaviour the default/sample configurations produce. See [[squiral]] for the
 // shared module skeleton and [[spiral]] for the circular-trail-buffer idiom.
 //
-// Rendering: like the C's sp() (XFillRectangle), each step stamps a small filled
-// rect at the worm's head pixel in its hue and a black rect over the tail pixel
-// it is erasing. Consecutive one-pixel-apart stamps overlap into a continuous
-// thick coloured trail — accumulating onto the persistent canvas, no per-frame
-// repaint. A 1-device-px collision grid (the C's point[]) backs the bounce logic
-// so the ricochets match the original even though the trail looks thick. (Filled
-// rects rather than Path2D polylines: identical to the C and free of the wrap-
-// bridge / anti-aliased-sliver hazards a stroked-and-erased polyline would have.)
+// Rendering: like the C's sp() (XFillRectangle of pscale x pscale), each step
+// stamps a filled rect at the worm's head pixel in the worm's colour, and over the
+// tail pixel either a black rect (slither) or a frozen-colour rect (accumulate).
+// pscale is 1 device px (3 on a very large / retina backing store), so the worms
+// are thin — consecutive one-px-apart stamps overlap into a continuous trail —
+// accumulating onto the persistent canvas, no per-frame repaint. A 1-device-px
+// collision grid (the C's point[]) backs the bounce logic. Colours come from the
+// C's random BRIGHT colormap (make_random_colormap, bright_p=True — independent
+// random HSV, NOT an even hue ramp): the head in mycolors[col], the frozen trail
+// in mycolors[col + thrmax]. (Filled rects rather than Path2D polylines: identical
+// to the C and free of the wrap-bridge / anti-aliased-sliver hazards a stroked-
+// and-erased polyline would have.)
+
+import { makeRandomColormapRGB } from './colormap.js';
 
 export const title = 'vermiculate';
 
@@ -40,34 +51,32 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/vermiculate.xml plus the C's own
-  // constants (the xml only exposes Duration + fps). The xml's "Duration"
-  // slider is the C's `speed` (1..1000); higher = the worms crawl faster
-  // (waitabit() returns less idle time), so it is really a frame-rate control.
-  // We map it through `delay` (the standard inverted frame-rate slider) and add
-  // worm-count / colours / trail-length / curviness, which the C sets from the
-  // chosen sample string. Defaults are tuned a touch calmer than stock.
+  // The xml exposes only Duration (the C's `speed`, 1..1000) + fps. `speed` is a
+  // frame-rate control (higher = worms crawl faster: waitabit() returns less idle
+  // time, the C batching more move-rounds per 10ms sleep); we map that intent onto
+  // the standard inverted `delay` slider. Everything else the C sets from a random
+  // sample string (an un-portable keystroke program), so there is no xml resource
+  // for it \u2014 `threads`, `curviness` and `border` are exposed as adaptation knobs
+  // that mirror the C's *interactive* controls (the ']'/'[' worm add/remove,
+  // '/'/'*' curviness, and 'B' border toggle); each uses the C's own default and
+  // range. There is no colour or trail-length knob: the palette is always the C's
+  // random BRIGHT colormap and every worm's length is randomised per the C.
   const config = {
-    delay: 16000,     // microseconds between steps (frame rate)
-    threads: 6,       // number of worms on screen (C default 4; samples vary)
-    ncolors: 64,      // size of the hue cycle
-    trail: 90,        // worm length in segments (C: random 30..199 per worm)
-    curviness: 30,    // tightness of the meander (C's `curviness`, 5..50)
-    border: true,     // draw a border the worms bounce off (C's bordcol)
-    thickness: 2,     // line width in logical px (the C plots 1px dots)
+    delay: 10000,     // microseconds/frame; the C's waitabit 10ms quantum (Duration)
+    threads: 12,      // number of worms (C: maininit default 4; samples run 3..62)
+    curviness: 30,    // tightness of the meander (C's `curviness`, 5..50, default 30)
+    border: false,    // draw the containing L-border; off by default, as the live
+                      // usually is (nearly every sample string toggles bordcol off)
   };
 
   // live: true  -> the loop reads config[key] every step (applies instantly).
-  // live: false -> the value sizes worms/colours/grid, so a change re-runs
+  // live: false -> the value sizes worms/palette/grid, so a change re-runs
   //                init() via reinit() (which also clears the canvas).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 16000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'curviness', label: 'Curviness', type: 'range', min: 5, max: 50, step: 1, default: 30, lowLabel: 'loose', highLabel: 'tight', live: true },
-    { key: 'threads', label: 'Worms', type: 'range', min: 1, max: 30, step: 1, default: 6, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'trail', label: 'Worm length', type: 'range', min: 10, max: 200, step: 5, default: 90, lowLabel: 'short', highLabel: 'long', live: false },
-    { key: 'thickness', label: 'Thickness', type: 'range', min: 1, max: 8, step: 1, default: 2, lowLabel: 'thin', highLabel: 'thick', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'border', label: 'Border', type: 'checkbox', default: true, live: false },
+    { key: 'threads', label: 'Worms', type: 'range', min: 1, max: 60, step: 1, default: 12, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'border', label: 'Border', type: 'checkbox', default: false, live: false },
   ];
 
   // --- the C's #defines, transcribed -----------------------------------------
@@ -77,23 +86,32 @@ export function start(canvas) {
   const DEGS8 = DEGS / 8;      // degs8 (45)
   const RLMAX = 200;           // rlmax: max trail length
   const TMODES = 7;            // tmodes: number of turn modes
+  const THRMAX = 120;          // thrmax: the C's max thread count; also the frozen-
+                               // trail colour offset (accumulate mode: col + thrmax)
+  const TAILMAX = THRMAX * 2 + 1;   // tailmax (241): size of the C's mycolors[]
 
-  // The C runs many move() rounds between idle waits (up to 1000), pacing by an
-  // accumulated `speed` budget (waitabit). We let the lag accumulator pace the
-  // frame rate via `delay`, and run a few move-rounds per step so a 1px/round
-  // worm covers ground at a pleasant slither instead of inching one pixel/frame.
-  const ROUNDS_PER_STEP = 3;
-  // The C resets the whole field every `ticks` (20000) draw-rounds even if the
-  // worms never jam, to keep things fresh. Scale to our per-round cadence.
-  const MAX_TICKS = 8000;
+  // The C batches many move() rounds per idle wait: waitabit() adds `threads` to
+  // an accumulator each round and only sleeps 10ms once it crosses `speed`, so it
+  // runs ~speed/threads rounds per frame and a worm advances that many px per 10ms
+  // (per-worm speed is normalised by the thread count). We reproduce that: each
+  // fixed step runs round(SPEED_BUDGET / threads) move-rounds and the accumulator
+  // sleeps `delay` (the 10ms quantum) between them. SPEED_BUDGET is the port's
+  // analog of the sample string's `speed`, picked for a faithful ~1500 px/s worm
+  // slither at the default thread count.
+  const SPEED_BUDGET = 240;
+  // Framework + draw cost added to the delay floor so the port never runs faster
+  // than the 10ms quantum implies (see the framerate note). Live-measured: 52.5fps
+  // (Load 47.5%, clean) at delay 10000 -> OVERHEAD 9050 (matches the live frame rate;
+  // final slither speed also depends on SPEED_BUDGET -- eyeball vs live).
+  const OVERHEAD = 9050;
 
-  let S = 1;                   // devicePixelRatio
   let W, H;                    // canvas size, device px
   let wid, hei;                // collision-grid size = canvas size (1px cells)
   let point;                   // Uint8Array(wid*hei): plotted colour index, 0 = empty
-  let palette;                 // ncolors CSS strings; palette[0] is unused (empty)
+  let palette;                 // CSS strings, one per colour code; [0] = black (empty)
   let threads;                 // array of worm objects
-  let tickc;                   // draw-round counter toward MAX_TICKS
+  let erasing;                 // C's st->erasing: true = slither (erase tails),
+                               // false = accumulate (freeze tails, worms die + reset)
   let resetPending;            // re-seed everything next step
 
   // Heading -> unit step. The C precomputes sinof[]/cosof[] over 360 integer
@@ -122,20 +140,28 @@ export function start(canvas) {
     return val;
   }
 
-  // ncolors smooth-rainbow CSS strings (the C's random colormap; an even rainbow
-  // reads better on the web). White when ncolors <= 1 (the C's mono fallback).
+  // The C's randpal(): make_random_colormap(&mycolors[1], &ncolors=tailmax-1=240,
+  // ..., bright_p=True, ...) fills mycolors[1..240] with INDEPENDENT random BRIGHT
+  // colours — H random 0..360, S random 30..100%, V random 66..100% (so anything
+  // from vivid to near-white), NOT an even hue ramp. mycolors[0] is black (the
+  // empty cell). We build the whole 240-entry map like the C, because accumulate
+  // mode draws frozen trails in mycolors[col + thrmax] (col 2..threads+1, so the
+  // frozen index reaches ~181) as well as the worm head in mycolors[col] and the
+  // border in mycolors[1]. makeRandomColormapRGB(n,true) is the faithful port.
+  // Re-rolled on each accumulate reset (the C's autopal), fixed otherwise.
   function buildPalette() {
-    const n = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) {
-      palette[i] = n > 1 ? `hsl(${(i * 360 / n)}, 100%, 55%)` : '#fff';
+    const rgb = makeRandomColormapRGB(TAILMAX - 1, true);   // 240 random bright
+    palette = new Array(TAILMAX);
+    palette[0] = '#000';                                    // colour 0 = empty / erase
+    for (let i = 0; i < rgb.length; i++) {
+      palette[i + 1] = `rgb(${rgb[i][0]},${rgb[i][1]},${rgb[i][2]})`;
     }
   }
 
   // Grid accessors (the C's gp/sp). sp() only updates the 1px collision grid;
-  // the visible pixel is painted separately by stamp() (a thickness-sized rect),
-  // so a thick visible trail and a 1px collision footprint coexist (matches the
-  // C's intent: worms ricochet off where ink is; the trail just looks thicker).
+  // the visible pixel is painted separately by stamp() (a pscale-sized rect). The
+  // grid footprint is always 1px even when pscale is 3, matching the C (worms
+  // ricochet off where ink is; the trail is just drawn a little wider).
   function gp(x, y) {
     return point[wid * y + x];
   }
@@ -147,7 +173,9 @@ export function start(canvas) {
   function newOnScreen(LP) {
     LP.filled = false;
     LP.dead = false;
-    LP.reclen = Math.min(RLMAX, Math.max(2, Math.round(config.trail)));
+    // The C's newonscreen: reclen = random1(rlmax - 30) + 30 = 30..199 per worm
+    // (the `little` variant, random1(10)+5, is only set by a keystroke we drop).
+    LP.reclen = random1(RLMAX - 30) + 30;
     LP.deg = random1(DEGS);
     LP.y = random1(hei);
     LP.x = random1(wid);
@@ -162,9 +190,10 @@ export function start(canvas) {
   // Seed one worm's persistent state (the C's firstinit). `idx` is 1-based to
   // match the C's thr (1..threads), which seeds circturn's sign and magnitude.
   function firstInit(LP, idx) {
-    // Grid marker, the C's `col = thr + 1`: 2, 3, 4, ... so it never equals the
-    // border's colour 1 (worms must bounce off the border, not pass through it).
-    // `col` is only a collision code; the visible colour is `hue` (see seedHue).
+    // The C's `col = thr + 1`: 2, 3, 4, ... It is BOTH the collision code (never 1,
+    // the border, so worms bounce off it) AND the colormap index — the worm draws
+    // in palette[col] (the C's mycolors[col]), exactly as the original conflates
+    // the two. So worm colours are consecutive entries of the random bright map.
     LP.col = idx + 1;
     LP.tmode = random1(TMODES) + 1;    // the C defaults tmode 1 but samples spread 1..7
     LP.slice = Math.floor(DEGS / 3);
@@ -179,22 +208,12 @@ export function start(canvas) {
     LP.tclim = Math.floor(DEGS / 2 / 12);   // 15
   }
 
-  // Give worm number `i` (0-based) a hue from the palette, spread so a handful
-  // of worms land on distinct rainbow colours; with low ncolors they quantize
-  // (and repeat) just as the C's small colormaps do.
-  function seedHue(LP, i) {
-    const n = Math.max(1, Math.round(config.threads));
-    const idx = Math.round(i * palette.length / n) % palette.length;
-    LP.hue = palette[idx];
-  }
-
   function makeWorm(idx) {
     const LP = {
       xrec: new Int32Array(RLMAX + 1),
       yrec: new Int32Array(RLMAX + 1),
     };
-    firstInit(LP, idx);
-    seedHue(LP, idx - 1);
+    firstInit(LP, idx);   // sets col = idx + 1, the palette index for this worm
     newOnScreen(LP);
     return LP;
   }
@@ -202,20 +221,17 @@ export function start(canvas) {
   // Draw the border in colour 1 (the C's bordupdate with bordcorn 0): just the
   // TOP and LEFT edges, an L-shape — not a full rectangle. Worms that run off
   // the right/bottom wrap toroidally and are caught by this L on the far side
-  // (so they still stay on screen). Marked in the collision grid and stroked
-  // a neutral grey so it reads as structure, distinct from the coloured worms.
+  // (so they still stay on screen). Marked in the collision grid and painted in
+  // palette[1] (the C's mycolors[1], its own random bright colour), pscale-thick
+  // like the C's sp() rects. (Most sample strings toggle the border off via 'B';
+  // the C's pre-sample default, mirrored here, is on.)
   function drawBorder() {
     if (!config.border) return;
     for (let x = 0; x < wid; x++) { sp(x, 0, 1); }
     for (let y = 0; y < hei; y++) { sp(0, y, 1); }
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = Math.max(1, Math.round(S));
-    ctx.beginPath();
-    ctx.moveTo(0.5 * S, 0);
-    ctx.lineTo(0.5 * S, H);
-    ctx.moveTo(0, 0.5 * S);
-    ctx.lineTo(W, 0.5 * S);
-    ctx.stroke();
+    ctx.fillStyle = palette[1];
+    ctx.fillRect(0, 0, W, lineW);
+    ctx.fillRect(0, 0, lineW, H);
   }
 
   // Compute the worm's next heading per its turn mode — move()'s big switch.
@@ -337,22 +353,32 @@ export function start(canvas) {
       LP.deg = wrapAround(LP.deg, 0, DEGS);
     }
 
-    // Plot the head pixel into the collision grid and stamp it on the canvas.
-    // Like the C's sp() (XFillRectangle of pscale x pscale): consecutive
-    // one-pixel-apart stamps overlap into a continuous thick colour trail.
+    // Plot the head pixel into the collision grid and stamp it on the canvas in
+    // this worm's colour, palette[col] (the C's sp() -> mycolors[col]). Consecutive
+    // one-pixel-apart stamps overlap into a continuous colour trail.
     sp(xi, yi, LP.col);
-    stamp(xi, yi, LP.hue);
+    stamp(xi, yi, palette[LP.col]);
 
-    // Erase the tail: the C, with erasing on, blanks the oldest recorded pixel
-    // once the ring is full, keeping each worm a fixed-length snake. We re-read
-    // the grid first so we never erase ink a newer head (this worm or another)
-    // has since laid over that cell — that would punch holes in a live trail.
+    // Handle the tail once the ring is full (the C's move(), vermiculate.c:672-678):
+    //  - erasing ON (slither): blank the oldest recorded pixel, so the worm stays a
+    //    fixed-length snake. We re-read the grid first so we never erase ink a newer
+    //    head (this worm or another) has since laid over that cell — that would punch
+    //    a hole in a live trail (worms bounce off each other, so this is rare).
+    //  - erasing OFF (accumulate): recolour the oldest pixel to `col + thrmax` — a
+    //    DIFFERENT random-bright entry — freezing it as a PERMANENT trail. The worm
+    //    thus leaves a lasting mark behind its reclen-long moving head.
     if (LP.filled) {
       const ex = LP.xrec[LP.recpos];
       const ey = LP.yrec[LP.recpos];
-      if (gp(ex, ey) === LP.col) {
-        sp(ex, ey, 0);
-        stamp(ex, ey, '#000');
+      if (erasing) {
+        if (gp(ex, ey) === LP.col) {
+          sp(ex, ey, 0);
+          stamp(ex, ey, '#000');
+        }
+      } else {
+        const fc = LP.col + THRMAX;
+        sp(ex, ey, fc);
+        stamp(ex, ey, palette[fc]);
       }
     }
 
@@ -361,26 +387,51 @@ export function start(canvas) {
     LP.xrec[LP.recpos] = xi;
     if (LP.recpos === LP.reclen - 1) LP.filled = true;
 
+    // Accumulate mode only (the C, vermiculate.c:683-697): a worm DIES once its whole
+    // reclen-long trail has collapsed to a single point — i.e. it is wedged and can no
+    // longer advance (every move bounces it back to the same cell). Scan the ring; the
+    // worm is dead unless some consecutive pair of recorded positions differ.
+    if (LP.filled && !erasing) {
+      let co = LP.recpos;
+      LP.dead = true;
+      do {
+        const nextco = wrapAround(co + 1, 0, LP.reclen);
+        if (LP.yrec[co] !== LP.yrec[nextco] || LP.xrec[co] !== LP.xrec[nextco]) {
+          LP.dead = false;
+        }
+        co = nextco;
+      } while (!(!LP.dead || co === LP.recpos));
+    }
+
     LP.recpos++;
     LP.recpos = wrapAround(LP.recpos, 0, LP.reclen);
     return !LP.dead;
   }
 
-  // Stamp a thickness-sized rect centred on grid pixel (gx,gy), in device px.
-  // Centring makes the trail width symmetric about the 1px collision path.
+  // Stamp a pscale-sized rect at grid pixel (gx,gy), in device px — exactly the
+  // C's sp(): XFillRectangle(x, y, pscale, pscale), top-left at the pixel.
   function stamp(gx, gy, style) {
     ctx.fillStyle = style;
-    ctx.fillRect(gx - half, gy - half, lineW, lineW);
+    ctx.fillRect(gx, gy, lineW, lineW);
   }
 
-  // Wipe the field and re-seed the worms (the C's reset_p block + clearscreen).
+  // Clear the field and re-seed the worms (the C's reset_p block + clearscreen).
+  // The C picks a random one of ~10 sample programs at startup and ~half of them
+  // turn `erasing` OFF (accumulate mode). We reproduce that spread by choosing the
+  // mode at random here — no user knob, which would be invented — at the C's ~50%
+  // rate (exactly 5 of the 10 active sample strings turn erasing off). Slither mode
+  // then never resets again (worms can't die with erasing on, matching the C, so it
+  // is effectively absorbing within a session); accumulate mode resets each time all
+  // worms wedge, and every such reset re-rolls the palette (the C's `autopal`, which
+  // all the erasing-off samples set). Re-run / reload to sample both modes.
   function doReset() {
+    erasing = Math.random() < 0.5;
+    if (!erasing) buildPalette();   // autopal re-roll for the accumulate session
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
     point.fill(0);
     for (let i = 0; i < threads.length; i++) {
-      threads[i].col = i + 2;   // grid marker, never 1 (the border)
-      seedHue(threads[i], i);   // fresh rainbow spread each reset
+      threads[i].col = i + 2;   // grid + colormap marker, never 1 (the border)
       newOnScreen(threads[i]);
     }
     drawBorder();
@@ -388,10 +439,8 @@ export function start(canvas) {
 
   let xMin, xMax, yMin, yMax;   // grid bounds (the C's xmin..ymax)
   let lineW;                    // trail stamp size in device px (the C's pscale)
-  let half;                     // half of lineW, for centring the stamp
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 
@@ -400,11 +449,10 @@ export function start(canvas) {
     hei = H;
     xMin = 0; yMin = 0; xMax = wid - 1; yMax = hei - 1;
 
-    // Trail stamp size: thickness in logical px, scaled to device px (the C's
-    // pscale, which it bumps to 3 on retina). Centre the stamp so the visible
-    // trail straddles the 1px collision path symmetrically.
-    lineW = Math.max(1, Math.round(config.thickness * S));
-    half = (lineW - 1) >> 1;
+    // Trail stamp size = the C's pscale: 1 device px normally, 3 on a very large
+    // (retina) backing store. Not user-configurable in the C, so no knob.
+    const pscale = (W > 2560 || H > 2560) ? 3 : 1;
+    lineW = pscale;
 
     point = new Uint8Array(wid * hei);
     buildPalette();
@@ -415,31 +463,30 @@ export function start(canvas) {
     const pool = Math.max(Math.round(config.threads), 1);
     for (let i = 1; i <= pool; i++) threads.push(makeWorm(i));
 
-    tickc = 0;
     resetPending = true;   // first step seeds + draws, so frame 1 already draws
   }
 
   // One animation step: optionally reset, then advance every worm a batch of
-  // move-rounds, and clear the field if all worms jam or the tick budget runs
-  // out. With erasing on (always, here) worms never set `dead`, so as in the C
-  // the periodic tick-budget reset is what keeps the field fresh.
+  // move-rounds. The C's `alltrap` reset fires when every worm is trapped: in
+  // SLITHER mode (erasing on) worms never set `dead`, so it never fires and that
+  // mode runs forever without clearing (the C's periodic `ticks` reset is dead
+  // code — `tick` is a per-call local AND `had_instring` stays true once a sample
+  // string is consumed, so `tick > ticks` is unreachable). In ACCUMULATE mode
+  // (erasing off) worms die as they wedge, and once all are trapped the field
+  // clears and re-seeds via doReset (which re-picks the mode) — the C's behaviour.
   function step() {
     if (resetPending) {
       resetPending = false;
       doReset();
     }
 
-    for (let r = 0; r < ROUNDS_PER_STEP; r++) {
+    const rounds = Math.max(1, Math.round(SPEED_BUDGET / threads.length));
+    for (let r = 0; r < rounds; r++) {
       let allTrapped = true;
       for (const LP of threads) {
         if (move(LP)) allTrapped = false;
       }
       if (allTrapped) resetPending = true;
-    }
-
-    if (tickc++ > MAX_TICKS) {
-      tickc = 0;
-      resetPending = true;
     }
   }
 
@@ -456,9 +503,10 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the speed is identical at any refresh rate. Cap
-  // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  // rAF lag-accumulator paced by (config.delay + OVERHEAD) (µs): run one step()
+  // per frame, banking leftover time so the speed is identical at any refresh
+  // rate. Cap catch-up so a backgrounded tab doesn't burst a run of steps on
+  // refocus. OVERHEAD keeps the effective rate at/under the delay floor.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -469,7 +517,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
