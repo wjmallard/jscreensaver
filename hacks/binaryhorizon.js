@@ -34,14 +34,13 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/binaryhorizon.xml so the config box
-  // maps 1:1 to the original. `delay` is in microseconds (the xml --growth-delay
-  // slider, here a touch calmer than stock 10000 by feel).
+  // Defaults/ranges mirror hacks/config/binaryhorizon.xml so the config box maps
+  // 1:1 to the original. `delay` is the xml --growth-delay slider in microseconds;
+  // the loop paces at (delay + OVERHEAD).
   const config = {
-    delay: 14000,       // \u00B5s between steps (--growth-delay)
-    particles: 4000,    // emitted particles (--particles-number, orig 5000)
+    delay: 10000,       // \u00B5s between steps (--growth-delay); stock xml default
+    particles: 5000,    // emitted particles (--particles-number); stock xml default
     duration: 30,       // seconds before a full reset (--duration)
-    curliness: 0.5,     // random velocity nudge per step (fixed in C)
     color: true,        // colour drift vs monochrome (--color)
     bicolor: true,      // dark epoch also drifts colour (--bicolor/--monocolor)
     fade: true,         // colour random-walks vs re-rolls fully (--fade/--no-fade)
@@ -51,10 +50,9 @@ export function start(canvas) {
   // live: false -> the value sizes the particle pool / reset cadence, so a
   //                change re-runs init() via reinit() (fresh buffer).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 14000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'particles', label: 'Particles', type: 'range', min: 100, max: 20000, step: 100, default: 4000, lowLabel: 'few', highLabel: 'lots', live: false },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'particles', label: 'Particles', type: 'range', min: 100, max: 20000, step: 100, default: 5000, lowLabel: 'few', highLabel: 'lots', live: false },
     { key: 'duration', label: 'Reset every', type: 'range', min: 1, max: 120, step: 1, default: 30, unit: ' s', lowLabel: '1 sec', highLabel: '2 min', live: true },
-    { key: 'curliness', label: 'Curliness', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, lowLabel: 'smooth', highLabel: 'wild', live: true },
     { key: 'color', label: 'Random colors', type: 'checkbox', default: true, live: true },
     { key: 'bicolor', label: 'Two contrasting colors', type: 'checkbox', default: true, live: true },
     { key: 'fade', label: 'Random-walk colors', type: 'checkbox', default: true, live: true },
@@ -64,6 +62,13 @@ export function start(canvas) {
   const WHITE_EPOCH = 1;       // colours[1] — the drifting "light" colour
   const DARK_EPOCH = 0;        // colours[0] — black unless bicolor
 
+  // C hardcodes st->curliness = 0.5 (not an Xrm resource, so there is no knob).
+  const CURLINESS = 0.5;
+  // Per-frame framework+draw cost added to config.delay so the loop paces at
+  // (delay + OVERHEAD), matching the live binary's fps. Live-measured: 46.1fps
+  // (Load 53.9%, clean) at stock delay 10000 -> OVERHEAD 11700. See binaryhorizon.md.
+  const OVERHEAD = 11700;
+
   let W, H, S, cx, cy;
   let imageData, pixels;
   let particles;
@@ -71,7 +76,8 @@ export function start(canvas) {
   let colorsRGB;               // [ [r,g,b]_dark, [r,g,b]_light ]
   let lineHeight;              // y-offset (device px) of the rebirth horizon
   let startTime;               // ms timestamp of the current run
-  let runDuration;            // ms until the next full reset (with jitter)
+  let runDuration;             // ms until the next full reset (with jitter)
+  let durationJitter;          // session-fixed +0..30% (C jitters duration once)
 
   // C's frand1(): roughly uniform in [-1, 1].
   const frand1 = () => Math.random() * 2 - 1;
@@ -148,6 +154,9 @@ export function start(canvas) {
       let ygap = rfpart(y1 + 0.5);
       const ypxl1 = yend;
       const xpxl1 = ipart(xend);
+      // Textbook-correct Wu feathers the 2nd endpoint pixel horizontally (xpxl+1);
+      // the C mis-places it vertically (ypxl+1) here — a copy-paste bug, visually
+      // null over these soft 0.15-alpha segments. See binaryhorizon.md.
       plot(xpxl1, ypxl1, r, g, b, rfpart(xend) * ygap * alpha);
       plot(xpxl1 + 1, ypxl1, r, g, b, fpart(xend) * ygap * alpha);
       let interx = xend + gradient;
@@ -228,8 +237,8 @@ export function start(canvas) {
     p.yy = p.y;
     p.x += p.vx;
     p.y += p.vy;
-    p.vx += frand1() * config.curliness * maxDv;
-    p.vy += frand1() * config.curliness * maxDv;
+    p.vx += frand1() * CURLINESS * maxDv;
+    p.vy += frand1() * CURLINESS * maxDv;
 
     drawLine(cx + p.xx, cy + p.yy, cx + p.x, cy + p.y, p.r, p.g, p.b, 0.15);
     drawLine(cx - p.xx, cy + p.yy, cx - p.x, cy + p.y, p.r, p.g, p.b, 0.15);
@@ -272,22 +281,26 @@ export function start(canvas) {
   }
 
   // C's full reset (every `duration` seconds): fresh black buffer, white epoch,
-  // re-emitted horizon. Keeps the picture from saturating over a long run.
+  // re-emitted horizon. Mirrors binaryhorizon_draw's reset branch, which clears
+  // the buffer and re-creates particles but does NOT reset the drifting colours
+  // or the horizon line (both carry over, then keep drifting / flip as before).
+  // Keeps the picture from saturating over a long run.
   function reset(now) {
     startTime = now;
     runDuration = computeDuration();
     epoch = WHITE_EPOCH;
-    lineHeight = 0;
     pixels.fill(BLACK);
-    colorsRGB = [[0, 0, 0], [255, 255, 255]];
     createParticles();
   }
 
-  // C jitters duration by up to +30% so multiple screens aren't in lockstep.
+  // C jitters duration by up to +30% so multiple screens aren't in lockstep, but
+  // only ONCE at init (the reset branch reuses that value), so cycle length is
+  // constant within a session. durationJitter is fixed in init(); applying it to
+  // the live config.duration here keeps the slider responsive.
   function computeDuration() {
     const d = Math.max(0, Math.round(config.duration));
     if (d <= 0) return 0;
-    return d * (1 + Math.random() * 0.3) * 1000;   // -> ms
+    return d * durationJitter * 1000;   // -> ms
   }
 
   function init() {
@@ -302,6 +315,7 @@ export function start(canvas) {
     epoch = WHITE_EPOCH;
     lineHeight = 0;
     colorsRGB = [[0, 0, 0], [255, 255, 255]];
+    durationJitter = 1 + Math.random() * 0.3;   // fixed for the session (C jitters once)
     startTime = performance.now();
     runDuration = computeDuration();
     createParticles();
@@ -316,8 +330,8 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the pace is identical at any refresh rate. Cap
+  // rAF lag-accumulator paced at (config.delay + OVERHEAD) microseconds: run one
+  // step() per period, banking leftover time so the pace holds at any rate. Cap
   // catch-up so a backgrounded tab doesn't fire a burst of steps on refocus.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
@@ -329,7 +343,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

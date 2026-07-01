@@ -21,6 +21,8 @@
 // (<= ncolors buckets) and each bucket is stroked once. The canvas is cleared
 // to black at the top of every frame, then the buckets are stroked.
 
+import { makeColorRampRGB } from './colormap.js';
+
 export const title = 'nerverot';
 
 export const info = {
@@ -32,12 +34,13 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/nerverot.xml so the tuning UI maps 1:1,
-  // except `delay` is left at the stock 10 ms (it already paints calmly) and the
-  // C's hidden defaults (minScale/maxScale/minRadius/maxRadius/iterAmt) are kept
-  // as constants below rather than exposed (the xml doesn't surface them).
+  // Defaults/ranges mirror hacks/config/nerverot.xml so the tuning UI maps 1:1.
+  // `delay` is the stock 10000 us; the loop paces at (delay + OVERHEAD) so the
+  // real per-frame period matches the original binary. The C's hidden defaults
+  // (minScale/maxScale/minRadius/maxRadius/iterAmt) are kept as constants below
+  // rather than exposed (the xml doesn't surface them).
   const config = {
-    delay: 30000,        // microseconds between iterations (--delay)
+    delay: 10000,        // microseconds between iterations (--delay); stock xml
     maxIters: 1200,      // max iterations before a new shape is picked (--max-iters)
     count: 250,          // requested number of blots/vertices (--count)
     ncolors: 4,          // size of the light-distance colour ramp (--colors)
@@ -48,14 +51,14 @@ export function start(canvas) {
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'maxIters', label: 'Duration', type: 'range', min: 100, max: 8000, step: 100, default: 1200, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'count', label: 'Blot count', type: 'range', min: 1, max: 1000, step: 1, default: 250, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 4, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'eventChance', label: 'Changes', type: 'range', min: 0, max: 1, step: 0.01, default: 0.2, lowLabel: 'seldom', highLabel: 'frequent', live: true },
     { key: 'nervousness', label: 'Nervousness', type: 'range', min: 0, max: 1, step: 0.01, default: 0.3, lowLabel: 'calm', highLabel: 'spastic', live: true },
     { key: 'maxNerveRadius', label: 'Crunchiness', type: 'range', min: 0, max: 1, step: 0.01, default: 0.7, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'lineWidth', label: 'Line thickness', type: 'range', min: 0, max: 20, step: 1, default: 0, live: false },
+    { key: 'lineWidth', label: 'Line thickness', type: 'range', min: 0, max: 100, step: 1, default: 0, live: false },
   ];
 
   // Hidden C defaults (nerverot_defaults[]) that the xml doesn't expose; kept as
@@ -65,6 +68,12 @@ export function start(canvas) {
   const MAX_SCALE = 1.75;
   const MIN_RADIUS = 3;    // min/max blot radius, logical px (scaled by S)
   const MAX_RADIUS = 25;
+
+  // Live-measured framework+draw overhead added to the stock delay: the loop
+  // paces at (delay + OVERHEAD) us so the real per-frame period matches the
+  // original (the C's delay is ON TOP of draw time). Live-measured: 54.5fps
+  // (Load 45.5%, clean) at stock delay 10000 -> OVERHEAD 8350 (see nerverot.md).
+  const OVERHEAD = 8350;
 
   // Each blot draws as this 2D outline; coords are in {-1,0,1} and index the 3x3
   // grid of jittered points as grid[x+1][y+1]. 9 points => 8 segments per blot.
@@ -486,20 +495,19 @@ export function start(canvas) {
 
   // ---- colour ramp ------------------------------------------------------
 
-  // The C builds a make_color_ramp from a random vivid hue (s=v=1) to a random
-  // dimmer hue (s=v=0.7). We use a vivid hsl() rainbow ramp between two random
-  // hues per the gallery convention; index 0..ncolors-1 maps the C's gcs[1..n].
+  // The C's setupColormap picks two random RGB colours, converts each to HSV and
+  // keeps ONLY the hue, then forces endpoint 1 to (h1, s=1, v=1) — vivid — and
+  // endpoint 2 to (h2, s=0.7, v=0.7) — dimmer/less saturated — and fills an OPEN
+  // (non-closed) make_color_ramp of `ncolors` entries between them. Built ONCE at
+  // init (the C never rebuilds the colormap on a shape change). Index 0..n-1 maps
+  // the C's gcs[1..colorCount]: colour 1 (nearest the light) = the vivid h1 end,
+  // colour n (farthest from it) = the dim h2 end.
   function buildPalette() {
     const n = Math.max(1, Math.round(config.ncolors));
-    const h1 = rand01() * 360;
-    const h2 = rand01() * 360;
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const t = n > 1 ? i / (n - 1) : 0;
-      const hue = (h1 + (h2 - h1) * t + 360) % 360;
-      const light = 50 + 15 * (1 - t);   // brighter near the light, dimmer far
-      palette[i] = `hsl(${hue.toFixed(1)}, 100%, ${light.toFixed(1)}%)`;
-    }
+    const h1 = Math.trunc(rand01() * 360);
+    const h2 = Math.trunc(rand01() * 360);
+    palette = makeColorRampRGB(h1, 1.0, 1.0, h2, 0.7, 0.7, n, false)
+      .map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // ---- simulation -------------------------------------------------------
@@ -735,7 +743,7 @@ export function start(canvas) {
     draw();   // paint frame 1 so a fresh mount/resize isn't blank
   }
 
-  // rAF lag-accumulator loop paced by config.delay (us in the xml; /1000 for the
+  // rAF lag-accumulator loop paced at (config.delay + OVERHEAD) us (/1000 for the
   // ms rAF clock), with the same catch-up cap as squiral so a backgrounded tab
   // doesn't burst on refocus. Each step() fully repaints, so there is no
   // separate background pass.
@@ -749,7 +757,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

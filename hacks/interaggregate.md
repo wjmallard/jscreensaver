@@ -15,12 +15,30 @@ Strokes are never erased, so the **aggregate** of every past intersection builds
 ## Rendering approach
 Sparse additive splats, like [[greynetic]]: the persistent canvas is the accumulation buffer. Each sand-painter point is one device pixel painted with `ctx.fillRect(x, y, 1, 1)` at an `rgba()` low alpha. The C alpha-blends each point into an offscreen `off_img` (`trans_point`: `new = old + (src - old)·a`); canvas `source-over` with that same alpha is exactly that blend, so no readback / ImageData buffer is needed. A frame is a few thousand 1px fills (≤ ~22 points × 3 painters × intersecting pairs), which is cheap.
 
-## Deviations from the C
-- **Background is black, strokes are vivid light** (not the C's white paper + muted Pollock map). The C paints dark pencil on a white field; here the default `palette: 'rainbow'` lays bright additive hues on black, which reads better for a screensaver and matches the gallery's house style. The original muted colormap (`#FFFFFF`, two blacks, olive `#4e3e2e`, camel `#694d35`, tan `#b0a085`, `#e6d3ae`) is selectable as `palette: 'pollock'`. (On black, the pollock palette is dim by design — it's there for fidelity, not looks.)
+## Palette & background (faithful — the fidelity fix, 2026-07-01)
+The C has **one** colour source: a fixed 7-entry table `rgb_colormap[]` extracted from
+`pollockEFF.gif` — `#FFFFFF`, two blacks, olive `#4e3e2e`, camel `#694d35`, tan `#b0a085`,
+`#e6d3ae` — parsed once in `build_colors`; each sand painter picks one entry at random for
+its life (`frand(0.999) * numcolors`). The background is the stock `.background: white`
+(cleared to `bgcolor` on init / resize / `maxCycles`), so the muted strokes alpha-blend as
+**pale pencil on white paper**, matching the xml blurb ("Pale pencil-like scribbles slowly
+fill the screen"). This port is now a **verbatim** port of that table on white.
+
+An earlier draft inverted this: it defaulted to a black background with an **invented**
+`palette: 'rainbow'` — a vivid full-saturation HSL ramp sized to the disc count — with the
+real Pollock map demoted to an opt-in `'pollock'` select. That is exactly the systemic
+vivid-rainbow bug (the C has no palette resource at all). **Removed 2026-07-01**: the
+`palette` select and its `hslToRgb` helper are gone, the background is white, and the
+Pollock table is the only colormap (Rule 1 — a fixed table is already faithful; Rule 3 —
+drop invented knobs). Canvas `source-over` at the per-point alpha reproduces the C's
+`trans_point` lerp (`new = old + (src-old)·a`) exactly, so on opaque white paper the blend
+matches byte-for-byte.
+
+## Other deviations from the C
 - **The C's `paint` `p`-clamp is kept verbatim**: `if (0 < painter->p) painter->p = 0;` pins `p` to 0 whenever it drifts positive (almost always), so in practice `p ≈ 0` and the point cluster sits at/around the segment's first intersection point rather than sweeping its length. This looks like a bug in the original, but reproducing it is what gives the authentic scribble texture, so it is **intentionally preserved** (and noted in code).
-- **`growthDelay` → `config.delay`** drives the rAF lag-accumulator instead of the C's `usleep`; identical pace at any refresh rate, with a catch-up cap. Stock default `18000 µs` kept (calm).
-- **`devicePixelRatio` (`S`)** scales radii, drift speed, orbit radii, and line widths; the backing store is sized in device pixels (crisp on retina). Angular speed `dtheta` and the `radius = 5 + frand(min(55, r))` cap are computed in *logical* px (`r/S`) so the look is dpr-independent.
-- **Added knobs** not in the stock UI (stock exposes only frame rate, disc count, fps): `percentOrbits`, `baseOrbits`, `baseOnCenter` (all real `-percent-orbits` / `-base-orbits` / `-base-on-center` command-line options, just not in the xml), plus `maxCycles` (C hardcodes 100000) and `gain` (C hardcodes `max_gain 0.22`) and the `palette` choice.
+- **`growthDelay` → `config.delay`** drives the rAF lag-accumulator instead of the C's per-frame return value; identical pace at any refresh rate, with a catch-up cap. Stock default `18000 µs` kept, and the loop paces at `(delay + OVERHEAD)` (not raw delay) so the port runs at the live binary's fps — `OVERHEAD` is the live-measured **13850 µs** (live 31.4 fps, Load 43.4%, clean at stock delay 18000; the O(n²) pair scan makes it heavier than the sparse-vector norm). `max_gain 0.22` (the C's `f->max_gain`, previously exposed as an invented `gain` knob) is now the hardcoded `MAX_GAIN` const.
+- **`devicePixelRatio` (`S`)** scales radii, drift speed, orbit radii, and line widths; the backing store is sized in device pixels (crisp on retina). Angular speed `dtheta` and the `radius = 5 + frand(min(55, r))` cap are computed in *logical* px (`r/S`) so the look is dpr-independent. **Fixed 2026-07-01**: the ORBIT base-disc radius `1 + frand(minDim/2)` was double-scaled by `S` (`minDim` is already device px), so orbiters swung ~`dpr`× too wide on retina; now `S + frand(minDim/2)`. Latent only — the default `percentOrbits 0` never enters the ORBIT branch.
+- **Added knobs** not in the stock UI (the xml exposes only frame rate + disc count + fps): `percentOrbits`, `baseOrbits`, `baseOnCenter`, and `maxCycles` — all **real Xrm resources / command-line options** in the `.c` (`-percent-orbits` / `-base-orbits` / `-base-on-center` / `-max-cycles`), just omitted from the stock xml UI, so they are kept (Rule 3 allows `.c/.xml` resources). All default to the stock values, so the default look is unchanged. `count`'s slider min is `50` to mirror the xml `low="50"` (the C's hard minimum is 2).
 - **Edge wrapping** uses the C's active `#else` branch (wrap x,y to `[0,W)`/`[0,H)` for both path types), not the `#if 0` radius-aware version.
 
 ## Correctness self-review
@@ -28,5 +46,5 @@ Sparse additive splats, like [[greynetic]]: the persistent canvas is the accumul
 - **No null anchor deref**: orbit anchors only ever index *earlier* discs (`circles[floor(p·i)]`, `p<0.9`, `i<n`) or the base block `circles[floor(frand(orbitStart-0.1))]` ∈ `[0, orbitStart)` — all already built. With the default `percentOrbits 0` the ORBIT branch is never entered and every `center` is null, but `moveCircles` only reads `center` on the ORBIT path, so it's never dereferenced. Verified by hand for the 0 / partial / 100 cases.
 - **Reset fires**: `cycles` increments every frame and the `cycles >= maxCycles` wipe+reseed is reachable (`maxCycles` min 1000, and the `!== 0` guard only matters for the unreachable 0 case). `resize()` also reseeds via `init()`. So the screen periodically refreshes and never silently freezes.
 - **Intersection guards**: the pair test rejects `d >= r1+r2` (disjoint) and `d <= |r1-r2|` (one inside the other) before the construction, and the half-chord sqrt is clamped `max(0, r1²-d1²)` against tiny negative round-off, so no `NaN` coordinates leak into `drawPoint`.
-- **Pause/resume**: `pause()` cancels the rAF and parks `rafId = 0`; `resume()` resets `lastTime = 0` before re-arming so the banked `lag` can't fire a catch-up burst. `reinit()` wipes to black and re-seeds with the current config (palette/count/orbit changes take effect cleanly).
+- **Pause/resume**: `pause()` cancels the rAF and parks `rafId = 0`; `resume()` resets `lastTime = 0` before re-arming so the banked `lag` can't fire a catch-up burst. `reinit()` wipes to white paper and re-seeds with the current config (count/orbit changes take effect cleanly).
 - **`drawPoint` torus wrap** uses `while` loops (a point can land arbitrarily far out of bounds after the `(b-a)·sin` extrapolation), matching the C's `while (x >= width) x -= width;` so coordinates always resolve into the buffer.

@@ -13,9 +13,12 @@
 // black (dark "epoch"), so the image alternately builds up and erases.
 //
 // Rendering note: this is line-shaped but it's really per-pixel compositing
-// (read-blend-write each pixel) of thousands of tiny segments per frame — so it
+// (read-blend-write each pixel) of thousands of tiny segments per frame, so it
 // uses the BLIT path (manual raster + alpha into a Uint32 buffer), not canvas
-// strokes, which would be far too many draw calls.
+// strokes (~10k draw calls/frame otherwise). The raster is Xiaolin Wu
+// ANTIALIASED (the C's ANTIALIAS=1 default): each pixel is blended at
+// coverage*0.15, and any segment with an endpoint off-window is dropped whole
+// (the C's hard clip).
 
 export const title = 'binaryring';
 
@@ -28,23 +31,33 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
+  // Defaults/ranges mirror hacks/binaryring.xml (units match: delay in
+  // microseconds). max_age is a real .c resource (--max-age) that the stock
+  // settings UI omits; curliness is the C's hardcoded 0.5, not a resource.
   const config = {
-    particles: 4000,    // orig 5000
-    ringRadius: 40,     // emit ring radius (logical px)
-    maxAge: 400,        // steps a particle lives before rebirth
-    curliness: 0.5,     // random velocity nudge per step
-    color: true,        // colour drift vs monochrome
-    delay: 16,          // ms per step (orig 10)
+    delay: 10000,       // microseconds between frames (--growth-delay; stock)
+    ringRadius: 40,     // emit-ring radius, logical px (--ring-radius; stock)
+    particles: 5000,    // emitted particles (--particles-number; stock)
+    maxAge: 400,        // steps a particle lives before rebirth (--max-age; stock)
+    color: true,        // random-walk the light colour vs stay white (--color)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 60, step: 1, default: 16, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'particles', label: 'Particles', type: 'range', min: 200, max: 8000, step: 100, default: 4000, live: false },
-    { key: 'ringRadius', label: 'Ring radius', type: 'range', min: 1, max: 200, step: 1, default: 40, unit: ' px', live: true },
-    { key: 'maxAge', label: 'Path length', type: 'range', min: 20, max: 1200, step: 10, default: 400, live: true },
-    { key: 'curliness', label: 'Curliness', type: 'range', min: 0, max: 2, step: 0.05, default: 0.5, lowLabel: 'smooth', highLabel: 'wild', live: true },
-    { key: 'color', label: 'Color', type: 'checkbox', default: true, live: true },
+    { key: 'delay', label: 'Growth delay', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'ringRadius', label: 'Ring radius', type: 'range', min: 0, max: 400, step: 1, default: 40, unit: ' px', lowLabel: 'short', highLabel: 'long', live: true },
+    { key: 'particles', label: 'Particles', type: 'range', min: 500, max: 20000, step: 100, default: 5000, lowLabel: 'few', highLabel: 'lots', live: false },
+    { key: 'maxAge', label: 'Path length', type: 'range', min: 20, max: 1200, step: 10, default: 400, lowLabel: 'short', highLabel: 'long', live: true },
+    { key: 'color', label: 'Fade with colors', type: 'checkbox', default: true, live: true },
   ];
+
+  // The C hardcodes st->curliness = 0.5 (not a resource): the per-step random
+  // velocity nudge magnitude.
+  const CURLINESS = 0.5;
+  // Framework+draw overhead (us) added to the stock delay so the rAF accumulator
+  // paces one step per (delay + OVERHEAD); binaryring's per-frame draw is heavy
+  // (5000 particles x 2 Wu-AA segments + blit). Live-measured: 42.4fps (Load 57.6%,
+  // clean) at stock delay 10000 -> OVERHEAD 13600. See binaryring.md.
+  const OVERHEAD = 13600;
 
   const BLACK = 0xFF000000;
 
@@ -71,19 +84,83 @@ export function start(canvas) {
     pixels[idx] = ((0xff << 24) | (nb << 16) | (ng << 8) | nr) >>> 0;
   }
 
-  // Bresenham line, alpha-blending each pixel (the C's non-antialiased path).
-  function drawLine(x0, y0, x1, y1, r, g, b, a) {
-    x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0;
-    const steep = Math.abs(y1 - y0) > Math.abs(x1 - x0);
-    if (steep) { let t = x0; x0 = y0; y0 = t; t = x1; x1 = y1; y1 = t; }
-    if (x0 > x1) { let t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; }
-    const dx = x1 - x0, dy = Math.abs(y1 - y0);
-    let err = 0, y = y0;
-    const ystep = y0 < y1 ? 1 : -1;
-    for (let x = x0; x <= x1; x++) {
-      if (steep) blend(y, x, r, g, b, a); else blend(x, y, r, g, b, a);
-      err += dy;
-      if ((err << 1) > dx) { y += ystep; err -= dx; }
+  // C's (int) cast (truncate toward zero) + the round_/fpart_/rfpart_ macros.
+  // The drawn region is >= 0 after the hard clip, so `| 0` matches C's (int).
+  const ipart = (v) => v | 0;
+  const round_ = (v) => (v + 0.5) | 0;
+  const fpart = (v) => v - (v | 0);
+  const rfpart = (v) => 1 - (v - (v | 0));
+
+  // _dla_plot: blend one pixel at coverage*alpha (capped at 1); blend() clips to
+  // the buffer, matching the C's in-bounds test in _dla_plot.
+  function plotAA(x, y, cov, r, g, b, alpha) {
+    let br = cov * alpha;
+    if (br > 1) br = 1;
+    blend(x, y, r, g, b, br);
+  }
+
+  // Xiaolin Wu antialiased line (the C's draw_line_antialias, ANTIALIAS=1).
+  function drawLineAA(x1, y1, x2, y2, r, g, b, alpha) {
+    // Hard clip: the C bails on the WHOLE line if any endpoint is off-window.
+    if (x1 < 0 || x1 > W || x2 < 0 || x2 > W ||
+        y1 < 0 || y1 > H || y2 < 0 || y2 > H) return;
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    if (dx === 0 && dy === 0) return;   // zero-length: the C draws nothing (NaN->OOB)
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (x2 < x1) { let t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+      const gradient = dy / dx;         // swap-invariant, so pre-swap dy/dx is correct
+
+      let xend = round_(x1);
+      let yend = y1 + gradient * (xend - x1);
+      let xgap = rfpart(x1 + 0.5);
+      const xpxl1 = xend;
+      const ypxl1 = ipart(yend);
+      plotAA(xpxl1, ypxl1, rfpart(yend) * xgap, r, g, b, alpha);
+      plotAA(xpxl1, ypxl1 + 1, fpart(yend) * xgap, r, g, b, alpha);
+      let intery = yend + gradient;
+
+      xend = round_(x2);
+      yend = y2 + gradient * (xend - x2);
+      xgap = fpart(x2 + 0.5);
+      const xpxl2 = xend;
+      const ypxl2 = ipart(yend);
+      plotAA(xpxl2, ypxl2, rfpart(yend) * xgap, r, g, b, alpha);
+      plotAA(xpxl2, ypxl2 + 1, fpart(yend) * xgap, r, g, b, alpha);
+
+      for (let x = xpxl1 + 1; x <= xpxl2 - 1; x++) {
+        plotAA(x, ipart(intery), rfpart(intery), r, g, b, alpha);
+        plotAA(x, ipart(intery) + 1, fpart(intery), r, g, b, alpha);
+        intery += gradient;
+      }
+    } else {
+      if (y2 < y1) { let t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+      const gradient = dx / dy;
+
+      let yend = round_(y1);
+      let xend = x1 + gradient * (yend - y1);
+      let ygap = rfpart(y1 + 0.5);
+      const ypxl1 = yend;
+      const xpxl1 = ipart(xend);
+      plotAA(xpxl1, ypxl1, rfpart(xend) * ygap, r, g, b, alpha);
+      plotAA(xpxl1, ypxl1 + 1, fpart(xend) * ygap, r, g, b, alpha);
+      let interx = xend + gradient;
+
+      yend = round_(y2);
+      xend = x2 + gradient * (yend - y2);
+      ygap = fpart(y2 + 0.5);
+      const ypxl2 = yend;
+      const xpxl2 = ipart(xend);
+      plotAA(xpxl2, ypxl2, rfpart(xend) * ygap, r, g, b, alpha);
+      plotAA(xpxl2, ypxl2 + 1, fpart(xend) * ygap, r, g, b, alpha);
+
+      for (let y = ypxl1 + 1; y <= ypxl2 - 1; y++) {
+        plotAA(ipart(interx), y, rfpart(interx), r, g, b, alpha);
+        plotAA(ipart(interx) + 1, y, fpart(interx), r, g, b, alpha);
+        interx += gradient;
+      }
     }
   }
 
@@ -119,11 +196,11 @@ export function start(canvas) {
   function move(p) {
     p.xx = p.x; p.yy = p.y;
     p.x += p.vx; p.y += p.vy;
-    p.vx += frand1() * config.curliness * S;
-    p.vy += frand1() * config.curliness * S;
+    p.vx += frand1() * CURLINESS * S;
+    p.vy += frand1() * CURLINESS * S;
 
-    drawLine(cx + p.xx, cy + p.yy, cx + p.x, cy + p.y, p.r, p.g, p.b, 0.15);
-    drawLine(cx - p.xx, cy + p.yy, cx - p.x, cy + p.y, p.r, p.g, p.b, 0.15);
+    drawLineAA(cx + p.xx, cy + p.yy, cx + p.x, cy + p.y, p.r, p.g, p.b, 0.15);
+    drawLineAA(cx - p.xx, cy + p.yy, cx - p.x, cy + p.y, p.r, p.g, p.b, 0.15);
 
     if (++p.age > config.maxAge) {
       const dir = frand1() * 2 * Math.PI;
@@ -177,12 +254,13 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delay = Math.max(1, config.delay);
-    lag = Math.min(lag, delay * MAX_CATCHUP_STEPS);
+    // Pace at (stock delay + measured overhead), converting microseconds -> ms.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
+    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
     let steps = 0;
-    while (lag >= delay && steps < MAX_CATCHUP_STEPS) {
+    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
       step();
-      lag -= delay;
+      lag -= delayMs;
       steps++;
     }
 

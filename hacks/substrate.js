@@ -62,8 +62,8 @@ export function start(canvas) {
   // Per-step crack advance (C's STEP); the perpendicular sand walk uses 0.81.
   const STEP = 0.42;
   // Live-measured framework overhead: stock delay 18000us + this reproduces the
-  // live binary's 37.9fps (Load 31.8% = a clean delay-bound reading). See substrate.md.
-  const OVERHEAD = 8385;
+  // live binary's ~38.3fps (Load 31.0% = a clean delay-bound reading). See substrate.md.
+  const OVERHEAD = 8100;
   const D2R = Math.PI / 180;
   // cgrid sentinel: cells >= OPEN are empty; an occupied cell stores its crack's
   // integer angle (always < ~810 deg, so never collides with the sentinel).

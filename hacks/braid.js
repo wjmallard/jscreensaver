@@ -18,6 +18,8 @@
 // each bucket is stroked once, turning thousands of XDrawLine calls into
 // ~ncolors stroke() calls per frame.
 
+import { makeUniformColormapRGB } from './colormap.js';
+
 export const title = 'braid';
 
 export const info = {
@@ -29,19 +31,20 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/braid.xml (1:1 with the original),
-  // except `delay` and `cycles` are tuned calmer than the stock 1 ms / 100.
+  // Defaults/ranges mirror hacks/config/braid.xml 1:1 (units match the xml:
+  // delay in microseconds). The rAF loop paces at (delay + OVERHEAD) so the
+  // colour spins at the live binary's rate, not the raw 1 ms sleep floor.
   const config = {
-    delay: 40,      // ms per redraw (xml µs default 1000 ≈ unbounded; calmer here)
-    cycles: 200,    // frames a braid lives before regenerating (--cycles, xml 100)
+    delay: 1000,    // us between redraws (--delay; stock xml default)
+    cycles: 100,    // frames a braid lives before regenerating (--cycles)
     ncolors: 64,    // hue-cycle size (--ncolors)
-    count: 15,      // max number of rings; the actual count is random ≤ this (--count)
+    count: 15,      // max number of rings; the actual count is random <= this (--count)
     size: -7,       // line thickness; < 0 = random 1..|size| (--size)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 1, max: 100, step: 1, default: 40, unit: ' ms', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'cycles', label: 'Duration', type: 'range', min: 10, max: 500, step: 10, default: 200, lowLabel: 'short', highLabel: 'long', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 1000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'cycles', label: 'Duration', type: 'range', min: 0, max: 500, step: 1, default: 100, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'count', label: 'Rings (max)', type: 'range', min: 3, max: 15, step: 1, default: 15, live: false },
     { key: 'size', label: 'Line thickness (<0 = random)', type: 'range', min: -20, max: 20, step: 1, default: -7, live: false },
@@ -91,6 +94,18 @@ export function start(canvas) {
     const minLen = Math.min(cx, cy);
     minRadius = minLen * 0.30;
     maxRadius = minLen * 0.90;
+  }
+
+  // braid.c is UNIFORM_COLORS -> make_uniform_colormap: a full hue ramp at ONE
+  // per-run saturation and value (each 66%-100%), so it's a rainbow but usually a
+  // touch muted and different every run -- NOT the fixed max-vivid hsl() ramp the
+  // first port used. Built once per run and HELD: a new braid re-rolls only
+  // startcolor + spin direction, never the palette (the C's colormap is fixed for
+  // the run). ncolors <= 2 -> white (the C's MI_WHITE_PIXEL mono path).
+  function buildPalette() {
+    const n = Math.max(1, Math.round(config.ncolors));
+    if (n <= 2) { palette = new Array(n).fill('#fff'); return; }
+    palette = makeUniformColormapRGB(n).map(([r, g, b]) => `rgb(${r},${g},${b})`);
   }
 
   // Build a fresh random braid (the C's init_braid, minus the window clear —
@@ -163,11 +178,6 @@ export function start(canvas) {
     linewidth = lw * S;
 
     startcolor = config.ncolors > 2 ? Math.floor(Math.random() * config.ncolors) : 0;
-
-    // Vivid rainbow palette; white when ncolors ≤ 2 (the C's mono path).
-    const n = config.ncolors;
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = n > 2 ? `hsl(${i * 360 / n}, 100%, 50%)` : '#fff';
 
     dirty = true;
   }
@@ -261,6 +271,15 @@ export function start(canvas) {
     dirty = true;
   }
 
+  // Fresh palette (once per run) + circle geometry + first braid. Called on
+  // (re)size and reinit, so a non-live config change (e.g. ncolors) rebuilds the
+  // palette; the periodic per-braid regeneration in step() calls generate() alone.
+  function init() {
+    layout();
+    buildPalette();
+    generate();
+  }
+
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     S = dpr;
@@ -268,13 +287,22 @@ export function start(canvas) {
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    layout();
-    generate();
+    init();
   }
 
-  // Drive off requestAnimationFrame, banking leftover time so the colour spins
-  // at config.delay pace regardless of refresh rate; redraw once per frame only
-  // if the colour actually advanced.
+  // Fixed-timestep rAF loop (squiral/lisa-style): one step() per (delay + OVERHEAD),
+  // banking leftover time so the colour spins at the same rate at any refresh rate
+  // and capping catch-up so a backgrounded tab can't burst. draw() runs only when a
+  // step actually advanced the colour (the braid geometry is static per braid, so
+  // nothing changes between steps).
+  //
+  // OVERHEAD: the stock *delay (1000 us) is only a sleep floor; braid's real pace
+  // is set by its heavy per-frame draw (~500 x nstrands line segments), so the live
+  // binary runs well above 60fps. Live-measured: 170.1fps (Load 83.0%, clean --
+  // draw-bound but cheap) at stock delay 1000 -> OVERHEAD 4900. Draw-bound =>
+  // machine-dependent; the rAF accumulator banks wall time so the sim keeps ~170
+  // steps/s even on a 60Hz display. See framerate-calibration.
+  const OVERHEAD = 4900;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -285,12 +313,13 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delay = Math.max(1, config.delay);
-    lag = Math.min(lag, delay * MAX_CATCHUP_STEPS);
+    const delayMs = (config.delay + OVERHEAD) / 1000;
+    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
+
     let steps = 0;
-    while (lag >= delay && steps < MAX_CATCHUP_STEPS) {
+    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
       step();
-      lag -= delay;
+      lag -= delayMs;
       steps++;
     }
 
@@ -309,7 +338,7 @@ export function start(canvas) {
     },
     pause() { cancelAnimationFrame(rafId); rafId = 0; },
     resume() { if (!rafId) { lastTime = 0; rafId = requestAnimationFrame(frame); } },
-    reinit: generate,   // fresh braid with the current config
+    reinit: init,   // fresh palette + braid with the current config
     config,
     params,
   };

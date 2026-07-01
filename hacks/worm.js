@@ -8,9 +8,12 @@
 // each worm is a circular buffer of its last N positions. Every step the head
 // turns by +/-10 degrees, advances by one cell (wrapping at the edges), and the
 // oldest cell is erased to black — so each worm stays exactly N segments long.
-// The whole palette shifts by one each frame, so every worm's body is a moving
-// rainbow gradient. See [[squiral]] for the skeleton, [[binaryring]] for the
-// moving colored-trail idea.
+// The palette is xscreensaver's make_smooth_colormap (worm.c defines
+// SMOOTH_COLORS) and its offset shifts by one each frame, so every worm's body
+// reads as a moving smooth-colormap gradient. See [[squiral]] for the skeleton,
+// [[binaryring]] for the moving colored-trail idea.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'worm';
 
@@ -64,7 +67,7 @@ export function start(canvas) {
   let circsize;         // cell/step size in device px (integer >= 1)
   let wormlength;       // segments per worm (ring-buffer length)
   let nc;               // palette size actually used
-  let colors;           // hsl strings, length nc
+  let colors;           // css color strings (smooth colormap), length nc
   let worms;            // array of worm objects
   let chromo;           // per-frame palette offset (worm.c's chromo)
 
@@ -100,11 +103,18 @@ export function start(canvas) {
     W = canvas.width;
     H = canvas.height;
 
+    // worm.c defines SMOOTH_COLORS (line 54), so the xlockmore framework builds
+    // the palette with make_smooth_colormap (utils/colors.c) — a random smooth
+    // HSV loop, NOT a vivid full-saturation rainbow. Built once per init (the C
+    // builds it once at startup); chromo cycles the offset each frame. ncolors
+    // <= 2 hits the C's mono path (npixels <= 2 in xlockmore.c) -> white worms.
     nc = clamp(Math.round(config.ncolors), 1, 255);
-    colors = [];
-    for (let i = 0; i < nc; i++) {
-      colors.push(`hsl(${(i * 360) / nc}, 100%, 50%)`);
+    if (nc <= 2) {
+      colors = ['#fff'];
+    } else {
+      colors = makeSmoothColormapRGB(nc).map(([r, g, b]) => `rgb(${r},${g},${b})`);
     }
+    nc = colors.length;
 
     // Cell/step size in device px (scaled by dpr so worms look the same on retina).
     const baseSize = resolveSigned(Math.round(config.size), MINSIZE);
@@ -122,10 +132,11 @@ export function start(canvas) {
 
     worms = [];
     for (let i = 0; i < nw; i++) {
-      // Seed each worm at a random on-screen point (worm.c stacks every segment
-      // at screen center; random points spread multiple worms out from frame 1).
-      const sx = (Math.random() * W) | 0;
-      const sy = (Math.random() * H) | 0;
+      // worm.c seeds every segment of every worm at screen center (xsize/2,
+      // ysize/2), so all worms burst outward from one point over the first
+      // ~wormlength steps. Faithful: stack the whole ring buffer at center.
+      const sx = (W / 2) | 0;
+      const sy = (H / 2) | 0;
       const cx = new Int32Array(wormlength);
       const cy = new Int32Array(wormlength);
       cx.fill(sx);
@@ -183,7 +194,7 @@ export function start(canvas) {
 
     // Pass 2 (worm.c's draw_worm): draw each head. Worm i's color is
     // (i + chromo) % nc; chromo shifts every frame so each body is a moving
-    // rainbow gradient (segments keep the color they had when drawn).
+    // smooth-colormap gradient (segments keep the color they had when drawn).
     for (const w of worms) {
       ctx.fillStyle = colors[(w.index + chromo) % nc];
       ctx.fillRect(w.x, w.y, circsize, circsize);
@@ -193,8 +204,16 @@ export function start(canvas) {
   }
 
   // Drive off requestAnimationFrame but keep the original pace: run one step()
-  // per config.delay ms, banking leftover time so the speed is the same at any
+  // per frame period, banking leftover time so the speed is the same at any
   // refresh rate. Cap catch-up so a backgrounded tab doesn't fire a burst.
+  //
+  // OVERHEAD: worm.c's *delay (17000 µs) is a sleep FLOOR; the live binary's
+  // real frame period is delay + per-frame framework/draw cost, so we pace at
+  // (delay + OVERHEAD) to match the author's rate rather than run faster (see
+  // the framerate-calibration note). worm is a very light sparse hack (a handful
+  // of worms, two fillRects each). Live-measured: 40.6fps (Load 31.0%, clean) at
+  // stock delay 17000 -> OVERHEAD 7600.
+  const OVERHEAD = 7600;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -206,11 +225,11 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
-    // The step counter bounds the loop even when delayMs is 0 (max frame rate),
-    // which would otherwise spin forever since lag never drops below 0.
+    // The step counter bounds catch-up (MAX_CATCHUP_STEPS) so a long stall or a
+    // tiny delay can't fire an unbounded burst of steps in one frame.
     let steps = 0;
     while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
       step();

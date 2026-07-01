@@ -34,42 +34,45 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/interaggregate.xml so the config box
-  // maps 1:1 to the original. `growthDelay` is the xml "Frame rate" slider
-  // (µs/frame); `maxCycles`, `palette`, and `gain` are added for parity with
-  // the other ports (the C hardcodes maxCycles 100000 and max_gain 0.22, and
-  // has no palette choice — it uses a fixed muted Pollock map).
+  // maps 1:1 to the original. The two xml sliders are `growthDelay` (the "Frame
+  // rate" slider, µs/frame) and `numCircles` ("Number of discs"). The rest map
+  // to real command-line resources the C exposes but the stock xml UI omits
+  // (`-max-cycles`, `-percent-orbits`, `-base-orbits`, `-base-on-center`). There
+  // is NO palette or gain knob: the C has no palette resource (it uses one fixed
+  // muted Pollock colormap on white paper) and hardcodes max_gain 0.22.
   const config = {
     delay: 18000,        // µs between frames (--growth-delay)
     count: 100,          // number of drifting discs (--num-circles)
     percentOrbits: 0,    // % of discs on orbital (vs linear) paths (--percent-orbits)
     baseOrbits: 75,      // % of orbiters that orbit a base disc (--base-orbits)
     maxCycles: 100000,   // frames before the buffer is wiped + reseeded (--max-cycles)
-    gain: 0.22,          // sand-painter max gain (spread of each grainy stroke)
-    palette: 'rainbow',  // 'rainbow' (vivid) | 'pollock' (the C's muted map)
     baseOnCenter: false, // orbiters orbit the screen centre (--base-on-center)
   };
 
   const params = [
     { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 18000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Number of discs', type: 'range', min: 2, max: 400, step: 1, default: 100, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'count', label: 'Number of discs', type: 'range', min: 50, max: 400, step: 1, default: 100, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'percentOrbits', label: 'Orbiting discs', type: 'range', min: 0, max: 100, step: 1, default: 0, unit: '%', lowLabel: 'drift', highLabel: 'orbit', live: false },
     { key: 'baseOrbits', label: 'Anchored orbits', type: 'range', min: 0, max: 100, step: 1, default: 75, unit: '%', live: false },
     { key: 'maxCycles', label: 'Frames before reset', type: 'range', min: 1000, max: 200000, step: 1000, default: 100000, lowLabel: 'short', highLabel: 'long', live: true },
-    { key: 'gain', label: 'Stroke spread', type: 'range', min: 0.05, max: 0.5, step: 0.01, default: 0.22, lowLabel: 'tight', highLabel: 'loose', live: true },
-    { key: 'palette', label: 'Palette', type: 'select', default: 'rainbow', live: false, options: [
-        { value: 'rainbow', label: 'vivid rainbow' },
-        { value: 'pollock', label: 'muted pollock (original)' },
-      ] },
     { key: 'baseOnCenter', label: 'Orbit screen centre', type: 'checkbox', default: false, live: false },
   ];
 
   // The C's path kinds (interaggregate.c: typedef enum { LINEAR, ORBIT }).
   const LINEAR = 0, ORBIT = 1;
   const TAU = Math.PI * 2;
+  // The C hardcodes the sand-painter gain bound (init_field: f->max_gain = 0.22).
+  const MAX_GAIN = 0.22;
+  // Per-frame framework+draw cost added to the stock delay so the rAF loop paces
+  // at (delay + OVERHEAD), matching the live binary's fps. This hack scans every
+  // disc PAIR each frame (O(n^2), ~4950 pairs at the default 100 discs), so its
+  // per-frame cost sits well above the sparse-vector norm. Live-measured: 31.4fps
+  // (Load 43.4%, clean) at stock delay 18000 -> OVERHEAD 13850.
+  const OVERHEAD = 13850;
 
-  // The original muted colormap (extracted from pollockEFF.gif): white, two
-  // blacks, olive, camel, tan, light tan. The rainbow palette is built per-init
-  // sized to the disc count; pollock is this fixed table. Stored as [r,g,b].
+  // The C's only colour source: the muted colormap extracted from pollockEFF.gif
+  // (interaggregate.c rgb_colormap[]) — white, two blacks, olive, camel, tan,
+  // light tan. A fixed 7-entry table, ported verbatim. Stored as [r,g,b].
   const POLLOCK = [
     [0xff, 0xff, 0xff],
     [0x00, 0x00, 0x00],
@@ -90,30 +93,11 @@ export function start(canvas) {
   let colors;            // active palette as ['r,g,b', ...] strings for rgba()
   let cycles;            // frames since the last wipe
 
-  // Build the active palette. 'rainbow' is a vivid hue ramp sized to the disc
-  // count (so each disc can pick a distinct-ish hue); 'pollock' is the C's map.
+  // Build the palette. The C has exactly one colour source — the fixed Pollock
+  // table (build_colors parses rgb_colormap[] once) — so this just stringifies
+  // it for rgba(). Each painter later picks one entry at random for its life.
   function buildColors() {
-    if (config.palette === 'pollock') {
-      colors = POLLOCK.map(([r, g, b]) => `${r}, ${g}, ${b}`);
-      return;
-    }
-    const n = Math.max(8, Math.round(config.count));
-    colors = new Array(n);
-    for (let i = 0; i < n; i++) {
-      // hsl -> rgb at full saturation, 55% lightness for bright-but-not-blown hues.
-      const [r, g, b] = hslToRgb(i / n, 1, 0.55);
-      colors[i] = `${r}, ${g}, ${b}`;
-    }
-  }
-
-  function hslToRgb(h, s, l) {
-    const a = s * Math.min(l, 1 - l);
-    const f = (n) => {
-      const k = (n + h * 12) % 12;
-      const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-      return Math.round(c * 255);
-    };
-    return [f(0), f(8), f(4)];
+    colors = POLLOCK.map(([r, g, b]) => `${r}, ${g}, ${b}`);
   }
 
   // Allocate three sand painters for a disc (the C's circle->num_painters = 3).
@@ -182,7 +166,9 @@ export function start(canvas) {
           c.center = baseOnCenter
             ? centerOfUniverse
             : circles[Math.floor(frand(orbitStart - 0.1))];
-          c.r = (1 + frand(minDim / 2)) * S;
+          // 1px logical -> S device; frand's range is already device px (minDim
+          // is device), so it must NOT be multiplied by S again.
+          c.r = S + frand(minDim / 2);
         } else {
           // Prefer earlier discs as anchors, and orbit at ~half the anchor's r.
           const p = frand(0.9);
@@ -245,8 +231,8 @@ export function start(canvas) {
   // sits near the fraction sin(p) of the way from a to b — a soft grainy dab.
   function paint(painter, ax, ay, bx, by) {
     painter.gain += frand(0.05) - 0.025;
-    if (painter.gain > config.gain) painter.gain = -config.gain;
-    else if (painter.gain < -config.gain) painter.gain = config.gain;
+    if (painter.gain > MAX_GAIN) painter.gain = -MAX_GAIN;
+    else if (painter.gain < -MAX_GAIN) painter.gain = MAX_GAIN;
 
     painter.p += frand(0.1) - 0.05;
     // NOTE: this clamp is verbatim from the C (`if (0 < p) p = 0`), which pins
@@ -309,11 +295,11 @@ export function start(canvas) {
     }
   }
 
-  // Wipe the canvas to black and re-seed the field (the C clears to bgcolor and
-  // calls build_field on reset / maxCycles / resize). Black, not white, because
-  // the strokes are additive light here (vivid hues read against black).
+  // Wipe the canvas to white paper and re-seed the field (the C clears to
+  // bgcolor and calls build_field on reset / maxCycles / resize). The C's
+  // ".background" is white; the muted strokes accumulate as pale pencil on it.
   function wipe() {
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, W, H);
   }
 
@@ -339,7 +325,7 @@ export function start(canvas) {
     buildField();
   }
 
-  // reinit wipes to black (palette / count / orbit mix may have changed) and
+  // reinit wipes to white paper (count / orbit mix may have changed) and
   // re-seeds the field, keeping the current config.
   function reinit() {
     wipe();
@@ -352,7 +338,7 @@ export function start(canvas) {
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     init();
   }
@@ -371,7 +357,8 @@ export function start(canvas) {
     lastTime = now;
 
     // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // Pace at (delay + OVERHEAD) so the port runs at the live binary's fps.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     // The step counter bounds the loop even when delayMs is 0 (max frame rate),

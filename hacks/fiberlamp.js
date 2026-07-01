@@ -20,10 +20,12 @@
 // XFillRectangle-clears every frame, so there are no trails to preserve). Each
 // fiber is one polyline of NODES-1 points drawn in a muted glass colour (dim /
 // medium / bright by depth, the original's back/middle/front cue), with the last
-// few segments overdrawn in the fiber's vivid tip colour and a small filled dot
-// stamped at the very tip. Fibers are bubble-sorted back-to-front (painter's
+// few segments overdrawn in the fiber's tip colour (a per-run uniform hue ramp,
+// the C's make_uniform_colormap). Fibers are bubble-sorted back-to-front (painter's
 // order) by their tip depth, exactly as the C does. See [[grav]] for the
 // per-object physics idiom and [[braid]] for the vector-stroke idiom.
+
+import { makeUniformColormapRGB } from './colormap.js';
 
 export const title = 'fiberlamp';
 
@@ -36,24 +38,23 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/fiberlamp.xml so the config box maps 1:1,
-  // except `count` is dialled down a touch (500 fibers is heavy for a full vector
-  // repaint each frame) and `delay` is left at the stock 10 ms.
+  // Defaults/ranges mirror hacks/config/fiberlamp.xml so the config box maps 1:1.
+  // ncolors is a real resource (fiberlamp.c DEFAULTS *ncolors:64) but fiberlamp.xml
+  // exposes no colour slider, so it is a fixed internal value, not a param.
   const config = {
-    delay: 20000,    // µs between steps (--delay)
-    count: 200,      // number of fibers (--count, xml default 500)
+    delay: 10000,    // microseconds between steps (--delay; stock xml default)
+    count: 500,      // number of fibers (--count; stock xml default)
     cycles: 10000,   // frames between "knocks" of the lamp (--cycles)
-    ncolors: 64,     // size of the tip colour wheel (--ncolors)
+    ncolors: 64,     // size of the tip colour wheel (--ncolors; DEFAULTS, no slider)
   };
 
   // live: true  -> the loop reads config every step (applies instantly).
   // live: false -> the value sizes the fiber array / tip palette, so a change
   //                re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'count', label: 'Fibers', type: 'range', min: 10, max: 500, step: 10, default: 200, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'count', label: 'Fibers', type: 'range', min: 10, max: 500, step: 10, default: 500, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'cycles', label: 'Time between knocks', type: 'range', min: 100, max: 10000, step: 100, default: 10000, lowLabel: 'short', highLabel: 'long', live: true },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
   // Physics constants, verbatim from fiberlamp.c. Tuned in the original to keep
@@ -70,8 +71,8 @@ export function start(canvas) {
     return a < NODES - 3 ? 1.0 / (NODES - 2.5) : 0.25 / (NODES - 2.5);
   }
 
-  // Muted glass body colours (the C allocates these named X colours). The bright
-  // tips are a separate vivid rainbow; these three are the depth cue.
+  // Muted glass body colours (the C allocates these named X colours). The tips are
+  // a separate per-run uniform hue ramp; these three are the depth cue.
   const BRIGHT = '#E0E0C0';  // front fibers
   const MEDIUM = '#808070';  // middle fibers
   const DIM = '#404020';     // back fibers
@@ -96,12 +97,6 @@ export function start(canvas) {
   function knock() {
     cxOffset = drand(1 / 4) - 1 / 8;   // [-0.125, 0.125]
     count = 0;
-  }
-
-  // Vivid full-saturation tip rainbow (the C maps the colour wheel onto the X
-  // colormap; we use an hsl() rainbow per the gallery's aesthetic).
-  function tipColor(i, n) {
-    return `hsl(${(i * 360 / n) | 0}, 100%, 55%)`;
   }
 
   function makeFiber() {
@@ -138,9 +133,13 @@ export function start(canvas) {
 
     nodes[0].eta += DT * nodes[0].etadash;   // base azimuth drifts
     nodes[0].x = cxOffset;                    // base horizontal "knock"
-    // The C also deflects node[NODES-2].x by the X11 window's motion; a browser
-    // canvas never moves, so that term is identically zero AND is immediately
-    // overwritten by the i == NODES-2 step below, so it is dropped (see .md).
+    // The C deflects node[NODES-2].x by the X11 window's motion:
+    //   node[NODES-2].x *= 0.1*(ry-y);  node[NODES-2].x += 0.05*(rx-x);
+    // A browser canvas never moves, so (ry-y) == (rx-x) == 0. The ADD term
+    // vanishes, but the MULTIPLY ZEROES node[NODES-2].x, and that zero is read by
+    // the load loops below (for i < NODES-2) BEFORE the i == NODES-2 pass
+    // recomputes it. So zero it here too -- dropping it entirely is NOT the same.
+    nodes[NODES - 2].x = 0;
 
     // 2nd-order damped diff equation, node by node down the strand.
     for (let i = 1; i < NODES; i++) {
@@ -191,7 +190,7 @@ export function start(canvas) {
   }
 
   // Stroke one fiber: a body polyline (muted, by depth) plus a few tip segments in
-  // the fiber's vivid colour and a filled dot at the very tip.
+  // the fiber's tip colour. The C draws exactly these two polylines -- no tip dot.
   function drawFiber(fs) {
     const nodes = fs.node;
     const draw = fs.draw;
@@ -237,13 +236,6 @@ export function start(canvas) {
     ctx.moveTo(draw[NODES - 1 - tiplen].x, draw[NODES - 1 - tiplen].y);
     for (let i = NODES - tiplen; i <= NODES - 2; i++) ctx.lineTo(draw[i].x, draw[i].y);
     ctx.stroke();
-
-    // Bright dot at the very tip (the glowing fiber end).
-    const tip = draw[NODES - 2];
-    ctx.fillStyle = tcolor;
-    ctx.beginPath();
-    ctx.arc(tip.x, tip.y, lineWidth * 1.4, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   // Base pixel position + fiber->pixel scale, handling weird (>5:1) aspect ratios
@@ -294,8 +286,9 @@ export function start(canvas) {
     // Retina line width, like the C (lw = 3 past 2560 px, else 1), scaled by dpr.
     lineWidth = Math.max(1, Math.round((W > 2560 || H > 2560 ? 3 : 1) * S));
 
-    palette = new Array(config.ncolors);
-    for (let i = 0; i < config.ncolors; i++) palette[i] = tipColor(i, config.ncolors);
+    // Tip colour wheel: the C's make_uniform_colormap (UNIFORM_COLORS) -- a full
+    // hue ramp at a single per-run saturation/value, NOT a max-vivid hsl rainbow.
+    palette = makeUniformColormapRGB(config.ncolors).map(([r, g, b]) => `rgb(${r},${g},${b})`);
 
     const n = Math.max(1, Math.round(config.count));
     fibers = new Array(n);
@@ -305,11 +298,11 @@ export function start(canvas) {
     dpsi = 0.01;
     knock();             // seed the base offset and reset the counter
 
-    // Run a few warm-up steps so the first painted frame already shows fibers
-    // splayed out, not all collapsed on the vertical axis.
-    for (let i = 0; i < 60; i++) {
-      for (let f = 0; f < n; f++) stepFiber(fibers[f], baseX, baseY, fiberScale);
-    }
+    // The C's draw_fiberlamp integrates one physics step BEFORE its first paint,
+    // so do exactly one step here to fill draw[] (frame 1 = near-straight rods in
+    // a 30-degree cone, just starting to droop -- the authentic power-on bloom;
+    // no multi-step warm-up, which would skip that startup transient).
+    for (let f = 0; f < n; f++) stepFiber(fibers[f], baseX, baseY, fiberScale);
     sortFibers();
 
     needsBackground = true;
@@ -326,6 +319,11 @@ export function start(canvas) {
 
   // rAF lag-accumulator loop paced by config.delay (see squiral.js). The canvas is
   // fully repainted each frame, so step() advances physics and draw() repaints.
+  // OVERHEAD: config.delay is a sleep FLOOR (the stock 10000 us / 100 fps target);
+  // the real per-frame cost of stepping + vector-drawing count=500 fibers is
+  // much higher. Live-measured: 39.8fps (Load 60.2%, clean) at stock delay 10000 ->
+  // OVERHEAD 15100 (see fiberlamp.md); config.delay still maps 1:1 to --delay.
+  const OVERHEAD = 15100;
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -336,8 +334,9 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    // config.delay is microseconds (xml units); the rAF clock is milliseconds.
-    const delayMs = config.delay / 1000;
+    // config.delay (microseconds, xml units) + measured framework OVERHEAD,
+    // converted to the rAF clock's milliseconds.
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

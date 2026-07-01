@@ -29,6 +29,8 @@
 // fresh graph + palette are generated. See [[truchet]] / [[penrose]] for the
 // grid-graph tiling idiom and [[squiral]] for the module skeleton.
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'celtic';
 
 export const info = {
@@ -561,9 +563,8 @@ export function start(canvas) {
   // finishes. The C re-rolls curve/shadow widths, shape, edge size, margin,
   // angle and TYPE on every knot; only delay/delay2/graph/ncolors are knobs.
   const config = {
-    delay: 50000,    // microseconds between animation steps (--delay)
-    delay2: 3,       // seconds to linger on a finished knot (--delay2, xml 5)
-    type: 'random',  // which graph kind to roll (random = faithful)
+    delay: 10000,    // microseconds between animation steps (--delay; xml stock)
+    delay2: 5,       // seconds to linger on a finished knot (--delay2; xml stock)
     ncolors: 20,     // palette size (--ncolors)
     graph: false,    // overlay the underlying graph (--graph)
   };
@@ -572,15 +573,8 @@ export function start(canvas) {
   // live: false -> sizes the graph / palette, so a change re-runs init() via
   //                reinit() (a clean black canvas + a fresh knot).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'delay2', label: 'Linger', type: 'range', min: 0, max: 10, step: 1, default: 3, unit: ' s', lowLabel: 'short', highLabel: 'long', live: true },
-    { key: 'type', label: 'Pattern', type: 'select', options: [
-      { value: 'random', label: 'Random' },
-      { value: 'grid', label: 'Grid' },
-      { value: 'kennicott', label: 'Kennicott' },
-      { value: 'triangle', label: 'Triangle' },
-      { value: 'polar', label: 'Polar' },
-    ], default: 'random', live: false },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay2', label: 'Linger', type: 'range', min: 0, max: 10, step: 1, default: 5, unit: ' s', lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 4, max: 40, step: 1, default: 20, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'graph', label: 'Draw graph', type: 'checkbox', default: false, live: false },
   ];
@@ -605,22 +599,20 @@ export function start(canvas) {
   let state = 'draw';        // 'draw' | 'linger'
   let lingerEnd = 0;
 
-  const TYPE_INDEX = {
-    grid: 0,
-    kennicott: 1,
-    triangle: 2,
-    polar: 3,
-  };
-
+  // The C rolls a random graph type on every knot (NRAND(4)); celtic.xml has no
+  // type resource, so the port always rolls random too (faithful, no invented knob).
   function forcedType() {
-    return (config.type === 'random') ? null : TYPE_INDEX[config.type];
+    return null;
   }
 
+  // The C fills the palette with make_smooth_colormap (celtic_init, and again in
+  // the per-knot recolor block of celtic_draw) and reserves indices 0/1 for
+  // fg/bg. The bands only ever index 2..ncolors-1 (random()%(ncolors-2)+2, and
+  // segment%(ncolors-3)+2 for the single-band case), so a faithful smooth
+  // colormap of `ncolors` entries reproduces the band colours exactly. Re-rolled
+  // every knot, matching the C's per-reset recolor.
   function buildPalette() {
-    palette = [];
-    for (let i = 0; i < ncolors; i++) {
-      palette.push(`hsl(${Math.round(i * 360 / ncolors)}, 90%, 60%)`);
-    }
+    palette = makeSmoothColormapRGB(ncolors).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   function drawGraphOverlay(g) {
@@ -776,6 +768,15 @@ export function start(canvas) {
   // rAF lag-accumulator. Each knot is heavy (it repaints many short strokes),
   // so the catch-up cap is small. The linger is handled by wall-clock here so
   // it is independent of the step pace.
+  //
+  // OVERHEAD: the C returns the stock --delay (10000 us) between celtic_draw
+  // calls, but each call also spends real time drawing (up to 100 ticks of short
+  // line segments per band), so the live binary's true frame period is
+  // delay + per-frame draw cost. We pace at (delay + OVERHEAD) so the reveal runs
+  // at the live cadence, never faster than the author's floor. Live-measured (mid-
+  // reveal): 56.1fps (Load 43.9%, clean) at stock delay 10000 -> OVERHEAD 7800.
+  // See celtic.md.
+  const OVERHEAD = 7800;       // microseconds (live-measured)
   const MAX_CATCHUP_STEPS = 2;
   let lastTime = 0;
   let lag = 0;
@@ -797,7 +798,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

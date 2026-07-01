@@ -63,10 +63,10 @@ non-finite values. Set `maxCycles = 0` to disable the restart (runs forever).
   accumulates past 360 before its `degrees_drawn > 360` restart fires, but stays well below
   the `OPEN = 10001` sentinel, so occupied/empty never alias.
 - **Units / defaults**: `delay` µs as in the xml, at the **stock default 18000** plus a
-  live-measured `OVERHEAD = 8385` µs, so the rAF lag-accumulator paces one step per
-  `(delay + OVERHEAD)` and reproduces the live binary's **37.9 fps** (measured via `-fps`
-  at 820x560: Load 31.8%, a clean delay-bound reading — the sleep slice `26385 * (1-0.318)
-  = 17994` ≈ stock 18000, so contention-free). The earlier by-eye `18000 -> 16000` nudge is
+  live-measured `OVERHEAD = 8100` µs, so the rAF lag-accumulator paces one step per
+  `(delay + OVERHEAD)` and reproduces the live binary's **38.3 fps** (measured via `-fps`
+  at 820x560: Load 31.0%, a clean delay-bound reading — the sleep slice `26110 * (1-0.310)
+  = 18016` ≈ stock 18000, so contention-free). The earlier by-eye `18000 -> 16000` nudge is
   gone; see [[framerate-calibration]]. substrate is intentionally slow/meditative; raise
   **Frame rate** to speed growth, **Initial cracks** for a busier start. `maxCracks` exposed
   as "Max cracks" (stock 100; not in the stock UI). Keypress-to-restart dropped (the host

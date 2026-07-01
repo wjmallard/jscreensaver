@@ -1,7 +1,7 @@
 # critical -- port notes
 
 Port of `critical.c` by Martin Pool (1998-2000) -- a self-organizing-criticality
-display: random squiggles that settle into order, drawn as a moving rainbow trail.
+display: random squiggles that settle into order, drawn as a moving colour trail.
 
 Original: <https://www.jwz.org/xscreensaver/> - source: `critical.c` (~462 lines) -
 removed from xscreensaver as of 5.08 (the .xml is the post-removal stub).
@@ -19,15 +19,18 @@ aspect), each holding a random unsigned-short value. One **step** (the C's
 
 Consecutive points are joined by straight lines (cell centre to cell centre,
 `x*cellSize + half`) into a trail. The colour advances every `LINES_PER_COLOR`
-(10) steps, so the trail is a sliding rainbow band. The walk is a grid-max search,
+(10) steps; the visible trail spans only ~`trail/LINES_PER_COLOR` (~5) adjacent
+colormap entries at a time, so it reads as one slowly-cycling colour family (the
+live binary looks the same -- a single hue family drifting through the colormap).
+The walk is a grid-max search,
 so each point is always a valid grid cell -- it can never diverge, fly off-screen,
 or go NaN by construction.
 
 Two integer counters drive the lifecycle (the C's `d_i_batch` / `i_restart`):
 every `BATCHCOUNT` (1500) steps an `i_restart` tick fires, and every `RESTART`
-(8) ticks a **full re-seed** runs (new colormap phase, fresh random model, walk
+(8) ticks a **full re-seed** runs (fresh smooth colormap, fresh random model, walk
 origin reset). That is one re-seed per `RESTART*(BATCHCOUNT+1)` = **12008 steps**
-(~4 min at the default delay 20000) -- verified exactly with a headless harness.
+(~2 min at the stock delay 10000) -- verified exactly with a headless harness.
 
 ## Module shape
 `start(canvas) -> { stop, pause, resume, reinit, config, params }` -- see
@@ -45,6 +48,18 @@ in a ring and **full-repaints** each frame: clear to black, then stroke the
 connected polyline. Segments are grouped by colour into one `Path2D` each and
 stroked once per colour (<= `ncolors`, typically ~6 strokes/frame). The model
 scan is ~80 x H ~= 3600 cells/step; both costs are trivial.
+
+`critical.c` **is** on the AA-off list -- it calls
+`jwxyz_XSetAntiAliasing(dpy, gc, False)` on both the fg and bg GCs (critical.c
+~326-327) and its identity **is** a draw-newest / erase-oldest each frame. But the
+erase (`draw_step(st, st->bgc, ...)`) is a plain **background-colour over-paint**,
+NOT an XOR / bitwise / pixel-exact op, and nothing but the trail is ever on screen,
+so the identity does **not** depend on a bit-exact destructive erase. Full-repaint
+therefore reproduces the identical image (a sparse trail on black) and we keep
+canvas AA per the stroke-hack rule, rather than dropping to a software framebuffer.
+(The only difference: the C's black over-paint can cut a tiny gap through a newer
+segment that crosses the oldest one; full-repaint leaves crossings intact -- an
+imperceptible improvement, not a regression.)
 
 `step()` only mutates state (model / trail ring / counters); `frame()` does a
 single `repaint()` after all of that frame's steps, so a multi-step catch-up
@@ -65,9 +80,17 @@ frame repaints once, not N times.
 - **devicePixelRatio.** The backing store is device px; `cellSize` is computed in
   device px (`canvas.width / 80`), so the grid stays ~80 x (80*H/W) on any dpr and
   the look is the same on retina. Line width is `max(1, dpr)`.
-- **Palette.** The C's default `colorscheme=smooth` becomes a vivid full-saturation
-  HSL wheel (`hsl(h, 100%, 55%)`); a random `hueOffset` is re-rolled on each
-  restart so a fresh run never repaints in the same colours. `ncolors` maps 1:1.
+- **Palette (now faithful -- was the systemic vivid-rainbow bug).** The C's default
+  `colorscheme=smooth` -> `make_smooth_colormap` (critical.c `setup_colormap`): a
+  closed loop of `ncolors` entries interpolated between 2-5 random HSV anchors. The
+  port now uses `colormap.js`'s faithful `makeSmoothColormapRGB(ncolors)`, replacing
+  the earlier vivid full-saturation `hsl(h, 100%, 55%)` wheel (+ `hueOffset`), which
+  was the same vivid-rainbow deviation caught across every prior batch. The colormap
+  is re-rolled on each restart, exactly as the C re-runs `setup_colormap`, so a fresh
+  run never repaints in the same colours; the roll can be muted or vivid, matching
+  the live binary. `ncolors` maps 1:1. (`colorscheme` random/uniform are real C
+  resources, but the post-removal xml exposes neither -- only the default `smooth`
+  is ported; no invented colour selector.)
 - **Trail slider capped at 300** (the C clamps `trail` to 2..1000); 300 is plenty
   for the look and keeps repaint cheap. `batchcount` (1500) and `restart` (8) are
   kept as faithful internal constants -- the post-removal xml exposes only `delay`
@@ -82,6 +105,15 @@ defining visual resource. `ncolors` and `trail` are **non-live** (they size the
 palette / trail ring, so a change re-runs `init()` via `reinit()`, giving a fresh
 screen). "Reset to defaults" and `r` (restart) re-seed via `reinit()`.
 
+## Speed
+The stock `delay` default is **10000 us** (the xml / `.c` value); an earlier port had
+it doubled by-eye to 20000 -- **corrected to 10000**. The loop paces one step (one
+new trail segment) per `(delay + OVERHEAD)`, not raw `delay`: the xml delay is a
+sleep FLOOR, so the live binary's effective rate is `1e6/(delay+overhead)`. `OVERHEAD`
+is the live-measured **7850 us** (live 56.0 fps, Load 44.0%, clean at stock delay 10000;
+one ~80xH grid scan + a couple of line draws per step, comparable to compass 8571 /
+substrate 8100).
+
 ## Correctness self-review
 - **Bounded, finite walk.** The next point is the argmax of the grid, always a
   valid cell in `[0,80) x [0,H)`. Headless harness over 12013 steps: **0**
@@ -93,8 +125,8 @@ screen). "Reset to defaults" and `r` (restart) re-seed via `reinit()`.
   `if (<0) { reset; i_restart = (i_restart+1)%RESTART; if (0) restart }` -- ported
   verbatim with integers (no float test). Harness: first full restart at step
   **12008 = RESTART*(BATCHCOUNT+1)**, matching the C. Restart re-seeds the model,
-  resets the trail ring, and re-rolls `hueOffset`, so it does **not** repaint
-  identically (the brief's restart check).
+  resets the trail ring, and rolls a fresh smooth colormap (`buildColors()`), so it
+  does **not** repaint identically (the brief's restart check).
 - **Clean first frame.** `init()` seeds one point; `repaint()` returns early while
   `histCount < 2` (just black), then a short segment appears and the trail unfurls
   -- on-screen, in-range from frame one, never a degenerate/off-screen start.

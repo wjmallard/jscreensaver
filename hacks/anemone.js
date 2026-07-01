@@ -23,6 +23,8 @@
 // black each frame, then the buckets are stroked/filled. See [[squiral]] for the
 // shared skeleton and [[nerverot]] for the wiggling-tendril vector idiom.
 
+import { makeSmoothColormapRGB } from './colormap.js';
+
 export const title = 'anemone';
 
 export const info = {
@@ -38,7 +40,7 @@ export function start(canvas) {
   // `colors` is not surfaced by the xml (it is a plain resource, default 20); we
   // expose it anyway per the gallery convention. The C adds 3 to it internally.
   const config = {
-    delay: 50000,      // microseconds between frames (--delay)
+    delay: 40000,      // microseconds between frames (--delay; stock xml default)
     arms: 128,         // number of tendrils (--arms)
     finpoints: 64,     // max points (tentacle length) per arm (--finpoints)
     width: 2,          // line thickness, logical px (--width)
@@ -51,7 +53,7 @@ export function start(canvas) {
   // live: false -> the value sizes arrays/palette, so a change re-runs init()
   //                via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 80000, step: 1000, default: 50000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 80000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'arms', label: 'Arms', type: 'range', min: 2, max: 500, step: 1, default: 128, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'finpoints', label: 'Tentacles', type: 'range', min: 3, max: 200, step: 1, default: 64, lowLabel: 'short', highLabel: 'long', live: false },
     { key: 'width', label: 'Thickness', type: 'range', min: 1, max: 10, step: 1, default: 2, lowLabel: 'thin', highLabel: 'thick', live: true },
@@ -117,13 +119,12 @@ export function start(canvas) {
 
   // ---- colour ramp ------------------------------------------------------
 
-  // The C builds a make_smooth_colormap of ncolors smooth hues; we use a vivid
-  // hsl() rainbow per the gallery convention. Each arm picks a random index.
+  // The C builds an ncolors-entry make_smooth_colormap (utils/colors.c) ONCE at
+  // init: 2-5 HSV anchor hues interpolated into a smooth closed loop - a
+  // harmonious few-hue ramp, NOT a full-saturation rainbow. colormap.js is the
+  // faithful port. Each arm picks a random index (aCurr->col = colors[RND(ncolors)]).
   function buildPalette() {
-    palette = new Array(ncolors);
-    for (let i = 0; i < ncolors; i++) {
-      palette[i] = `hsl(${Math.round((i * 360) / ncolors)}, 100%, 55%)`;
-    }
+    palette = makeSmoothColormapRGB(ncolors).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // ---- simulation -------------------------------------------------------
@@ -265,9 +266,14 @@ export function start(canvas) {
     draw();   // paint frame 1 so a fresh mount/resize isn't blank
   }
 
-  // rAF lag-accumulator loop paced by config.delay (us in the xml; /1000 for the
+  // rAF lag-accumulator loop paced by (config.delay + OVERHEAD) us (/1000 for the
   // ms rAF clock), with the same catch-up cap as squiral so a backgrounded tab
   // doesn't burst on refocus. Each step() fully repaints.
+  //
+  // OVERHEAD: config.delay is the author's inter-frame SLEEP (stock 40000 us); the
+  // live binary's real rate is lower because every frame also clears and redraws
+  // all arms, so a fixed per-frame cost is added to reproduce the live -fps rate.
+  const OVERHEAD = 9000;   // us; the main-session -fps pass sets the precise value.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -278,7 +284,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

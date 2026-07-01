@@ -7,7 +7,7 @@
 // A self-organizing-criticality display. An 80 x H grid of cells holds random
 // values; each step the highest-valued cell is found -- that becomes the next
 // point of a walk -- and that cell plus its eight neighbours are re-randomised.
-// The points are joined by straight lines into a moving rainbow trail. It starts
+// The points are joined by straight lines into a moving colour trail. It starts
 // as random squiggles, but after a while the walk settles into order.
 //
 // Rendering: SPARSE vector ops. The trail is the only thing on screen (nothing
@@ -15,6 +15,8 @@
 // so we keep the last `trail` points and stroke the connected polyline between
 // them, grouped by colour into one Path2D per colour (<= ncolors strokes/frame).
 // See [[qix]] (the same moving-trail idiom) and [[squiral]] (the skeleton).
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'critical';
 
@@ -31,7 +33,7 @@ export function start(canvas) {
   // C's `trail` resource, the defining visual knob. Units match the xml so the
   // config box maps 1:1.
   const config = {
-    delay: 20000,   // microseconds between steps (--delay)
+    delay: 10000,   // microseconds between steps (--delay); stock critical.xml default
     ncolors: 64,    // size of the colour cycle (--ncolors)
     trail: 50,      // number of points kept in the moving trail (--trail)
   };
@@ -40,7 +42,7 @@ export function start(canvas) {
   // live: false -> the value sizes the palette / trail ring, so a change
   //                re-runs init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 3, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
     { key: 'trail', label: 'Trail length', type: 'range', min: 2, max: 300, step: 1, default: 50, lowLabel: 'short', highLabel: 'long', live: false },
   ];
@@ -57,7 +59,7 @@ export function start(canvas) {
   let cells;                   // Uint16Array(MODEL_W * modelH) of random values
 
   let ncolors, trail;          // resolved from config
-  let colors, hueOffset;       // palette + its random phase (re-rolled on restart)
+  let colors;                  // palette: a smooth colormap (re-rolled on restart)
 
   let history;                 // ring of { x, y, color } in cell coords
   let histHead, histCount;     // next write slot / number of valid points
@@ -74,12 +76,13 @@ export function start(canvas) {
     return (Math.random() * 65536) | 0;
   }
 
+  // The C's default colorscheme=smooth -> make_smooth_colormap (setup_colormap in
+  // critical.c): a closed loop of `ncolors` entries interpolated between 2-5 random
+  // HSV anchors. colormap.js is a faithful port of that; NOT the old vivid
+  // full-saturation hsl() wheel. Re-rolled on each restart, as the C re-runs
+  // setup_colormap when it re-seeds.
   function buildColors() {
-    colors = new Array(ncolors);
-    for (let i = 0; i < ncolors; i++) {
-      const h = ((i * 360 / ncolors + hueOffset) % 360 + 360) % 360;
-      colors[i] = `hsl(${h.toFixed(1)}, 100%, 55%)`;
-    }
+    colors = makeSmoothColormapRGB(ncolors).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // Fill every cell with a fresh random value (the C's model_initialize).
@@ -128,12 +131,12 @@ export function start(canvas) {
     if (histCount < trail) histCount++;
   }
 
-  // Full re-seed (the C's restart block): new colormap phase, new model, walk
-  // origin re-seeded. Re-rolling hueOffset advances the colour so the fresh run
-  // does not repaint identically. The walk's batch counter is reset; dIColor is
-  // left to continue, like the C (the colormap changed, so colours differ).
+  // Full re-seed (the C's restart block): rebuild the colormap, new model, walk
+  // origin re-seeded. buildColors() rolls a fresh smooth colormap so the new run
+  // does not repaint identically (the C re-calls setup_colormap here). The walk's
+  // batch counter is reset; dIColor is left to continue, like the C (the colormap
+  // changed, so colours differ).
   function restart() {
-    hueOffset = Math.random() * 360;
     buildColors();
     modelInitialize();
     histHead = 0;
@@ -175,7 +178,6 @@ export function start(canvas) {
     ncolors = Math.max(3, Math.round(config.ncolors));
     trail = clip(2, Math.round(config.trail), 1000);
 
-    hueOffset = Math.random() * 360;
     buildColors();
 
     history = new Array(trail);
@@ -236,9 +238,18 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (microseconds): run one step()
-  // per delay, banking leftover time so the speed is identical at any refresh
-  // rate. Cap catch-up so a backgrounded tab doesn't burst on refocus.
+  // rAF lag-accumulator: run one step() (one new trail segment) per
+  // (config.delay + OVERHEAD) microseconds, banking leftover time so the speed is
+  // identical at any refresh rate. Cap catch-up so a backgrounded tab doesn't
+  // burst on refocus.
+  //
+  // OVERHEAD: the xml *delay (10000) is only a sleep FLOOR; the live binary's real
+  // per-step rate is (delay + framework/draw cost), so its effective fps is
+  // 1e6/(delay+overhead), NOT 1e6/delay (see the framerate-calibration note).
+  // critical is a sparse vector hack (one ~80xH grid scan + two line draws per
+  // step). Live-measured: 56.0fps (Load 44.0%, clean) at stock delay 10000 ->
+  // OVERHEAD 7850. Measured off the live -fps overlay, not by-eye.
+  const OVERHEAD = 7850;         // microseconds (live-measured)
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -249,7 +260,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
