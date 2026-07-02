@@ -67,7 +67,9 @@ export const info = {
 };
 
 export function start(hostCanvas, opts = {}) {
-  const OVERHEAD = 37500;        // us; GL-family shared default (xml delay 20000 -> ~17fps)
+  // OVERHEAD=0 (measured 2026-07-01, was 37500): render negligible on real HW (120fps headless
+  // Metal, M4 Max) -> faithful pace is delay-limited: effFps = 1e6/20000 = 50fps.
+  const OVERHEAD = 0;
   const TESS = 20;               // GLE _POLYCYL_TESS: the default tessellation "slices"
   const DEG = Math.PI / 180;
   const MINL = -400, MAXL = 400, LSPAN = MAXL - MINL;   // lastx/lasty range (max/min_last[xy])

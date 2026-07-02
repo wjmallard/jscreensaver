@@ -49,7 +49,7 @@
 // cull exactly as in GL. Colours used RAW (colour management disabled -> GL framebuffer).
 //
 // PACING as in dangerball.js: render every rAF, motion is continuous; effFps =
-// 1e6/(delay+OVERHEAD), OVERHEAD = 37500; one render frame advances frames = dt*effFps
+// 1e6/(delay+OVERHEAD), OVERHEAD = 0; one render frame advances frames = dt*effFps
 // original-frames (th spin continuous; rotator wander ticked at effFps + interpolated).
 //
 // OMITTED (chrome): the mouse trackball, -wireframe's facet-outline-only mode (we just
@@ -77,7 +77,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;     // us; calibrates xml default delay 30000 -> ~14.8fps
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const TILE_D = 0.2;         // draw_ball_1: side-wall depth `d`
 
   // Knobs transcribed 1:1 from hacks/config/discoball.xml ("Size" = the row count).

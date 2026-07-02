@@ -56,7 +56,7 @@ gear bodies, ambient-0 lighting + cyan rim specular all reproduce.
 ## Pacing / config
 
 Pacing as in `gears.js` / `dangerball` (render every rAF; `effFps =
-1e6/(delay+OVERHEAD)`, `OVERHEAD = 37500`; spin + roll continuous, rotator ticked
+1e6/(delay+OVERHEAD)`, `OVERHEAD = 0`; spin + roll continuous, rotator ticked
 once per original-frame and interpolated). Config transcribed 1:1 from
 `hacks/config/moebiusgears.xml`: `delay` (0-100000, def 30000, invert) - `speed`
 (0.01-5.0, def 1.0) - `count` (13-99, def 17) - `teeth` (7-49, def 15) - `wander` -

@@ -134,7 +134,7 @@ left at full strength (their `c` normal has magnitude ~0.95, a <5% effect, ignor
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 37500` (the shared GL-family default -- live GL hacks can't be timed under
+`OVERHEAD = 0` (the shared GL-family default -- live GL hacks can't be timed under
 this machine's XQuartz Apple-DRI block). xml `delay = 15000` ->
 `effFps = 1e6/(15000+37500) ~= 19 fps`. The frame-locked physics therefore advances at
 19 ticks/s (interpolated to 60 Hz for display). Because the integration is per-tick

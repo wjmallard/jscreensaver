@@ -125,7 +125,7 @@ scene-graph groups.
 
 Per-frame increments in the .c (`xrot/yrot += spinspeed`, `posarg += wspeed/1000`,
 `t += tspeed`, then `if(t>tmax) finish()`) are advanced per rAF by `frames = dt*effFps`,
-`effFps = 1e6/(config.delay + OVERHEAD)`. `OVERHEAD = 37500` (the GL family's shared
+`effFps = 1e6/(config.delay + OVERHEAD)`. `OVERHEAD = 0` (the GL family's shared
 measured value -- live GL hacks can't be timed under this machine's XQuartz Apple-DRI
 block, so every three.js port adopts it). xml `delay` default 20000 -> ~17.4 fps.
 Motion advances AFTER the draw, matching `draw_main`'s order (first frame draws at t=0).

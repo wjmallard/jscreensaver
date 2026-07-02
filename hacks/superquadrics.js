@@ -53,7 +53,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;        // us; xml default delay 40000 -> ~13fps effective (family default)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const MaxRes = 50, MinRes = 5; // MaxRes / MinRes
   const CLIP = 10000.0;          // CLIP_NORMALS
   const MAXRAND = 2147483648.0;  // xlockmore MAXRAND (2^31)

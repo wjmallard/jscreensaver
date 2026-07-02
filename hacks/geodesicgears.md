@@ -76,7 +76,7 @@ pre-transform is a pure rotation (det +1), so winding is preserved.
 ## Pacing / config
 
 Pacing as in `dangerball.js` / `moebiusgears.js` (`effFps = 1e6/(delay + OVERHEAD)`,
-`OVERHEAD = 37500`); xml default delay 30000 -> ~15fps, gear spin `0.7 deg/frame`,
+`OVERHEAD = 0`); xml default delay 30000 -> ~15fps, gear spin `0.7 deg/frame`,
 whole-sphere tumble via `rotator.js` (`spin 0.25`, `wander 0.01`, accel 0.2). The
 rotator is built once (both spin + wander enabled) and its output is gated live by the
 `spin` / `wander` checkboxes (the dangerball pattern); the rotator's discrete

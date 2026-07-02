@@ -109,7 +109,7 @@ tube geometry is built directly (see below).
 advance by `frames = dt*effFps`; the `duration` timer (8 s) runs off real wall-clock
 seconds, as the C's `time()` poll does. The rotator is a discrete random-walk, so it is
 ticked once per original-frame at effFps and **interpolated** between ticks (the
-dangerball.js pattern). **`OVERHEAD = 37500`** -- the GL family's shared default
+dangerball.js pattern). **`OVERHEAD = 0`** -- the GL family's shared default
 (`gears`/`pipes`/`dangerball`/`morph3d`/...): live GL hacks can't be timed under this
 machine's XQuartz Apple-DRI block, so every three.js port adopts the same measured
 overhead. xml default delay 30000 -> `effFps = 1e6/67500 ~= 14.8fps`. See
@@ -152,7 +152,7 @@ Offline numeric check confirmed no NaNs, sane coordinate extents (`maxR ~16..30`
 after the 0.25 scale, fitting the fov-30 camera at z=30), type-0 closing to machine
 precision while type-1 stays open, and brightened colors landing in `[0.5,0.75]`.
 
-**Coordinator review (2026-06-30).** Set `OVERHEAD = 37500` (the GL family default; live
+**Coordinator review (2026-06-30).** Set `OVERHEAD = 0` (the GL family default; live
 GL is unmeasurable here). Caught and fixed an undersized geometry buffer:
 `posArr`/`norArr` were a factor of ~3 too small (the vertex count `MAX_SEG*FACES*2*3` was
 used as the float count, dropping the per-vertex `*3`), so at the default 800 segments the

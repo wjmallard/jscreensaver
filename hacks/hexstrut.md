@@ -85,7 +85,7 @@ buffers (`triCount*18` verts: 3 legs x 1 quad x 2 tris x 3 verts). Changing the
 
 ## Pacing / config
 
-Pacing as in `dangerball.js`: `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 37500`; xml
+Pacing as in `dangerball.js`: `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`; xml
 default delay 30000 -> ~15fps. The wave is **discrete** (integer delays + per-frame
 random events), so `tick_triangles` is ticked **once per original-frame** at `effFps`
 (not advanced by a fraction) -- reproducing the original's stepping exactly; the

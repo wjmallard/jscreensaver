@@ -224,7 +224,7 @@ dispose }`. Built as reusable infrastructure so the other label-drawing GL ports
 8) with the visual angle interpolated between integer ticks for a smooth crank; the
 firing/boom state machine and the rotator's discrete random walk are ticked in the
 same loop (the rotator orientation/position then interpolated -- the dangerball.js
-pattern). **`OVERHEAD = 37500`** -- the GL family's shared default (live GL can't be
+pattern). **`OVERHEAD = 0`** -- the GL family's shared default (live GL can't be
 timed under this machine's XQuartz Apple-DRI block, so every three.js port adopts
 the same measured overhead). xml default delay 30000 -> `effFps = 1e6/67500 ~=
 14.8fps`. See framerate-calibration.

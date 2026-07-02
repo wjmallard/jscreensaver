@@ -43,7 +43,7 @@
 // PACING -- render every rAF; advance the continuous state/spin by `frames =
 // dt*effFps` (so the trajectory matches the original's per-frame step, sampled smoothly)
 // and tick the wander rotator at effFps with interpolation (the geometry-track
-// convention). effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 37500 us as across the track.
+// convention). effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 0 us as across the track.
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -61,7 +61,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;     // us; calibrates xml default delay 30000 -> ~15fps (track default)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const NCOLORS = 32;         // bp->ncolors
   // Geometry cap: 21 cubes (length<=20 + 1 top) * 6 faces * 4 struts * 15 verts/strut
   // (a strut is 2 + 3 triangles when thin) = 7560; round up for slack.

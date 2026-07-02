@@ -49,7 +49,7 @@ export function start(hostCanvas) {
   // delay (us) scales the spin around the xml default 20000; OVERHEAD encodes the
   // ~2x per-frame overhead so the default reproduces the measured pace. cubicgrid's
   // rotation is continuous (dt-scaled), so it stays smooth at any speed.
-  const OVERHEAD = 37500;
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const REF_DELAY = 20000 + OVERHEAD;   // delay factor == 1 at the xml default
 
   // Live config. Keys/ranges/defaults/labels transcribed 1:1 from

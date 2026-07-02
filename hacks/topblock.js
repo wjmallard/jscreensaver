@@ -46,8 +46,8 @@
 //     cancel three's 1/PI Lambert (the glknots/dangerball convention).
 //
 // PACING -- render every rAF; tick the block simulation (spawn + rotate + fall/collide) at
-// effFps = 1e6/(delay+OVERHEAD). OVERHEAD is 6667 (~60fps), NOT the GL track's shared 37500:
-// spawn/fall are frame-coupled here, so the slow default starved block drops (see below). The
+// effFps = 1e6/(delay+OVERHEAD). OVERHEAD is 0 (~100fps at delay 10000), NOT the GL track's old
+// 37500: spawn/fall are frame-coupled here, so the slow default starved block drops (see below). The
 // falling is continuous, so falling heights + the world
 // rotation + the eyeLine/eye camera scalars are INTERPOLATED between ticks (1-tick-behind,
 // catch-up capped at 8) for smooth motion (the dangerball.js pattern).
@@ -73,12 +73,13 @@ export const info = {
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
   // topblock's spawn AND fall are FRAME-COUPLED (generateNewBlock rolls random()%spawn once
-  // per sim-tick, blocks fall by dropSpeed per tick), so the sim rate IS the animation speed
-  // and the block-drop cadence. The GL track's shared 37500 (-> ~21fps) is far below the .c's
-  // true rate for this LIGHT hack (delay 10000 -> tens of fps) and starves spawns: ~0.4/s and
-  // a many-second lag to the first block. Recalibrated to the .c's intended ~60fps (also what
-  // the reference screenshot's dense pile implies): 1e6/(10000+6667) ~= 60. See topblock.md.
-  const OVERHEAD = 6667;           // us; ~60fps at the xml delay of 10000 (NOT the 37500 default)
+  // per sim-tick, blocks fall by dropSpeed per tick), so the sim rate IS the block-drop
+  // cadence. OVERHEAD=0 (measured 2026-07-01; was 37500, then a 6667 estimate). Headless Metal
+  // (M4 Max) renders this at 120fps/<=8.3ms << delay, so render is negligible -> faithful pace
+  // is delay-limited: effFps = 1e6/10000 = 100fps (the sim decouples from the display refresh
+  // via the accumulator, so no 60fps cap). Spawns ~2/s; the first block falls into view in
+  // ~3s (mostly the faithful fall from the above-frame spawn height). See topblock.md.
+  const OVERHEAD = 0;              // us; effFps = 1e6/delay = 100fps at the xml delay of 10000
   const MAX_TICKS = 8;             // sim catch-up cap (avoids spiral after a stall)
 
   // ---- constants (topblock.h) ----

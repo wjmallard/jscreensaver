@@ -50,7 +50,7 @@
 // in glColor space and that value IS the output -- no conversion.
 //
 // PACING (as in dangerball.js): render every rAF; the simulation ticks at the
-// original cadence effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 37500 (family
+// original cadence effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 0 (family
 // default). Each tick is one full tick_hexagons() frame (growth + all the per-
 // frame random events), so the RNG-driven structure is bit-faithful; geometry is
 // rebuilt when a tick (or a live thickness/count change) dirties it. The slow
@@ -124,7 +124,7 @@ function trackballQuat(p1x, p1y, p2x, p2y) {
 }
 
 export function start(hostCanvas, opts = {}) {
-  const OVERHEAD = 37500;     // us; xml default delay 30000 -> ~14.8fps (family default)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const MAX_TICKS = 8;        // sim catch-up cap (avoids spiral after a stall)
 
   // Knobs transcribed 1:1 from hacks/config/hextrail.xml.

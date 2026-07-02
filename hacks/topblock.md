@@ -111,20 +111,26 @@ both (bricks span a large volume and the matrices are set manually).
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 6667` (**recalibrated 2026-07-01, was 37500**). `delay` is the frame-rate knob;
-render is every rAF, the sim advances `dt*effFps` ticks per frame, `effFps =
-1e6/(delay+OVERHEAD)`.
+`OVERHEAD = 0` (**recalibrated 2026-07-01: was 37500, then briefly a 6667 estimate**). `delay`
+is the frame-rate knob; render is every rAF, the sim advances `dt*effFps` ticks per frame,
+`effFps = 1e6/(delay+OVERHEAD) = 1e6/10000 = 100fps` at the xml default.
 
-Why NOT the GL track's shared 37500 (`~21fps`): topblock's spawn AND fall are **frame-coupled**
--- `generateNewBlock` rolls `random()%spawn` once per sim-tick and bricks fall by `dropSpeed`
-per tick -- so the sim rate IS the block-drop cadence. At `~21fps` the spawn gate fires only
-~21x/s * 1/50 = ~0.4 blocks/s, giving a multi-second (observed ~15s) lag to the FIRST block and
-a too-sparse pile vs the reference. The `.c` is a light hack (`delay=10000` -> tens of fps), so
-`~21fps` is far too slow. Recalibrated to the `.c`'s intended **~60fps** (`1e6/(10000+6667)`),
-which the reference screenshot's dense pile also implies: first block <1s, ~1.2 blocks/s. The
-live binary can't be timed here (XQuartz Apple-DRI block) so 60 is the light-hack target rate,
-not a measurement -- eyeball in a real browser. (If a slow machine's frame rate still starves
-spawns via the `dt`-clamp + 8-tick catch-up cap, the fallback is a real-time spawn clock.)
+Why 0, not the GL track's old shared 37500 (`~21fps`): topblock's spawn AND fall are
+**frame-coupled** -- `generateNewBlock` rolls `random()%spawn` once per sim-tick and bricks fall
+by `dropSpeed` per tick -- so the sim rate IS the block-drop cadence, and `~21fps` starved it
+(~0.4 blocks/s). **Measured 2026-07-01**: headless Metal (M4 Max) renders topblock at
+120fps/<=8.3ms, far under the xml delay, so render is negligible and the faithful pace is
+delay-limited -- `OVERHEAD=0 -> 100fps` (the sim decouples from the display refresh via the
+accumulator, so no 60fps cap). Spawns ~2/s.
+
+STARTUP DELAY (faithful, not a bug): topblock starts EMPTY and spawns each block at
+`getHeight(plusheight)=30*1.49 ~= 44.7`, ABOVE the top of the frame; the block then falls INTO
+view. So the first block takes a few seconds to appear = the random `1/spawn` gate (~0.5s at
+100fps, but geometric, so it varies run-to-run) + the fall from the off-screen spawn height. The
+`.c` does exactly this (on period hardware it was even slower), so the few-second empty opening
+is faithful; switching drops to a wall clock would NOT change it (the cadence is already
+delay-correct -- the delay is the fall physics + the random gate). A non-faithful "warm start"
+(pre-advancing the sim at mount) could hide the empty opening if ever wanted.
 
 ## Config
 

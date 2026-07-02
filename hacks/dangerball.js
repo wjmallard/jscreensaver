@@ -69,7 +69,7 @@ export function start(hostCanvas, opts = {}) {
   const DIAM = 0.2;            // draw_spikes: spike thickness scale
   const ROT_SCALE = 22;        // randomize_spikes quantization
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;      // us; calibrates the xml default delay 30000 -> ~15fps (the measured effective rate)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
 
   // Live config. Keys/ranges/defaults/labels transcribed 1:1 from
   // hacks/config/dangerball.xml (the host renders the box from `params` and

@@ -43,7 +43,7 @@
 // (yarandom.js) are faithful. PACING: render every rAF; effFps = 1e6/(delay+OVERHEAD);
 // continuous motion (drift, tumble, scene spin, roving spot) advances by frames =
 // dt*effFps; discrete per-frame events (spawn, grid-spot start) run in a catch-up loop
-// ticked at effFps (the engine.js pattern). OVERHEAD = 37500 (GL family default).
+// ticked at effFps (the engine.js pattern). OVERHEAD = 0 (delay-limited; measured 2026-07-01).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -128,9 +128,10 @@ const NUMS = [
 ];
 
 export function start(hostCanvas, opts = {}) {
-  // us; the GL family's shared overhead default (live GL is unmeasurable under this
-  // machine's XQuartz DRI block). xml delay 20000 -> effFps = 1e6/57500 ~= 17.4fps.
-  const OVERHEAD = 37500;
+  // OVERHEAD=0 (measured 2026-07-01, was 37500). Headless Metal (M4 Max) renders this at
+  // 120fps/<=8.3ms, far under the xml delay, so render is negligible -> faithful pace is
+  // delay-limited: effFps = 1e6/20000 = 50fps. 37500 modeled render overhead absent on real HW.
+  const OVERHEAD = 0;
   const MAX_TICKS = 8;      // per-frame catch-up cap
   const XMAX = 50;          // ci->XMAX (fixed); YMAX = XMAX * (winH/winW)
   const MOVE_MULT = 0.02;   // MOVE_MULT

@@ -111,7 +111,7 @@ creases, holds, spins away, and repeats with fresh colours.
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 37500` (the GL family's shared measured value; live GL hacks can't be
+`OVERHEAD = 0` (the GL family's shared measured value; live GL hacks can't be
 timed under this machine's XQuartz Apple-DRI block). xml `delay` default 30000 ->
 `effFps = 1e6/67500 ~= 14.8fps`, the rotator tick cadence. The fold timeline is
 wall-clock (as in the .c), scaled by `speed`, so one cycle is ~39s at `speed=1`.

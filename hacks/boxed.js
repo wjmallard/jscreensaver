@@ -96,11 +96,12 @@ export function start(hostCanvas, opts = {}) {
   const NUM_TRI = SPHERE_INDICES / 3;                                    // 400
   const CAMSPEED = 35.0;          // boxed_config.camspeed (hardcoded in setdefaultconfig)
   const MAX_TICKS = 8;            // physics catch-up cap (avoid a spiral after a stall)
-  // Recalibrated 2026-07-01 (was 37500). The physics is FRAME-COUPLED (integrated per
-  // sim-tick), so 37500's ~19fps ran the balls in slow motion. delay 15000 implies up to
-  // ~67fps; cap at the 60fps rAF ceiling -> OVERHEAD = 1e6/60 - 15000 = 1667. Light hack;
-  // the live rate can't be timed here (XQuartz block), so 60 is the target. See boxed.md.
-  const OVERHEAD = 1667;      // us; effFps = 1e6/(15000+1667) ~= 60fps
+  // OVERHEAD=0 (measured 2026-07-01; was 37500, then a 1667 estimate). The physics is
+  // FRAME-COUPLED (integrated per sim-tick). Headless Metal (M4 Max) renders this at
+  // 120fps/<=8.3ms << delay, so render is negligible -> faithful pace is delay-limited:
+  // effFps = 1e6/15000 = 67fps (the sim decouples from the display refresh, so no 60fps
+  // cap). See boxed.md.
+  const OVERHEAD = 0;         // us; effFps = 1e6/delay = 67fps at the xml delay of 15000
 
   // Knobs transcribed 1:1 from hacks/boxed.xml (the host renders the box from
   // `params` and mutates `config` in place). `delay` is the frame-rate knob.

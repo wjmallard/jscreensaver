@@ -120,7 +120,7 @@ current move's `glRotatef` into the one slice being turned.
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 37500` (the GL family's shared measured value — these hacks can't be
+`OVERHEAD = 0` (the GL family's shared measured value — these hacks can't be
 timed under this machine's XQuartz Apple-DRI block, so every three.js GL port adopts
 the same constant). `config.delay` default = the xml `<delay>` 20000. `effFps =
 1e6/(delay + OVERHEAD) = 1e6/57500 ~= 17.4fps`, the original's effective rate.

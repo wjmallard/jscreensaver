@@ -87,7 +87,7 @@ other LIT geometry hacks are unaffected.
 
 The .c is a DISCRETE per-frame sim (ball moves by `mo`, tile counters step, tumble
 accumulates -- all once per frame). We tick it at `effFps = 1e6/(delay + OVERHEAD)`,
-`OVERHEAD = 37500` (xml default delay 30000 -> ~15fps; the geometry-track family default),
+`OVERHEAD = 0` (xml default delay 30000 -> ~15fps; the geometry-track family default),
 and interpolate the ball position (`lerp(prev,cur,f)`) and the tumble (`slerp`) between
 ticks so the render is smooth at any rAF rate. The motion-blur trail is anchored at the
 interpolated base and spans the current `mo`, so it slides forward smoothly between ticks.

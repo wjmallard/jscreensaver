@@ -23,7 +23,7 @@ position in the RGB cube, seen from within as it tumbles -- rows align and
 
 - **Rotation is already continuous (dt-scaled)** -- smooth at any speed. `speed` and
   `delay` both multiply it (as in the original), `delay` via
-  `1e6/(delay + OVERHEAD)` with `OVERHEAD = 37500` so the factor is 1 at the xml
+  `1e6/(delay + OVERHEAD)` with `OVERHEAD = 0` so the factor is 1 at the xml
   default delay 20000.
 - **`zoom`** -> live `points.scale` (dot spacing / lattice extent). **`bigdots`** -> dot
   size (on = the calibrated `DOT_PX` look, off = half) -- mapped to the video-calibrated

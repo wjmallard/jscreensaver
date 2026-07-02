@@ -64,7 +64,7 @@ convention (sRGB->linear colors + `intensity = PI` light + specular `/PI`).
 Render every rAF; advance the continuous `state`/`spin` by `frames = dt*effFps` (the .c's
 per-frame steps, sampled smoothly) and tick the wander rotator at `effFps` with
 interpolation (the geometry-track convention). `effFps = 1e6/(delay + OVERHEAD)`,
-`OVERHEAD = 37500` (xml default delay 30000 -> ~15fps). The wander rotator
+`OVERHEAD = 0` (xml default delay 30000 -> ~15fps). The wander rotator
 (`make_rotator(0,0,0,0, 0.005, False)` -- wander only, no spin) is built once; the
 `wander` checkbox gates its OUTPUT live (the dangerball pattern). **OPEN:** `OVERHEAD` is
 the family default, not a per-hack measurement; pin against the demo video

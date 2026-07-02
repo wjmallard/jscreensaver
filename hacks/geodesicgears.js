@@ -128,7 +128,7 @@ const GEAR_TEMPLATES = [
 ];
 
 export function start(hostCanvas, opts = {}) {
-  const OVERHEAD = 37500;          // us; calibrates xml default delay 30000 -> ~15fps (see frame-rate-calibration)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const SPEED = 1.0;               // DEF_SPEED (no .xml slider; kept internal)
   const NCOLORS = 1024;            // bp->ncolors
   const DEG = Math.PI / 180;

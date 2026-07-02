@@ -40,7 +40,7 @@
 //     is ported verbatim (quaternion -> the exact GL matrix). Spin uses ONLY the
 //     rotator's z component (a roll about the sheet normal); wander is its position.
 //
-// PACING as in dangerball.js: effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 37500. The
+// PACING as in dangerball.js: effFps = 1e6/(delay+OVERHEAD), OVERHEAD = 0. The
 // wave (tick_triangles) is DISCRETE -- integer delays + per-frame random events --
 // so it is ticked once per original-frame at effFps (NOT advanced by a fraction),
 // exactly reproducing the original's stepping; the geometry is rebuilt every render
@@ -72,7 +72,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;             // us; pacing (xml default delay 30000 -> ~15fps)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const NCOLORS = 64;                 // bp->ncolors
   const LENGTH = Math.sqrt(3) / 3;    // draw_triangles: leg length factor
   const TWO_PI_3 = (Math.PI * 2) / 3; // per-cell rotation: angle = (2pi/3)*rot

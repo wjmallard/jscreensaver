@@ -82,11 +82,11 @@ export function start(hostCanvas, opts = {}) {
   const FACES = 6;                // tube.c faces (non-wireframe)
   const MAX_SEG = 2000;           // xml segments slider high; geometry preallocation
   const MAX_TICKS = 8;            // rotator catch-up cap (avoids spiral after a stall)
-  // us; the GL family's shared overhead default. Live GL hacks can't be timed under
-  // this machine's XQuartz Apple-DRI block, so every three.js port adopts the same
-  // measured 37500 (gears/pipes/dangerball/morph3d/...). xml delay 30000 ->
-  // effFps = 1e6/67500 ~= 14.8fps. See framerate-calibration.
-  const OVERHEAD = 37500;
+  // OVERHEAD=0 (measured 2026-07-01, was 37500). Headless Metal (M4 Max) renders this at
+  // 120fps/<=8.3ms, far under the xml delay, so render is negligible and the faithful pace
+  // is delay-limited: effFps = 1e6/30000 = 33fps. The 37500 default modeled GL render
+  // overhead that doesn't exist on real hardware. See framerate-calibration.
+  const OVERHEAD = 0;
 
   // Knobs transcribed 1:1 from hacks/glknots.xml (the host renders the box from
   // `params` and mutates `config` in place). `delay` is the frame-rate knob;

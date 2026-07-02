@@ -51,7 +51,7 @@
 //
 // PACING -- the .c advances the ball by `mo` and steps the tile fade counters once per
 // frame: a DISCRETE per-frame sim. We tick it at effFps = 1e6/(delay+OVERHEAD),
-// OVERHEAD = 37500us (xml default delay 30000 -> ~15fps; the geometry-track family
+// OVERHEAD = 0us (xml default delay 30000 -> ~15fps; the geometry-track family
 // default), and interpolate the ball position (lerp) and the tumble (slerp) between
 // ticks so the render is smooth at any rAF rate.
 
@@ -69,7 +69,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;     // us; calibrates xml default delay 30000 -> ~15fps (track default)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const MAX_COUNT = 20;       // tile lifetime in frames (the .c's MAX_COUNT)
   const ALPHA_AMT = 0.05;     // tile fade-out step per frame (1/MAX_COUNT)
   const BLUR_DETAIL = 24;     // ghost copies in the motion-blur trail

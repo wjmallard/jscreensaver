@@ -49,7 +49,7 @@
 // dt*effFps` (the .c's per-frame step, sampled smoothly) and tick the spin/wander
 // rotator + the 1/60 add-check once per original-frame (at effFps) with interpolation
 // for a smooth render (the geometry-track convention, as cubestack/dangerball do).
-// effFps = 1e6/(delay + OVERHEAD), OVERHEAD = 37500 us (the track family default).
+// effFps = 1e6/(delay + OVERHEAD), OVERHEAD = 0 us (the track family default).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -66,7 +66,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;     // us; calibrates xml default delay 30000 -> ~15fps (track default)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const MAX_DEPTH = 512;      // safety cap; real depth maxes ~499 at the thinnest randomized strut
   const MAX_TICKS = 8;        // rotator catch-up cap (avoids spiral after a stall)
 

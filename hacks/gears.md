@@ -73,7 +73,7 @@ are the shared faithful util ports.
 
 Same model as `dangerball` (see `framerate-calibration` memory): render every rAF,
 motion is continuous. `delay` (us) -> `effFps = 1e6/(delay + OVERHEAD)`,
-`OVERHEAD = 37500` (xml default 30000 -> ~15fps effective). Gear spin
+`OVERHEAD = 0` (xml default 30000 -> ~15fps effective). Gear spin
 (`th += ratio*5*speed` per original-frame) advances continuously; the whole-scene rotator
 is a discrete random-walk ticked once per original-frame and interpolated.
 

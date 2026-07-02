@@ -65,7 +65,7 @@ worry about, so two-sided is equivalent and simpler.
 ## Pacing / config
 
 Pacing as across the track: render every rAF, continuous motion; `effFps =
-1e6/(delay + OVERHEAD)`, `OVERHEAD = 37500`; each render-frame advances every rotation /
+1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`; each render-frame advances every rotation /
 countdown / colour by `frames = dt*effFps`, and the discrete spin/blink EVENTS fire when
 their timers elapse (the blink dwell is checked once per render-frame, matching the
 `.c`'s once-per-frame drawfunc). The spinner spin/idle transitions are consumed in a
@@ -80,7 +80,7 @@ small loop so a slow frame can't desync them.
   original's `delay 20000` (`~50fps` nominal, no overhead) its `fps=60` assumption made
   durations run ~20% slow; `effFps` lands them on the nominal seconds, which is closer to
   intent than the literal-60 behaviour.
-- **OPEN:** `OVERHEAD = 37500` is the track's family default, not a per-hack measurement
+- **OPEN:** `OVERHEAD = 0` is the track's family default, not a per-hack measurement
   (the GL originals are runtime-blocked here). If the spin/blink cadence reads off, pin it
   against jwz's demo video (youtube `MGwySGVQZ2M`); no eyeball-tuning otherwise.
 - **Colour space:** three's colour management is **disabled** (`ColorManagement.enabled =

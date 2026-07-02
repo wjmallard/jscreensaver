@@ -93,10 +93,10 @@ export function start(hostCanvas, opts = {}) {
   const DEG2RAD = Math.PI / 180;
   const TWO_PI = Math.PI * 2;
 
-  // us; the GL family's shared measured overhead (gears/pipes/glknots/...). Live GL
-  // hacks can't be timed under this machine's XQuartz Apple-DRI block, so every
-  // three.js port adopts 37500. xml delay 30000 -> effFps = 1e6/67500 ~= 14.8fps.
-  const OVERHEAD = 37500;
+  // OVERHEAD=0 (measured 2026-07-01, was 37500). The fold is wall-clock-based (dt*speed), so
+  // OVERHEAD never affected it; 0 fixes the frame-coupled rotator TUMBLE (was ~2x slow at
+  // 37500). Headless Metal renders this at 120fps -> render negligible -> effFps=1e6/30000=33.
+  const OVERHEAD = 0;
 
   // Knobs transcribed 1:1 from hacks/papercube.xml. `rotation` mirrors the xml
   // <select> (DEF_SPIN "Y" => default Rotate around Y). `speed` scales both the

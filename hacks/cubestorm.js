@@ -49,7 +49,7 @@
 // is frozen once pushed), so we tick the SIMULATION (rotator advance + clear decision +
 // push_hist) at the original cadence effFps = 1e6/(delay+OVERHEAD) and just re-draw the
 // static history in between -- no interpolation (the trail is inherently frame-by-frame,
-// and the original runs at the same ~15fps). OVERHEAD = 37500 as across the track.
+// and the original runs at the same ~15fps). OVERHEAD = 0 as across the track.
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -74,7 +74,7 @@ export const info = {
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
   const TWO_PI = Math.PI * 2;
-  const OVERHEAD = 37500;     // us; calibrates xml default delay 30000 -> ~15fps (track default)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const NCOLORS = 128;        // bp->ncolors
   // History capacity: length high=1000 + count high=20 + the .c realloc slack (100).
   const MAX_HIST = 1200;

@@ -43,7 +43,7 @@
 //     axis (landscape -8*aspect..8*aspect x -8..8; portrait mirrored).
 //
 // PACING as across the geometry track: render every rAF, CONTINUOUS motion; effFps =
-// 1e6/(delay + OVERHEAD), OVERHEAD = 37500; each render-frame advances every rotation /
+// 1e6/(delay + OVERHEAD), OVERHEAD = 0; each render-frame advances every rotation /
 // timer / colour by `frames = dt*effFps`, and the discrete blink/spin EVENTS fire when
 // their countdowns elapse. The .c hardcoded ctx->fps=60 for its ms->frame conversions
 // (a known "WTF?" in the source) while rendering at the delay rate; here those
@@ -92,7 +92,7 @@ const BTYPE_SEGMENT_SCATTER = 9;
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;   // us; pacing (xml default delay 20000 -> ~17fps effective)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
 
   // Knobs transcribed 1:1 from hacks/config/lockward.xml. The host renders the box
   // from `params` and mutates `config` in place; `delay` is the frame-rate knob

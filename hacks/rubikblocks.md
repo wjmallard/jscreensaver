@@ -79,7 +79,7 @@ kill diffuse, ambient AND specular to black. `tex`/"Outlines" off drops both map
 
 ## Pacing / config
 
-Render every rAF; `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 37500` (the geometry-track
+Render every rAF; `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (the geometry-track
 family default; the GL original is runtime-blocked here). One render frame is
 `frames = dt*effFps` original-frames: the layer turn and clock `t` advance by `frames`, and
 the rotator is ticked `frames` times. **OPEN:** `OVERHEAD` is the family default, not a

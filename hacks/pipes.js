@@ -87,7 +87,7 @@ const MAT = [
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;   // us; pacing (xml default delay 10000)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
 
   const config = {
     delay: 10000,        // us (xml default; invert slider)

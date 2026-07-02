@@ -40,7 +40,7 @@ export const info = {
 
 const MAXL = 50;          // .xml layers high (uniform-array bound)
 const NCOLORS = 1024;     // the .c's colormap size
-const OVERHEAD = 37500;   // frame-rate calibration (see framerate-calibration)
+const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
 const DEF_DELAY = 20000;  // .xml delay default (us)
 const HALF_H = 30.0 * 0.2679491924;   // 30 * tan(15deg): world half-height at z=0
 const RR = 0.5;           // the .c's disc radius

@@ -85,10 +85,10 @@ const TWOREV = 720;
 const DEG = Math.PI / 180;
 
 export function start(hostCanvas, opts = {}) {
-  // us; the GL family's shared overhead default. Live GL hacks can't be timed
-  // under this machine's XQuartz Apple-DRI block, so every three.js port adopts
-  // the same measured 37500. xml delay 30000 -> effFps = 1e6/67500 ~= 14.8fps.
-  const OVERHEAD = 37500;
+  // OVERHEAD=0 (measured 2026-07-01, was 37500). Headless Metal (M4 Max) renders this at
+  // 120fps/<=8.3ms, far under the xml delay, so render is negligible -> faithful pace is
+  // delay-limited: effFps = 1e6/30000 = 33fps. 37500 modeled render overhead absent on real HW.
+  const OVERHEAD = 0;
   const MAX_TICKS = 8;   // per-frame catch-up cap (avoids a spiral after a stall)
 
   // Knobs transcribed 1:1 from hacks/engine.xml. `delay` is the frame-rate knob;

@@ -63,7 +63,7 @@ export const info = {
 };
 
 export function start(hostCanvas, opts = {}) {
-  const OVERHEAD = 37500;     // us; calibrates xml default delay 30000 -> ~15fps (see frame-rate-calibration)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const SIDE = THREE.DoubleSide;   // closed solids: pixel-identical to back-face culling (see involute.js)
 
   // Live config -- transcribed 1:1 from hacks/config/moebiusgears.xml + DEFAULTS.

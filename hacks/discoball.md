@@ -81,7 +81,7 @@ specular (so both glint, unlike morph3d). The material is `GL_AMBIENT_AND_DIFFUS
 
 ## Pacing / config
 
-Pacing as in `dangerball.js` (`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 37500`); xml
+Pacing as in `dangerball.js` (`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`); xml
 default delay 30000 -> ~14.8fps, speed `1.0 deg/frame` -> a slow ~24s turn. Render every
 rAF; the `th` spin advances continuously by `frames = dt*effFps`, the rotator wander is
 ticked at `effFps` and interpolated (dangerball pattern). Config transcribed 1:1 from

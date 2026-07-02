@@ -37,7 +37,7 @@ export const info = {
 
 const MAXP = 37;          // .xml count high (uniform-array bound)
 const NCOLORS = 256;      // the .c uses a 256-entry colormap
-const OVERHEAD = 37500;   // frame-rate calibration (see framerate-calibration)
+const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
 const DEF_DELAY = 30000;  // .xml delay default (us) -> base sim rate
 const EFF_FPS = 1e6 / (DEF_DELAY + OVERHEAD);   // ~14.8: the original's real rate
 const TWIST = 700.0;      // the .c's `scale = 700.0 / count` texcoord span

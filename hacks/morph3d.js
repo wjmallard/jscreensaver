@@ -304,7 +304,7 @@ const FACE_FN = { tri: triangleFace, square: squareFace, pent: pentagonFace };
 
 export function start(hostCanvas, opts = {}) {
   const DEG = Math.PI / 180;
-  const OVERHEAD = 37500;   // us; pacing (xml default delay 40000 -> ~13fps)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
 
   const config = {
     delay: 40000,   // us (xml default; invert slider)

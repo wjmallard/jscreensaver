@@ -90,9 +90,10 @@ const S = {
 const DEG = Math.PI / 180;
 
 export function start(hostCanvas, opts = {}) {
-  // us; the GL family's shared overhead default (live GL is unmeasurable under this
-  // machine's XQuartz Apple-DRI block). xml delay 20000 -> effFps = 1e6/57500 ~= 17.4.
-  const OVERHEAD = 37500;
+  // OVERHEAD=0 (measured 2026-07-01, was 37500). Headless Metal (M4 Max) renders this
+  // (loaded model + texture atlas) at 120fps/<=8.3ms << the xml delay, so render is
+  // negligible -> faithful pace is delay-limited: effFps = 1e6/20000 = 50fps.
+  const OVERHEAD = 0;
   const MAX_TICKS = 8;
 
   // Knobs transcribed 1:1 from hacks/lament.xml. `delay` is the frame-rate knob.

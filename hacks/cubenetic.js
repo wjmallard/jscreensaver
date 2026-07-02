@@ -44,7 +44,7 @@
 // original's per-frame step, sampled smoothly. The DISCRETE rotator random-walk is
 // ticked once per original-frame (at effFps) and the spin/wander interpolated
 // between samples (the geometry-track convention). effFps = 1e6/(delay+OVERHEAD),
-// OVERHEAD = 37500 us as across the track.
+// OVERHEAD = 0 us as across the track.
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';
@@ -164,7 +164,7 @@ function makeColorPath(npoints, h, s, v, colors, total) {
 
 export function start(hostCanvas, opts = {}) {
   const TWO_PI = Math.PI * 2;
-  const OVERHEAD = 37500;     // us; the geometry-track family default (not measured)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const NCOLORS = 256;        // cc->ncolors (both palettes)
   const TS = 256;             // texture_size (texture_width == texture_height)
   const MAX_CUBES = 20;       // xml "Boxes" high

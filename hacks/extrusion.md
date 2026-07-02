@@ -136,7 +136,7 @@ Transcribed from the GLE-3 C source, not approximated:
 
 `effFps = 1e6/(config.delay + OVERHEAD)`; render every rAF; spin + morph advance by
 `frames = dt*effFps`; the discrete rotator is ticked at `effFps` and **interpolated**
-(the glknots/dangerball pattern). **`OVERHEAD = 37500`** -- the GL family's shared
+(the glknots/dangerball pattern). **`OVERHEAD = 0`** -- the GL family's shared
 default: live GL hacks can't be timed under this machine's XQuartz Apple-DRI block, so
 every three.js port adopts the same measured overhead. xml default `delay 20000` ->
 `effFps = 1e6/57500 ~= 17.4fps`. See framerate-calibration.

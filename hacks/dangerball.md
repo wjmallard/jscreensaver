@@ -24,7 +24,7 @@ getStats, reinit, config, params }`.
 
 - **Pacing = continuous VELOCITY, not a sim-step rate.** Render every rAF; motion =
   velocity * dt, so it stays smooth at *any* speed (a step-rate knob jitters at the low
-  end). `delay` (us) -> `effFps = 1e6/(delay + OVERHEAD)`, with `OVERHEAD = 37500`
+  end). `delay` (us) -> `effFps = 1e6/(delay + OVERHEAD)`, with `OVERHEAD = 0`
   calibrating the xml default 30000 to the measured ~15fps. Each render frame advances
   `frames = dt * effFps` original-frames of motion.
 - **The rotator is a DISCRETE random-walk**, so it is ticked once per original-frame at

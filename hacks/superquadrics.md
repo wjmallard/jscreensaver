@@ -66,7 +66,7 @@ stripes), smooth-shaded with a controlled glint -- all reproduce.
 
 ## Pacing / config
 
-Pacing as in `dangerball.js` (`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 37500`); xml
+Pacing as in `dangerball.js` (`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`); xml
 default delay 40000 -> ~13fps, spin `5 deg/frame` -> a full turn in ~5.5s, morph 40
 frames -> ~3s. The geometry is rebuilt every render-frame from the blended shape
 (preallocated `DynamicDraw` buffers sized for `MaxRes=50`). **OPEN:** `OVERHEAD` is the

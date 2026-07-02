@@ -84,7 +84,7 @@ its diffuse colormap, matching the ground truth.
 Render every rAF; the storm's "motion" is the discrete trail (each snapshot is frozen once
 pushed), so there is **nothing to interpolate** -- the SIMULATION (rotator advance + clear
 decision + `push_hist`) is ticked at the original cadence `effFps = 1e6/(delay+OVERHEAD)`
-(`OVERHEAD = 37500`, track default; xml default delay 30000 -> ~15fps) and the static
+(`OVERHEAD = 0`, track default; xml default delay 30000 -> ~15fps) and the static
 history is re-drawn in between. The original itself runs at this same ~15fps, so the
 frame-by-frame trail head is faithful, not choppy-by-mistake. **OPEN:** `OVERHEAD` is the
 track default, not a per-hack measurement against the demo video (youtube `enuZbkMiqCE`),

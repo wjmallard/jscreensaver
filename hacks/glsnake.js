@@ -420,10 +420,10 @@ const DEG = Math.PI / 180;
 const X_MASK = 1, Y_MASK = 2, Z_MASK = 4;
 
 export function start(hostCanvas, opts = {}) {
-  // us; the GL family's shared overhead default (see glsnake.md -- glsnake's motion
-  // is wall-clock-based like the .c, so this cancels out; kept for family
-  // consistency + the host framerate readout).
-  const OVERHEAD = 37500;
+  // OVERHEAD=0 (measured 2026-07-01, was 37500). glsnake's motion is wall-clock-based like
+  // the .c, so OVERHEAD cancels out either way; 0 kept for family consistency + the host
+  // framerate readout (headless Metal renders this at 120fps, so render is negligible).
+  const OVERHEAD = 0;
 
   // Knobs transcribed 1:1 from hacks/glsnake.xml. `duration` is statictime (ms),
   // `packing` is explode. `angvel`/`yangvel`/`zangvel` are per-second turn rates.

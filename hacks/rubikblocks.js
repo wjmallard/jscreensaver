@@ -51,7 +51,7 @@
 // applying qfram `frames` times, since same-axis rotations compose additively) and advance
 // the clock t by frames*tspeed; settle_value snaps the tiny overshoot. The spin/wander
 // rotator is ticked once per original-frame and INTERPOLATED between ticks (the dangerball
-// pattern), gated live by the spin/wander checkboxes. OVERHEAD = 37500 (the geometry-track
+// pattern), gated live by the spin/wander checkboxes. OVERHEAD = 0 (the geometry-track
 // family default; the GL original is runtime-blocked here -- see the framerate-calibration
 // note). xml default delay 20000 -> ~17fps.
 
@@ -69,7 +69,7 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   const TWO_PI = Math.PI * 2;
-  const OVERHEAD = 37500;        // us; geometry-track family default (xml delay 20000 -> ~17fps)
+  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const SHUFFLE = 100;           // randomize(): instant 90-degree turns to scramble the start
   const SQRT1_2 = Math.SQRT1_2;  // M_SQRT1_2 = 1/sqrt(2) = sin/cos of 45deg
   // procedural texture (make_texture): a 64x64 luminance facelet with soft black borders.

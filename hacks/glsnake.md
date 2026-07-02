@@ -113,7 +113,7 @@ term cancels. We render every rAF and advance `frames = dt*effFps` original-fram
 by the per-frame turn `360*ang/effFps` (== `360*ang*dt` == the C's
 `360*ang*iter_msec/1000`), which is delay-independent -- exactly as the C, where
 `delay` sets only frame cadence, not motion rate. The `statictime` hold runs off
-`now` (wall-clock ms). **`OVERHEAD = 37500`** -- the GL family's shared default
+`now` (wall-clock ms). **`OVERHEAD = 0`** -- the GL family's shared default
 (live GL is unmeasurable under this machine's XQuartz Apple-DRI block); it drops
 out of the motion math here but is kept for family consistency and the host's
 framerate readout. `dt` is clamped to `0.25 s` so a backgrounded tab doesn't jump

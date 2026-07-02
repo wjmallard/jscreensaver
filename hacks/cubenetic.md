@@ -78,7 +78,7 @@ Render every rAF. CONTINUOUS state (each wave's phase, each box's throb `frame` 
 advances by `frames = dt*effFps`, so the trajectory matches the .c's per-frame step sampled
 smoothly. The DISCRETE rotator random-walk is ticked once per original-frame (at `effFps`)
 and the spin/wander interpolated between samples (shortest-path lerp on the rotation circle).
-`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 37500`; cubenetic's xml `delay` default is
+`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`; cubenetic's xml `delay` default is
 **20000** (not the track's 30000) -> ~17 fps. The rotator
 (`make_rotator(1,1,1, 1.0, 0.05, True)` -- all axes, the `XYZ` default) is built once at full
 speed; `config.spin` (a select: none / X / Y / Z / XY / XZ / YZ / XYZ) gates which axes' spin
