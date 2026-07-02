@@ -17,8 +17,9 @@
 //
 // Rendering: full repaint per frame onto a cleared black canvas (the C calls
 // XClearWindow every frame — there are no accumulating trails). Doors are drawn
-// as stroked rectangles (4 edges, colour-ramped), stars as small filled rects.
-// Sparse vector ops (a few dozen doors + ≤200 star rects) — far cheaper than a
+// as stroked rectangles (4 edges, colour-ramped), stars as filled white
+// ellipses (the C's XFillArc, inscribed in each star's clipped bounding box).
+// Sparse vector ops (a few dozen doors + ≤200 stars) — far cheaper than a
 // per-pixel ImageData blit over a mostly-black field.
 
 export const title = 'scooter';
@@ -35,19 +36,19 @@ export function start(canvas) {
   // Defaults/ranges mirror hacks/config/scooter.xml so the config box maps 1:1.
   // The xml's "Boat Speed" maps to the C's `cycles` (clamped 1..10 internally).
   const config = {
-    delay: 30000,   // \u00B5s between steps (--delay)
+    delay: 20000,   // \u00B5s between steps (--delay), stock
     cycles: 5,      // tunnel speed; z-elements shifted per step, 1..10 (--cycles)
     count: 24,      // number of doors (--count, min 4)
     size: 100,      // number of stars (--size)
-    ncolors: 200,   // colour-ramp richness for the doors (--ncolors)
+    ncolors: 200,   // mono gate only: 1..2 = white doors, else full-colour ramp (--ncolors)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Speed', type: 'range', min: 1, max: 10, step: 1, default: 5, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Doors', type: 'range', min: 4, max: 40, step: 1, default: 24, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'size', label: 'Stars', type: 'range', min: 1, max: 200, step: 1, default: 100, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 2, max: 255, step: 1, default: 200, lowLabel: 'plain', highLabel: 'rich', live: false },
+    { key: 'size', label: 'Stars', type: 'range', min: 0, max: 200, step: 1, default: 100, lowLabel: 'few', highLabel: 'many', live: false },
+    { key: 'ncolors', label: 'Colors', type: 'range', min: 0, max: 200, step: 1, default: 200, lowLabel: 'mono', highLabel: 'colorful', live: false },
   ];
 
   // Geometry constants, verbatim from scooter.c.
@@ -125,8 +126,14 @@ export function start(canvas) {
   // Next colour along the door ramp: interpolate begin->end, start a fresh ramp
   // (random length 8..39) whenever the current one runs out. Mirrors
   // nextdoorcolor(); the result is stored as r/g/b bytes on the door.
+  //
+  // The C's mono gate is MI_NPIXELS <= 2; xlockmore sets npixels from --ncolors
+  // but falls back to 64 when it's <= 0 (xlockmore.c:466), so only 1..2 means
+  // white doors. The value has no other effect here: the ramp below is the C's
+  // own XAllocColor pipeline, not the xlock palette.
   function nextDoorColor(door) {
-    if (config.ncolors <= 2) {
+    const n = Math.round(config.ncolors);
+    if (n > 0 && n <= 2) {
       door.r = door.g = door.b = 255;
       return;
     }
@@ -182,7 +189,9 @@ export function start(canvas) {
     const rot = sinAngle(((SINUSTABLE_SIZE / 2) * rotationStep / rotationDuration) | 0);
 
     if (rotationStep++ >= rotationDuration) {
-      const fps = Math.max(1, Math.floor(1000000 / config.delay));   // frames per second
+      // The C's timebase: fps = 1000000/MI_DELAY (integer division; delay 0
+      // would divide by zero there — clamp instead of crashing).
+      const fps = Math.max(1, Math.floor(1000000 / Math.max(1, config.delay)));
       rotationDuration = 10 * fps + nrand(20 * fps);
       deltaX = nrand(DOOR_CURVEDNESS * 2 + 1) - DOOR_CURVEDNESS;
       deltaY = nrand(DOOR_CURVEDNESS * 2 + 1) - DOOR_CURVEDNESS;
@@ -327,10 +336,12 @@ export function start(canvas) {
     }
   }
 
-  // Draw all live stars as small filled white rects (drawstars). Each star is an
-  // offset point rotated around its z-element, projected, then clipped to the
-  // screen as a rectangle. The C currently fills an ellipse here; we render the
-  // original rectangle form (also what the prompt asks for) — see scooter.md.
+  // Draw all live stars as filled white ellipses (drawstars). Each star is an
+  // offset point rotated around its z-element, projected, then its bounding box
+  // is clamped to the screen; the C fills XFillArc(0..360) inscribed in that
+  // clamped box (so an edge-clamped box deforms the ellipse rather than
+  // clipping it — kept faithfully). A degenerate box fills nothing, as in X:
+  // sub-pixel stars pop in once they project to ~1 px.
   const starVec = [0, 0, 0];
   function drawStars() {
     ctx.fillStyle = '#fff';
@@ -352,17 +363,26 @@ export function start(canvas) {
 
       const proj = projection(cz) * aspectScale;
 
-      let ltx = midX + (((cx - s.width / 2) * proj / SPACE_XY_FACTOR) | 0);
-      let lty = midY - (((cy + s.height / 2) * proj / SPACE_XY_FACTOR) | 0);
+      // Integer half-sizes, like the C's int width/2 division.
+      const hw = (s.width / 2) | 0;
+      const hh = (s.height / 2) | 0;
+
+      let ltx = midX + (((cx - hw) * proj / SPACE_XY_FACTOR) | 0);
+      let lty = midY - (((cy + hh) * proj / SPACE_XY_FACTOR) | 0);
       if (ltx < 0) ltx = 0; else if (ltx >= W) continue;
       if (lty < 0) lty = 0; else if (lty >= H) continue;
 
-      let rbx = midX + (((cx + s.width / 2) * proj / SPACE_XY_FACTOR) | 0);
-      let rby = midY - (((cy - s.height / 2) * proj / SPACE_XY_FACTOR) | 0);
+      let rbx = midX + (((cx + hw) * proj / SPACE_XY_FACTOR) | 0);
+      let rby = midY - (((cy - hh) * proj / SPACE_XY_FACTOR) | 0);
       if (rbx < 0) continue; else if (rbx >= W) rbx = W - 1;
       if (rby < 0) continue; else if (rby >= H) rby = H - 1;
 
-      ctx.fillRect(ltx, lty, Math.max(1, rbx - ltx), Math.max(1, rby - lty));
+      const bw = rbx - ltx;
+      const bh = rby - lty;
+      if (bw <= 0 || bh <= 0) continue;
+      ctx.beginPath();
+      ctx.ellipse(ltx + bw / 2, lty + bh / 2, bw / 2, bh / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -463,10 +483,13 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator loop paced by config.delay (µs in the xml; divided by
-  // 1000 for the ms rAF clock), with the same catch-up cap as squiral so a
-  // backgrounded tab doesn't fire a burst of steps on refocus. Each step() does
-  // a full clear+repaint, so we never draw more than we step.
+  // rAF lag-accumulator loop paced at (delay + OVERHEAD) µs per step: the C's
+  // usleep(delay) sits on top of its per-frame sim+draw cost, so the port adds
+  // the live-measured overhead (never running faster than the author's floor),
+  // with the same catch-up cap as squiral so a backgrounded tab doesn't fire a
+  // burst of steps on refocus. Each step() does a full clear+repaint, so we
+  // never draw more than we step.
+  const OVERHEAD = 8100;  // µs; live -fps: 35.6 fps at Load 28.7% (clean: sleep slice = 20028 ≈ stock 20000)
   const MAX_CATCHUP_STEPS = 4;
   let lastTime = 0;
   let lag = 0;
@@ -477,7 +500,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;

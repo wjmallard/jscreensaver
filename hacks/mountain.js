@@ -12,15 +12,22 @@
 // right, bottom to top) and each quad is drawn in an isometric projection —
 // taller cells project higher up the screen, so the accumulated peaks read as a
 // 3D-ish landscape. Each quad's colour comes from the average height of its four
-// corners, cycling through a rainbow palette. Once the whole range is drawn it
-// dwells for `cycles` steps, then a fresh range is generated and the build
-// restarts.
+// corners, indexing a smooth colormap (make_smooth_colormap) rotated by a random
+// per-range offset. Once the whole range is drawn it dwells for `cycles` steps,
+// then a fresh range is generated and the build restarts.
+//
+// xscreensaver's xlockmore shim sets fullrandom = True unconditionally, so each
+// range rolls the C's fullrandom branch: wireframe = LRAND()&1 (half of all
+// ranges are outlines only!) and joke = NRAND(10)==0 (a 1-in-10 range mixes
+// filled and wire quads at random).
 //
 // Rendering: vector ops, sparse — one quad per step (a filled polygon plus a
 // black outline, or just the outline in wireframe mode). Matches the C, which
 // draws exactly one quad per draw_mountain() tick and never clears mid-build, so
 // the range grows in place. The C's expose-driven `refresh` repaint path is
 // dropped — a canvas needs no manual expose repair.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'mountain';
 
@@ -33,33 +40,33 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/mountain.xml so the config box maps 1:1,
-  // except `delay` is tuned a touch calmer than the stock 20 ms feel and `cycles`
-  // is scaled down (see mountain.md — the C's 4000 is a draw-tick count).
+  // Defaults/ranges mirror hacks/config/mountain.xml so the config box maps 1:1
+  // (delay/count/ncolors are the xml's only resources; the C's cycles=4000 dwell
+  // and the fullrandom wireframe/joke rolls are behaviour, not knobs).
   const config = {
-    delay: 30000,    // µs between steps / quads (--delay)
+    delay: 20000,    // µs between steps / quads (--delay), stock
     count: 30,       // number of random peaks dropped into the field (--count)
-    cycles: 600,     // steps the finished range dwells before regenerating (--cycles)
-    ncolors: 64,     // size of the rainbow palette (--ncolors)
-    wireframe: false, // draw quads as outlines only (the C's --wireframe mode)
+    ncolors: 64,     // smooth-colormap size (--ncolors)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Peaks', type: 'range', min: 1, max: 100, step: 1, default: 30, lowLabel: 'one', highLabel: 'lots', live: false },
-    { key: 'cycles', label: 'Dwell', type: 'range', min: 50, max: 4000, step: 50, default: 600, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'wireframe', label: 'Wireframe', type: 'checkbox', default: false, live: false },
   ];
 
   // Simulation constants, straight from mountain.c.
   const WORLDWIDTH = 50;   // height-field is WORLDWIDTH x WORLDWIDTH cells
+  const CYCLES = 4000;     // *cycles: dwell ticks on the finished range (no xml knob)
 
   let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
   let maxHeight;      // MAXHEIGHT = 3*(width+height), peak ceiling (device px)
-  let palette;        // ncolors rainbow CSS strings
+  let palette;        // ncolors smooth-colormap CSS strings (built once per session)
   let ncol;           // palette length (>2 => coloured, else mono white)
+  let wireframe;      // per-range fullrandom roll: LRAND()&1 (outlines only)
+  let joke;           // per-range fullrandom roll: NRAND(10)==0 (mixed fill/wire)
+  let pixelmode;      // tiny-window flag (width+height < 200): skip black outlines
 
   // The height field and the incremental-draw cursor (the C's mountainstruct).
   let h;              // Int32Array[WORLDWIDTH*WORLDWIDTH], row-major h[y*W+x]
@@ -85,10 +92,13 @@ export function start(canvas) {
     h[y * WORLDWIDTH + x] = v;
   }
 
+  // The C is built with SMOOTH_COLORS, so the xlockmore shim allocates one
+  // make_smooth_colormap per session (xlockmore.c:484) — init_mountain never
+  // rebuilds it, only re-rolls the rotation `offset`. Mirror that: build once
+  // here (and again only on reinit/resize), not per range.
   function buildPalette() {
     ncol = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(ncol);
-    for (let i = 0; i < ncol; i++) palette[i] = `hsl(${i * 360 / ncol}, 100%, 55%)`;
+    palette = makeSmoothColormapRGB(ncol).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // One diffusion pass over cell (x,y): read its height once, then average that
@@ -141,29 +151,30 @@ export function start(canvas) {
     const px2 = projX(x + 1, y + 1), py2 = projY(y + 1, getH(x + 1, y + 1));
     const px3 = projX(x, y + 1),     py3 = projY(y + 1, getH(x, y + 1));
 
-    if (config.wireframe) {
+    // Trace the quad once; stroke and/or fill it per the range's mode. The C's
+    // joke mode (fullrandom, 1 in 10) draws each quad wire-or-filled at random;
+    // otherwise the range-wide wireframe roll decides. Filled quads get a black
+    // outline unless in tiny-window "pixelmode".
+    ctx.beginPath();
+    ctx.moveTo(px0, py0);
+    ctx.lineTo(px1, py1);
+    ctx.lineTo(px2, py2);
+    ctx.lineTo(px3, py3);
+    ctx.closePath();
+
+    const wire = joke ? (Math.random() < 0.5) : wireframe;
+    if (wire) {
       ctx.strokeStyle = style;
       ctx.lineWidth = Math.max(1, Math.round(S));
-      ctx.beginPath();
-      ctx.moveTo(px0, py0);
-      ctx.lineTo(px1, py1);
-      ctx.lineTo(px2, py2);
-      ctx.lineTo(px3, py3);
-      ctx.closePath();
       ctx.stroke();
     } else {
       ctx.fillStyle = style;
-      ctx.beginPath();
-      ctx.moveTo(px0, py0);
-      ctx.lineTo(px1, py1);
-      ctx.lineTo(px2, py2);
-      ctx.lineTo(px3, py3);
-      ctx.closePath();
       ctx.fill();
-      // The C outlines filled quads in black unless in tiny "pixelmode".
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = Math.max(1, Math.round(S));
-      ctx.stroke();
+      if (!pixelmode) {
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = Math.max(1, Math.round(S));
+        ctx.stroke();
+      }
     }
 
     // Advance the draw cursor; finishing the field moves us to the dwell stage.
@@ -176,14 +187,22 @@ export function start(canvas) {
   }
 
   // Generate a fresh range (the C's init_mountain): flatten, drop peaks, diffuse,
-  // roughen, then clear the screen and reset the build cursor.
+  // roughen, then clear the screen and reset the build cursor. Does NOT rebuild
+  // the palette (session-fixed, like the C) — only re-rolls offset + the
+  // fullrandom wireframe/joke modes.
   function generate() {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     maxHeight = 3 * (W + H);
 
-    buildPalette();
+    // The C compares raw window px; use logical px so retina doesn't skew it.
+    pixelmode = (W + H) / S < 200;
+
+    // fullrandom is always True in xscreensaver's xlockmore shim, so the C's
+    // static-wireframe branch is dead code — every range rolls these.
+    joke = nrand(10) === 0;
+    wireframe = Math.random() < 0.5;
 
     h = new Int32Array(WORLDWIDTH * WORLDWIDTH);   // all zero == flat ground
 
@@ -226,7 +245,7 @@ export function start(canvas) {
         drawQuad();
         break;
       case 1:
-        if (++dwell > config.cycles) stage = 2;
+        if (++dwell > CYCLES) stage = 2;
         break;
       case 2:
         generate();
@@ -235,6 +254,7 @@ export function start(canvas) {
   }
 
   function reinit() {
+    buildPalette();
     generate();
   }
 
@@ -244,12 +264,18 @@ export function start(canvas) {
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
+    buildPalette();
     generate();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the build speed is identical at any refresh rate.
-  // Cap catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  // rAF lag-accumulator paced at (delay + OVERHEAD) µs per DRAW step: the C's
+  // delay is a sleep on top of its per-tick draw cost, so the port adds the
+  // live-measured overhead to reproduce the binary's real build cadence (never
+  // faster than the author's floor). Dwell ticks (stage 1) draw nothing in the
+  // C, so they run at the raw delay — otherwise the 4000-tick hold would
+  // overshoot the live binary's ~80 s. Cap catch-up so a backgrounded tab
+  // doesn't burst a run of steps on refocus.
+  const OVERHEAD = 6250;  // µs; live -fps: 38.1 fps at Load 23.8% (clean: sleep slice = stock 20000)
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -260,13 +286,15 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
-    lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
+    const buildMs = (config.delay + OVERHEAD) / 1000;
+    lag = Math.min(lag, buildMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
-    while (lag >= delayMs && steps < MAX_CATCHUP_STEPS) {
+    while (steps < MAX_CATCHUP_STEPS) {
+      const stepMs = stage === 0 ? buildMs : config.delay / 1000;
+      if (lag < stepMs) break;
       step();
-      lag -= delayMs;
+      lag -= stepMs;
       steps++;
     }
 

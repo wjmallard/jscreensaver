@@ -9,15 +9,20 @@
 // field of several moving point-masses. As the masses drift across the field
 // (bouncing off the 0..1 edges), the field ripples and the dot sizes pulse, so
 // the grid reads as a halftone print of a slowly churning gravity well. View it
-// from a distance for best effect. Each frame: clear to the background colour,
-// then recompute the field at every grid node and redraw the whole grid as
-// filled discs whose diameter is field*maxDotSize.
+// from a distance for best effect. Each frame: fill the background, then
+// recompute the field at every grid node and redraw the whole grid as filled
+// discs whose diameter is field*maxDotSize. The background and the dots are two
+// indices half a map apart on a 200-entry smooth colormap, each creeping forward
+// one entry every cycleSpeed+1 frames, so the colour pair drifts slowly around
+// the map together.
 //
 // Rendering: per-dot filled arc on a cleared canvas — sparse (a grid node count
 // of width/spacing * height/spacing, each a single arc), so plotting discs over
 // a clear each frame is the natural fit, matching the C's XFillRectangle (clear)
 // + XFillArc-per-dot. The C's off-screen Pixmap double-buffer is unneeded: the
 // browser composites the canvas, so we draw straight to it.
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'halftone';
 
@@ -31,9 +36,8 @@ export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
   // Defaults/ranges mirror hacks/config/halftone.xml so the config box maps 1:1.
-  // (delay nudged a touch calmer than the stock 10000 µs for a gentler pulse.)
   const config = {
-    delay: 40000,      // µs between steps (--delay)
+    delay: 10000,      // µs between steps (--delay), stock
     count: 10,         // number of moving gravity point-masses (--count)
     spacing: 14,       // grid pitch in px between dots (--spacing, "Dot size")
     sizeFactor: 1.5,   // max dot diameter = sizeFactor * spacing (--sizefactor)
@@ -41,15 +45,13 @@ export function start(canvas) {
     maxSpeed: 0.02,    // fastest mass speed per axis, fraction/step (--maxspeed)
     minMass: 0.001,    // smallest mass (--minmass)
     maxMass: 0.02,     // largest mass (--maxmass)
-    ncolors: 200,      // size of the rainbow palette (--colors)
-    cycleSpeed: 10,    // ticks between colour advances (--cycle-speed)
   };
 
   // live: true  -> the loop reads config every step, so the change applies now.
-  // live: false -> the value sizes the grid / masses / palette, so a change
-  //                re-runs init() via reinit() (which also clears the canvas).
+  // live: false -> the value sizes the grid / masses, so a change re-runs
+  //                init() via reinit() (a fresh session with the new flags).
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'count', label: 'Gravity points', type: 'range', min: 1, max: 50, step: 1, default: 10, lowLabel: 'few', highLabel: 'many', live: false },
     { key: 'spacing', label: 'Dot size', type: 'range', min: 2, max: 50, step: 1, default: 14, lowLabel: 'small', highLabel: 'big', live: false },
     { key: 'sizeFactor', label: 'Dot fill factor', type: 'range', min: 0.1, max: 3, step: 0.1, default: 1.5, lowLabel: 'small', highLabel: 'large', live: false },
@@ -57,14 +59,17 @@ export function start(canvas) {
     { key: 'maxSpeed', label: 'Maximum speed', type: 'range', min: 0.001, max: 0.09, step: 0.001, default: 0.02, lowLabel: 'low', highLabel: 'high', live: false },
     { key: 'minMass', label: 'Minimum mass', type: 'range', min: 0.001, max: 0.09, step: 0.001, default: 0.001, lowLabel: 'small', highLabel: 'large', live: false },
     { key: 'maxMass', label: 'Maximum mass', type: 'range', min: 0.001, max: 0.09, step: 0.001, default: 0.02, lowLabel: 'small', highLabel: 'large', live: false },
-    { key: 'ncolors', label: 'Colors', type: 'range', min: 4, max: 255, step: 1, default: 200, lowLabel: 'few', highLabel: 'many', live: false },
-    { key: 'cycleSpeed', label: 'Color cycle speed', type: 'range', min: 0, max: 50, step: 1, default: 10, lowLabel: 'fast', highLabel: 'slow', live: true },
   ];
+
+  // Fixed halftone.c resources with no xml knob (behaviour constants, like
+  // mountain's cycles): the palette size and the colour-cycle cadence.
+  const NCOLORS = 200;      // *colors: smooth-colormap size (the C clamps <4 to 4)
+  const CYCLE_SPEED = 10;   // *cycleSpeed: ticks between colour advances
 
   let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
   let spacing;          // grid pitch, device px
-  let maxDotSize;       // max dot diameter, device px (sizeFactor * spacing)
+  let maxDotSize;       // max dot diameter, device px (int, sizeFactor * spacing)
   let dotsW, dotsH;     // grid dimensions (nodes across / down)
   let dots;             // Float32Array(dotsW * dotsH): per-node field, clamped 0..1
 
@@ -73,19 +78,19 @@ export function start(canvas) {
   let gMass;            // mass
   let gxInc, gyInc;     // per-axis velocity (fraction of the 0..1 box per step)
 
-  // Smooth rainbow palette + the two cycling indices (the C's color0/color1).
-  let palette;          // ncolors CSS strings
+  // Session smooth colormap + the two cycling indices (the C's color0/color1).
+  let palette;          // NCOLORS CSS strings
   let color0, color1;   // background index / dot index into the palette
-  let colorTick;        // counts up to config.cycleSpeed, then advances the colours
+  let colorTick;        // counts up to CYCLE_SPEED, then advances the colours
 
   function floatRand(min, max) {
     return min + Math.random() * (max - min);
   }
 
+  // The C builds one make_smooth_colormap (200 entries) in halftone_init and
+  // never rebuilds it; the background and the dots both cycle through it.
   function buildPalette() {
-    const n = Math.max(4, Math.round(config.ncolors));
-    palette = new Array(n);
-    for (let i = 0; i < n; i++) palette[i] = `hsl(${(i * 360 / n) | 0}, 85%, 55%)`;
+    palette = makeSmoothColormapRGB(NCOLORS).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // Magnitude of the summed gravitational field at grid node (x, y), matching the
@@ -145,22 +150,28 @@ export function start(canvas) {
   }
 
   // Paint one frame (the C's repaint_halftone): fill the background in color0,
-  // advance the cycling colours every cycleSpeed ticks, then stamp each grid node
-  // as a disc of diameter maxDotSize*field in color1.
+  // latch the dot colour, advance the cycling colours every CYCLE_SPEED ticks,
+  // then stamp each grid node as a disc of diameter maxDotSize*field.
   function paint() {
     ctx.fillStyle = palette[color0];
     ctx.fillRect(0, 0, W, H);
 
-    if (colorTick++ >= config.cycleSpeed) {
+    // The C sets the dot foreground into the GC BEFORE the cycle tick, so an
+    // advance frame still draws dots in the old colour; the new colour pair
+    // takes effect together on the next frame.
+    ctx.fillStyle = palette[color1];
+
+    if (colorTick++ >= CYCLE_SPEED) {
       colorTick = 0;
       color0 = (color0 + 1) % palette.length;
       color1 = (color1 + 1) % palette.length;
     }
 
-    ctx.fillStyle = palette[color1];
+    // fill_circle takes an int size, so the C truncates each diameter (and
+    // max_dot_size itself is an int) — quantized dot sizes, matched here.
     for (let x = 0; x < dotsW; x++) {
       for (let y = 0; y < dotsH; y++) {
-        disc(x * spacing, y * spacing, maxDotSize * dots[x + y * dotsW]);
+        disc(x * spacing, y * spacing, Math.trunc(maxDotSize * dots[x + y * dotsW]));
       }
     }
   }
@@ -173,7 +184,11 @@ export function start(canvas) {
     updateField();
   }
 
-  function init() {
+  // Grid geometry + field. The C re-derives these from the live window size on
+  // every tick (update_buffer / update_dot_attributes), so a resize re-grids
+  // WITHOUT touching the palette, the colour-cycle position, or the masses —
+  // this is the only part a resize re-runs.
+  function initGeometry() {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
@@ -182,13 +197,21 @@ export function start(canvas) {
     // fold devicePixelRatio in instead (S already tracks the retina scale), and
     // keep at least 2 px so a dot is always visible.
     spacing = Math.max(2, Math.round(config.spacing * S));
-    maxDotSize = config.sizeFactor * spacing;
+    maxDotSize = Math.trunc(config.sizeFactor * spacing);   // int, like the C
 
     // dots_width = width/spacing + 1 (one extra node to cover the far edge).
     dotsW = Math.floor(W / spacing) + 1;
     dotsH = Math.floor(H / spacing) + 1;
-    dots = new Float32Array(dotsW * dotsH);   // zero-filled
+    dots = new Float32Array(dotsW * dotsH);
 
+    // Compute the field now so the FIRST painted frame already shows the
+    // halftone pattern (the C paints an all-zero/blank first frame; we don't).
+    updateField();
+  }
+
+  // Full session init (the C's halftone_init): palette, colour cycle, masses,
+  // then the grid.
+  function init() {
     buildPalette();
     color0 = 0;
     color1 = (palette.length / 2) | 0;
@@ -219,26 +242,33 @@ export function start(canvas) {
       gyInc[i] = floatRand(minSpeed, maxSpeed);
     }
 
-    // Compute the field once now so the FIRST painted frame already shows the
-    // halftone pattern (the C paints an all-zero/blank first frame; we don't).
-    updateField();
+    initGeometry();
 
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
   }
 
-  function resize() {
+  function sizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(window.innerWidth * dpr);
     canvas.height = Math.round(window.innerHeight * dpr);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    init();
   }
 
-  // rAF lag-accumulator paced by config.delay (µs): run one step() per delay,
-  // banking leftover time so the speed is identical at any refresh rate. Cap
-  // catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  // Resize re-grids only (like the C's per-tick attribute polling); the next
+  // step repaints the full frame within one delay.
+  function resize() {
+    sizeCanvas();
+    initGeometry();
+  }
+
+  // rAF lag-accumulator paced at (delay + OVERHEAD) µs per step: the C's delay
+  // is a sleep on top of its per-tick draw cost (a full-window fill + one
+  // XFillArc per grid node + a buffer copy), so the port adds that overhead to
+  // reproduce the binary's real cadence (never faster than the author's floor).
+  // Cap catch-up so a backgrounded tab doesn't burst a run of steps on refocus.
+  const OVERHEAD = 9950;  // µs; live -fps: 50.1 fps at Load 49.9% (clean: sleep slice = stock 10000)
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -249,7 +279,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps = 0;
@@ -262,14 +292,15 @@ export function start(canvas) {
     rafId = requestAnimationFrame(frame);
   }
 
-  // Re-seed with the current config (clears the canvas; grid/masses/palette may
-  // differ after a non-live config change).
+  // Re-seed with the current config (a fresh session: new palette roll, new
+  // masses, cleared canvas — grid/masses may differ after a config change).
   function reinit() {
     init();
   }
 
   window.addEventListener('resize', resize);
-  resize();
+  sizeCanvas();
+  init();
   rafId = requestAnimationFrame(frame);
 
   return {

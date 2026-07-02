@@ -8,8 +8,8 @@
 // A reflected random walk: a single dot wanders from the centre, each step
 // nudged by +/- `offset` in x and y, and every dot is stamped with optional
 // X and/or Y mirror symmetry — so the random walk grows a symmetric inkblot.
-// After `iterations` steps the blot lingers a few seconds, the screen clears,
-// a fresh hue is chosen and a new blot begins.
+// After `iterations` steps the blot lingers `delay` SECONDS, the screen
+// clears, a fresh hue is chosen and a new blot begins.
 //
 // Rendering note: this is a SPARSE accumulating draw — at most four small
 // rectangles per walk step, fillRect'd straight onto the persistent canvas
@@ -27,15 +27,16 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Configuration. Units and defaults match xscreensaver's
-  // hacks/config/rorschach.xml so the tuning UI maps 1:1 to the original.
+  // Configuration. Keys/defaults/ranges mirror hacks/config/rorschach.xml 1:1.
+  // NOTE `delay` is the xml's "Linger" slider: SECONDS (1-60) to hold a
+  // finished blot, NOT a frame-rate knob — the walk pace has no resource, it
+  // is hardcoded at 20000 us per chunk in the C (rorschach_draw).
   const config = {
     iterations: 4000,   // walk steps per blot (--iterations)
     offset: 7,          // max +/- jump per axis per step (--offset)
     xsymmetry: true,    // mirror across the vertical centre line (--xsymmetry)
     ysymmetry: false,   // mirror across the horizontal centre line (--ysymmetry)
-    linger: 5,          // seconds the finished blot lingers (xml "Linger", --delay)
-    delay: 20000,       // microseconds between walk chunks (the C's hardcoded pace)
+    delay: 5,           // SECONDS the finished blot lingers (--delay)
   };
 
   // Ranges/defaults/labels transcribed from hacks/config/rorschach.xml.
@@ -43,17 +44,21 @@ export function start(canvas) {
   // live: false -> the value seeds the walk/colors, so changing it re-runs
   //                init() via reinit().
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'iterations', label: 'Iterations', type: 'range', min: 100, max: 10000, step: 100, default: 4000, lowLabel: 'small', highLabel: 'large', live: false },
-    { key: 'offset', label: 'Offset', type: 'range', min: 1, max: 50, step: 1, default: 7, lowLabel: 'small', highLabel: 'large', live: true },
-    { key: 'linger', label: 'Linger', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
+    { key: 'iterations', label: 'Iterations', type: 'range', min: 0, max: 10000, step: 100, default: 4000, lowLabel: 'small', highLabel: 'large', live: false },
+    { key: 'offset', label: 'Offset', type: 'range', min: 0, max: 50, step: 1, default: 7, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'xsymmetry', label: 'With X symmetry', type: 'checkbox', default: true, live: true },
     { key: 'ysymmetry', label: 'With Y symmetry', type: 'checkbox', default: false, live: true },
+    { key: 'delay', label: 'Linger', type: 'range', min: 1, max: 60, step: 1, default: 5, unit: ' s', lowLabel: '1 second', highLabel: '1 minute', live: true },
   ];
 
-  // The C plots dots in chunks of 300 walk steps per draw call so a 4000-step
-  // blot accretes visibly over a dozen-odd frames instead of in one flash.
+  // The C plots dots in chunks of 300 walk steps per draw call, paced by a
+  // HARDCODED 20000 us between chunks (rorschach_draw's `delay = 20000`), so
+  // a 4000-step blot accretes visibly over a dozen-odd frames instead of in
+  // one flash. OVERHEAD = the live binary's measured per-chunk framework+draw
+  // cost on top of that pace (the port must never run faster than the C).
   const ITER_CHUNK = 300;
+  const CHUNK_DELAY = 20000;   // us between walk chunks, hardcoded in the C
+  const OVERHEAD = 6300;       // us; live -fps: 38.0 fps at Load 24.0% (clean: sleep slice = 20000 exactly)
 
   let W, H, S;                       // backing-store size + retina scale
   let scale;                         // dot size in device px (C's st->scale)
@@ -61,8 +66,10 @@ export function start(canvas) {
   let remaining;                     // walk steps left in this blot
   let lingering;                     // true while holding the finished blot
 
-  // Pick a fresh fully-saturated hue and reset the walk to the centre, mirroring
-  // the C's rorschach_draw_start(). Returns nothing; seeds curX/curY/remaining.
+  // Pick this blot's colour and reset the walk to the centre — the C's
+  // rorschach_draw_start(). The C rolls hsv_to_rgb(random()%360, 1.0, 1.0):
+  // a random integer hue at full saturation and full value, which is exactly
+  // the pure hue hsl(h, 100%, 50%) produces (identical RGB).
   function startBlot() {
     ctx.fillStyle = `hsl(${Math.floor(Math.random() * 360)}, 100%, 50%)`;
     curX = Math.floor(W / 2);
@@ -79,10 +86,13 @@ export function start(canvas) {
     if (config.xsymmetry && config.ysymmetry) ctx.fillRect(W - x, H - y, scale, scale);
   }
 
-  // One chunk of the random walk — the C's rorschach_draw_step(). offset and the
-  // symmetry flags are read live; scale is the device-px dot size.
+  // One chunk of the random walk — the C's rorschach_draw_step(). offset and
+  // the symmetry flags are read live. The step size stays in LOGICAL px (x dpr
+  // only) — the C never multiplies offset by its dot scale.
   function walkChunk() {
-    const offset = Math.max(1, Math.round(config.offset)) * scale;
+    let offset = Math.round(config.offset);
+    if (offset <= 0) offset = 3;     // the C's init clamp
+    offset *= Math.max(1, Math.round(S));
     const span = 1 + offset * 2;     // random() % span gives [0, 2*offset]
     let x = curX;
     let y = curY;
@@ -103,41 +113,47 @@ export function start(canvas) {
   }
 
   // One state-machine step — the C's rorschach_draw(). Returns the ms to wait
-  // before the next step (the C returns microseconds-until-next-call).
+  // before the next step (the C returns microseconds-until-next-call). The
+  // chunk pace is stock CHUNK_DELAY + measured OVERHEAD; the linger is the
+  // configured seconds verbatim (the C's sleep_time * 1000000).
   function step() {
     if (lingering) {
-      // The C erases with a scrolling helix transition here; the web has no X11
-      // GC eraser, so clear to black instantly (noted in the .md) and begin the
-      // next blot. The black pause before the new walk matches the C's flow.
+      // The C erases with a random erase_window wipe here; transitions are
+      // the host's domain, so clear to black instantly (noted in the .md) and
+      // begin the next blot — the C's rorschach_draw_start on the same tick.
       ctx.fillStyle = 'black';
       ctx.fillRect(0, 0, W, H);
       startBlot();
-      return 0;
+      return (CHUNK_DELAY + OVERHEAD) / 1000;
     }
 
     if (remaining > 0) {
       walkChunk();
       if (remaining === 0) {
-        // Blot finished: hold it for `linger` seconds, then clear next step.
+        // Blot finished: hold it for `delay` seconds, then clear next step.
         lingering = true;
-        return Math.max(1, config.linger) * 1000;
+        return config.delay * 1000;
       }
-      return Math.max(1, config.delay / 1000);
+      return (CHUNK_DELAY + OVERHEAD) / 1000;
     }
 
     // Defensive: remaining already 0 and not lingering — start a blot.
     startBlot();
-    return 0;
+    return (CHUNK_DELAY + OVERHEAD) / 1000;
   }
 
   function init() {
     S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
-    // The C bumps dot size to 3px on >2560px (retina) displays; fold dpr in the
-    // same way so dots stay a consistent CSS size and crisp on hidpi.
-    scale = (W > 2560 || H > 2560) ? Math.round(3 * S) : Math.max(1, Math.round(S));
+    // The C's st->scale: 1, bumped 3x on >2560-px framebuffers ("Retina
+    // displays"). We already render 1 logical px as S device px, so test the
+    // LOGICAL size (a genuinely huge display, not dpr inflation) for the 3x
+    // bump — otherwise any fullscreen 2x laptop would trip it.
+    const big = W / S > 2560 || H / S > 2560;
+    scale = Math.max(1, Math.round(S)) * (big ? 3 : 1);
     nextDelay = 0;
+    acc = 0;
     startBlot();
   }
 
@@ -152,11 +168,12 @@ export function start(canvas) {
     init();
   }
 
-  // Variable-delay loop (xspirograph-style): step() returns the ms to wait
-  // before the next step — config.delay between walk chunks, or the longer
-  // `linger` hold once a blot finishes — matching the C's "return microseconds
-  // until next call". The canvas persists between steps (dots accumulate), so
-  // drawing happens inside step(), not a per-frame repaint.
+  // Variable-delay loop (helix/xspirograph-style): step() returns the ms to
+  // wait before the next step — the C's hardcoded 20 ms chunk pace (+OVERHEAD),
+  // or the multi-second `delay` linger once a blot finishes — matching the C's
+  // "return microseconds until next call". The canvas persists between steps
+  // (dots accumulate), so drawing happens inside step(), not a per-frame
+  // repaint.
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let acc = 0;
@@ -168,8 +185,10 @@ export function start(canvas) {
     acc += now - lastTime;
     lastTime = now;
     // Bound the backlog so a backgrounded tab doesn't burst on refocus — but
-    // never below nextDelay, or a multi-second linger would never elapse.
-    acc = Math.min(acc, nextDelay + 1000);
+    // never below nextDelay, or a multi-second linger would never elapse. The
+    // small allowance keeps the ~21 ms chunk cadence accurate across 60 Hz
+    // frames without letting a burst repaint half a blot at once.
+    acc = Math.min(acc, nextDelay + 50);
 
     let steps = 0;
     while (acc >= nextDelay && steps < MAX_CATCHUP_STEPS) {

@@ -12,13 +12,20 @@
 // rise up the screen). Facets are drawn back-to-front (row j = depth, 0 = back),
 // so nearer facets overlay farther ones. Each refinement pass redraws the whole
 // terrain at finer resolution over the previous (only the sky is cleared between
-// passes), so the range visibly sharpens from coarse to fine. When the finest
-// pass finishes the terrain dwells a moment, then the screen wipes and a fresh
-// height field is generated.
+// passes), so the range visibly sharpens from coarse to fine. The instant the
+// finest pass finishes, the screen wipes, a fresh smooth colormap is rolled
+// (make_smooth_colormap -- the C's standalone build frees and remakes it every
+// range), and a new height field is generated: the C has no inter-scene dwell.
+//
+// Facet colour indexes the smooth colormap by slope (atan of the facet's height
+// spread); flat sea-level facets take the C's BLUE index 45 -- an arbitrary
+// entry of the per-range random map, not literal blue.
 //
 // Rendering: sparse vector ops -- one batch of facets per step (a filled polygon
 // per facet, sealed with a same-colour hairline to hide canvas anti-alias seams;
 // in the mono path, ncolors <= 2, facets are black with a white outline).
+
+import { makeSmoothColormapRGB } from './colormap.js';
 
 export const title = 'triangle';
 
@@ -31,27 +38,23 @@ export const info = {
 export function start(canvas) {
   const ctx = canvas.getContext('2d');
 
-  // Defaults/ranges mirror hacks/config/triangle.xml so the config box maps 1:1.
-  // `dwell` is new (see triangle.md): it restores the inter-scene pause the C had
-  // in its xlockmore path (MI_PAUSE = 2s) but dropped in the standalone build,
-  // measured here in steps rather than microseconds.
+  // Defaults/ranges mirror hacks/config/triangle.xml so the config box maps 1:1
+  // (delay/ncolors are the xml's only resources).
   const config = {
-    delay: 25000,    // microseconds between steps / facet batches (--delay)
-    ncolors: 128,    // size of the rainbow palette (--ncolors)
-    dwell: 200,      // steps the finished range lingers before the wipe
+    delay: 10000,    // microseconds between steps / facet batches (--delay), stock
+    ncolors: 128,    // smooth-colormap size (--ncolors)
   };
 
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 25000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 128, lowLabel: 'two', highLabel: 'many', live: false },
-    { key: 'dwell', label: 'Dwell', type: 'range', min: 0, max: 1000, step: 10, default: 200, lowLabel: 'none', highLabel: 'long', live: true },
   ];
 
   // Simulation constants, straight from triangle.c.
   const MAX_STEPS = 8;          // ceiling on subdivision steps
   const MAX_SIZE = 256;         // 1 << MAX_STEPS, the i-scan width in draw_mesh
   const HALF_PI = Math.PI / 2;  // M_PI_2 in the colour formula
-  const SEA = 'hsl(210, 70%, 45%)';  // the C's BLUE (45): "Just the right shade of blue"
+  const BLUE = 45;              // "Just the right shade of blue" -- a colormap INDEX
 
   let S = 1;            // devicePixelRatio
   let W = 0, H = 0;     // canvas size, device px
@@ -62,18 +65,12 @@ export function start(canvas) {
   let deltaArr, one;    // per-level displacement magnitudes; one = deltaArr[0]
   let lineW = 1;        // hairline width for seam sealing / mono outlines
 
-  // The C's mountainstruct state machine and incremental-draw cursor.
+  // The C's trianglestruct state machine and incremental-draw cursor.
   let stage;            // -1 = idle/just-finished, 0 = corners, 1..steps = subdivide
   let initNow;          // true => time to (re)subdivide; false => drawing a pass
   let di, dj, curD;     // draw cursor (tp->i, tp->j) and last subdivision size (tp->d)
-  let dwelling;         // true while the finished range lingers before the wipe
-  let dwellCount;       // steps elapsed in the dwell
 
-  let palette, ncol, offset;  // rainbow CSS strings, palette length, per-scene rotation
-
-  function nrand(n) {
-    return Math.floor(Math.random() * Math.max(1, n));
-  }
+  let palette, ncol;    // smooth-colormap CSS strings and palette length
 
   // Triangular height-field accessors: row i holds (size + 1 - i) columns, so
   // valid j is [0, size - i]. Matches the C's h[i] pointer fan-out over H[].
@@ -99,32 +96,33 @@ export function start(canvas) {
     return Math.trunc((h * h) / one);
   }
 
+  // The C is built with SMOOTH_COLORS: the xlockmore shim allocates one
+  // make_smooth_colormap at session start (xlockmore.c:484), and the standalone
+  // scene-change path in draw_triangle frees it and rolls a FRESH smooth
+  // colormap for every completed range. Called at init and at each range wipe
+  // to mirror that cadence.
   function buildPalette() {
     ncol = Math.max(1, Math.round(config.ncolors));
-    palette = new Array(ncol);
-    for (let i = 0; i < ncol; i++) {
-      palette[i] = `hsl(${Math.round(i * 360 / ncol)}, 80%, 55%)`;
-    }
+    palette = makeSmoothColormapRGB(ncol).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`);
   }
 
   // Fill one facet, shaded by its height SPREAD (the C's draw_atriangle): flat
-  // sea-level facets are blue water; otherwise the steeper the facet the lower
-  // the palette index, via atan of the spread. `offset` rotates the gradient per
-  // scene to emulate the C remaking a fresh smooth colormap each range.
+  // sea-level facets take colormap entry BLUE (45, mod ncolors) -- an arbitrary
+  // colour of the random smooth map, constant within a range; otherwise the
+  // steeper the facet the lower the palette index, via atan of the spread.
   function paint(x0, y0, x1, y1, x2, y2, h0, h1, h2, dinv) {
     const mono = ncol <= 2;
     let style;
     if (!mono) {
       const dmin = Math.min(h0, h1, h2);
       const dmax = Math.max(h0, h1, h2);
+      let color;
       if (dmax === 0) {
-        style = SEA;
+        color = BLUE;
       } else {
-        let color = ncol - Math.trunc(ncol / HALF_PI * Math.atan(dinv * (dmax - dmin)));
-        color = (color + offset) % ncol;
-        if (color < 0) color += ncol;
-        style = palette[color];
+        color = ncol - Math.trunc(ncol / HALF_PI * Math.atan(dinv * (dmax - dmin)));
       }
+      style = palette[color % ncol];
     }
 
     ctx.beginPath();
@@ -203,28 +201,19 @@ export function start(canvas) {
     if (dj === size) initNow = true;
   }
 
-  // One animation step (the C's draw_triangle). Either advances the dwell, draws
-  // a batch of facets, or subdivides one more level -- exactly one per tick.
+  // One animation step (the C's draw_triangle). Either draws a batch of facets
+  // or subdivides one more level -- exactly one per tick.
   function step() {
-    if (dwelling) {
-      if (++dwellCount > config.dwell) {
-        // Wipe and pick a fresh palette rotation (the C clears + remakes colors).
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, W, H);
-        offset = ncol > 2 ? nrand(ncol) : 0;
-        dwelling = false;
-        // stage is -1 and initNow is true, so the next tick starts a new scene.
-      }
-      return;
-    }
-
     if (!initNow) {
       drawMesh(curD >> 1, Math.floor(MAX_SIZE / curD));
       // The finest pass (drawn while stage === -1) finishing means the range is
-      // complete: linger on it, then wipe.
+      // complete. The C's standalone build wipes and re-rolls a fresh smooth
+      // colormap on this same tick -- no dwell -- leaving stage == -1 and
+      // init_now set, so the next tick reseeds the corners for a new range.
       if (initNow && stage === -1) {
-        dwelling = true;
-        dwellCount = 0;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+        buildPalette();
       }
       return;
     }
@@ -238,7 +227,7 @@ export function start(canvas) {
         setH(size, 0,    Math.trunc(Math.max(0, displaceRaw(0, deltaArr[0]))));
         setH(0, size,    Math.trunc(Math.max(0, displaceRaw(0, deltaArr[0]))));
       } else {
-        const d = 2 << (steps - stage);   // cell size at this level (256 down to 2)
+        const d = 2 << (steps - stage);   // cell size at this level (size down to 2)
         const d2 = d >> 1;
         const delta = deltaArr[stage - 1];
         for (let i = 0; i < size; i += d) {
@@ -255,8 +244,8 @@ export function start(canvas) {
       }
     }
 
-    // After the finest subdivision, drop to the idle stage; its drawing pass then
-    // completes into the dwell.
+    // After the finest subdivision, drop to the idle stage; its drawing pass
+    // completing then wipes the scene and starts a new one.
     if (stage === steps) stage = -1;
   }
 
@@ -308,12 +297,9 @@ export function start(canvas) {
     one = Math.max(1, deltaArr[0]);
 
     buildPalette();
-    offset = ncol > 2 ? nrand(ncol) : 0;
 
     stage = -1;
     initNow = true;
-    dwelling = false;
-    dwellCount = 0;
     di = 0;
     dj = 0;
     curD = 2;   // never read before the first subdivision sets it; defensive only
@@ -332,9 +318,12 @@ export function start(canvas) {
     init();
   }
 
-  // rAF lag-accumulator paced by config.delay (microseconds): run one step() per
-  // delay, banking leftover time so the build speed is identical at any refresh
-  // rate. Cap catch-up so a backgrounded tab doesn't burst on refocus.
+  // rAF lag-accumulator paced at (delay + OVERHEAD) us per step: the C's delay
+  // is a sleep between draw_triangle calls (xlockmore_draw returns *delay), on
+  // top of the per-tick draw cost, so the port adds the live-measured overhead
+  // to reproduce the binary's real cadence (never faster than the author's
+  // floor). Cap catch-up so a backgrounded tab doesn't burst on refocus.
+  const OVERHEAD = 7300;  // us: 1e6/57.8fps - 10000 stock (live -fps overlay, Load 42.2%; sleep-slice = stock, clean)
   const MAX_CATCHUP_STEPS = 8;
   let lastTime = 0;
   let lag = 0;
@@ -345,7 +334,7 @@ export function start(canvas) {
     lag += now - lastTime;
     lastTime = now;
 
-    const delayMs = config.delay / 1000;
+    const delayMs = (config.delay + OVERHEAD) / 1000;
     lag = Math.min(lag, delayMs * MAX_CATCHUP_STEPS);
 
     let steps2 = 0;
