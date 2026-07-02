@@ -66,13 +66,13 @@ stripes), smooth-shaded with a controlled glint -- all reproduce.
 
 ## Pacing / config
 
-Pacing as in `dangerball.js` (`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`); xml
-default delay 40000 -> ~13fps, spin `5 deg/frame` -> a full turn in ~5.5s, morph 40
-frames -> ~3s. The geometry is rebuilt every render-frame from the blended shape
-(preallocated `DynamicDraw` buffers sized for `MaxRes=50`). **OPEN:** `OVERHEAD` is the
-family default, not a per-hack measurement -- the GL originals are runtime-blocked here,
-so pin it against the demo video (youtube `Mjlc7iPA1N4`) if the morph/spin rate reads
-off. Config transcribed 1:1 from `hacks/config/superquadrics.xml`: `delay`, `spinspeed`,
+Pacing scheme as in `dangerball.js` (`effFps = 1e6/(delay + OVERHEAD)`), `OVERHEAD = 0`
+(delay-limited, measured 2026-07-01); xml default delay 40000 -> 25fps, spin
+`5 deg/frame` -> a full turn in ~2.9s, morph 40 frames -> ~1.6s. The geometry is rebuilt
+every render-frame from the blended shape (preallocated `DynamicDraw` buffers sized for
+`MaxRes=50`). **OPEN:** `OVERHEAD = 0` is the delay-limited recalibration, not a per-hack
+pace measurement -- the GL originals are runtime-blocked here, so pin it against the demo
+video (youtube `Mjlc7iPA1N4`) if the morph/spin rate reads off. Config transcribed 1:1 from `hacks/config/superquadrics.xml`: `delay`, `spinspeed`,
 `count` ("Density" -> resolution, clamped 5..50), `cycles` ("Duration" -> morph frames),
 `wire`.
 

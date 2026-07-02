@@ -84,12 +84,12 @@ its diffuse colormap, matching the ground truth.
 Render every rAF; the storm's "motion" is the discrete trail (each snapshot is frozen once
 pushed), so there is **nothing to interpolate** -- the SIMULATION (rotator advance + clear
 decision + `push_hist`) is ticked at the original cadence `effFps = 1e6/(delay+OVERHEAD)`
-(`OVERHEAD = 0`, track default; xml default delay 30000 -> ~15fps) and the static
-history is re-drawn in between. The original itself runs at this same ~15fps, so the
-frame-by-frame trail head is faithful, not choppy-by-mistake. **OPEN:** `OVERHEAD` is the
-track default, not a per-hack measurement against the demo video (youtube `enuZbkMiqCE`),
-since the GL originals are runtime-blocked here -- pin it there if the build/wipe rhythm
-reads off. Config transcribed 1:1 from `hacks/config/cubestorm.xml`: `delay`, `speed`,
+(`OVERHEAD = 0`, delay-limited -- measured 2026-07-01; xml default delay 30000 -> ~33fps)
+and the static history is re-drawn in between. The .c is likewise a discrete per-frame
+trail, so the frame-by-frame trail head is faithful, not choppy-by-mistake. **OPEN:**
+`OVERHEAD = 0` is the delay-limited recalibration, not a per-hack measurement against the
+demo video (youtube `enuZbkMiqCE`), since the GL originals are runtime-blocked here -- pin
+it there if the build/wipe rhythm reads off. Config transcribed 1:1 from `hacks/config/cubestorm.xml`: `delay`, `speed`,
 `count`, `length`, `thickness` ("Struts"), `wander`, `spin`, `wire`. The .c bakes
 `speed`/`count`/`wander`/`spin` at init (can't change them live), so changing any of those
 restarts the sim; `thickness` rebuilds the cube geometry; `length`/`delay` are read live.

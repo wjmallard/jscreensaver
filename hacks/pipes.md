@@ -83,12 +83,11 @@ Transcribed from `pipes.c`:
 
 - Color management disabled (`THREE.ColorManagement.enabled = false` -- GL-faithful raw
   output, as in gears.js / dangerball); pacing as in gears.js / dangerball (`effFps = 1e6/(delay+OVERHEAD)`,
-  `OVERHEAD = 0`). **OPEN:** the full reveal is slow -- size 500 x cycles 5 = up to
-  ~2500 segments at ~21fps ≈ 2 min to build, then fade + rebuild. Faithful (1 segment/
-  frame), but pipes' low default delay (10000) implies the original ran at a higher
-  frame rate on real hardware, so the reveal likely wants to be faster; lower "Pipe
-  length"/"Number of pipes", or tune the reveal rate / OVERHEAD for pipes, after checking
-  the demo video (youtube `UsUGENa7jvE`).
+  `OVERHEAD = 0`, delay-limited). The 2026-07-01 recalibration RESOLVED the earlier open
+  question here (the reveal was ~21fps under the old shared 37500 and read too slow):
+  at the .c's delay-limited ~100fps (delay 10000), size 500 x cycles 5 = up to ~2500
+  segments ≈ 25s to build, then fade + rebuild -- faithful (1 segment/frame). Check the
+  demo video (youtube `UsUGENa7jvE`) if it still reads off.
 - The whole system is generated up-front into one BufferGeometry (a hitch at each
   regenerate for large sizes); could be built incrementally later if needed.
 - Config from `hacks/config/pipes.xml`: delay, cycles (number of pipes), size (pipe

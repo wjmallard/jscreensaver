@@ -109,10 +109,8 @@ tube geometry is built directly (see below).
 advance by `frames = dt*effFps`; the `duration` timer (8 s) runs off real wall-clock
 seconds, as the C's `time()` poll does. The rotator is a discrete random-walk, so it is
 ticked once per original-frame at effFps and **interpolated** between ticks (the
-dangerball.js pattern). **`OVERHEAD = 0`** -- the GL family's shared default
-(`gears`/`pipes`/`dangerball`/`morph3d`/...): live GL hacks can't be timed under this
-machine's XQuartz Apple-DRI block, so every three.js port adopts the same measured
-overhead. xml default delay 30000 -> `effFps = 1e6/67500 ~= 14.8fps`. See
+dangerball.js pattern). **`OVERHEAD = 0`** -- delay-limited (recalibrated 2026-07-01: render is negligible
+on real hardware). xml default delay 30000 -> `effFps = 1e6/30000 ~= 33fps`. See
 framerate-calibration.
 
 ## Config (params transcribed 1:1 from hacks/glknots.xml)

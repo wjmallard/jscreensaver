@@ -120,10 +120,9 @@ current move's `glRotatef` into the one slice being turned.
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 0` (the GL family's shared measured value — these hacks can't be
-timed under this machine's XQuartz Apple-DRI block, so every three.js GL port adopts
-the same constant). `config.delay` default = the xml `<delay>` 20000. `effFps =
-1e6/(delay + OVERHEAD) = 1e6/57500 ~= 17.4fps`, the original's effective rate.
+`OVERHEAD = 0` (delay-limited; recalibrated 2026-07-01 — render is negligible on
+real hardware). `config.delay` default = the xml `<delay>` 20000. `effFps =
+1e6/(delay + OVERHEAD) = 1e6/20000 = 50fps`, the original's delay-limited rate.
 
 ## Config (mirrors hacks/rubik.xml 1:1)
 

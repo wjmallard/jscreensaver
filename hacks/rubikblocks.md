@@ -79,13 +79,13 @@ kill diffuse, ambient AND specular to black. `tex`/"Outlines" off drops both map
 
 ## Pacing / config
 
-Render every rAF; `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (the geometry-track
-family default; the GL original is runtime-blocked here). One render frame is
+Render every rAF; `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (delay-limited;
+measured 2026-07-01 -- render is negligible on real hardware). One render frame is
 `frames = dt*effFps` original-frames: the layer turn and clock `t` advance by `frames`, and
-the rotator is ticked `frames` times. **OPEN:** `OVERHEAD` is the family default, not a
-per-hack measurement; the xml default delay 20000 lands at ~17fps (90-degree turn ~1.7s,
-180-degree ~3.4s, linger ~0.8s). Pin against the demo video (youtube `B2sGaRLWz-A`) if the
-pacing reads off.
+the rotator is ticked `frames` times. **OPEN:** `OVERHEAD = 0` is the delay-limited
+recalibration, not a per-hack pace measurement; the xml default delay 20000 lands at 50fps
+(90-degree turn ~0.6s, 180-degree ~1.2s, linger ~0.3s). Pin against the demo video
+(youtube `B2sGaRLWz-A`) if the pacing reads off.
 
 Config transcribed from `hacks/config/rubikblocks.xml` (labels verbatim -- the xml itself
 reuses "Spin"/"Wander" for both the speed sliders and the on/off checkboxes): `delay`

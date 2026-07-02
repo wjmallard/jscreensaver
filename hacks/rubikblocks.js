@@ -51,9 +51,9 @@
 // applying qfram `frames` times, since same-axis rotations compose additively) and advance
 // the clock t by frames*tspeed; settle_value snaps the tiny overshoot. The spin/wander
 // rotator is ticked once per original-frame and INTERPOLATED between ticks (the dangerball
-// pattern), gated live by the spin/wander checkboxes. OVERHEAD = 0 (the geometry-track
-// family default; the GL original is runtime-blocked here -- see the framerate-calibration
-// note). xml default delay 20000 -> ~17fps.
+// pattern), gated live by the spin/wander checkboxes. OVERHEAD = 0 (delay-limited;
+// measured 2026-07-01 -- render is negligible on real hardware, see the
+// framerate-calibration note). xml default delay 20000 -> 50fps.
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';

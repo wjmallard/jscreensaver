@@ -78,8 +78,8 @@ Render every rAF. CONTINUOUS state (each wave's phase, each box's throb `frame` 
 advances by `frames = dt*effFps`, so the trajectory matches the .c's per-frame step sampled
 smoothly. The DISCRETE rotator random-walk is ticked once per original-frame (at `effFps`)
 and the spin/wander interpolated between samples (shortest-path lerp on the rotation circle).
-`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0`; cubenetic's xml `delay` default is
-**20000** (not the track's 30000) -> ~17 fps. The rotator
+`effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (delay-limited); cubenetic's xml `delay`
+default is **20000** (not the track's usual 30000) -> 50 fps. The rotator
 (`make_rotator(1,1,1, 1.0, 0.05, True)` -- all axes, the `XYZ` default) is built once at full
 speed; `config.spin` (a select: none / X / Y / Z / XY / XZ / YZ / XYZ) gates which axes' spin
 is applied, and `config.wander` gates the translate -- the dangerball pattern (no rebuild on
@@ -98,8 +98,9 @@ forces `do_texture=False` under wireframe) and stop the per-frame texture regen 
 
 - **Trackball** (mouse drag to rotate) is not ported -- there is no pointer input in the
   screensaver host (the .c's `!button_down_p` path, i.e. auto-rotate, is always taken).
-- The texture is regenerated every rAF (so it is as smooth as the boxes), ~4x the .c's
-  ~17 fps update cadence; the wave phase still advances by `frames`, so the speed matches.
+- The texture is regenerated every rAF (so it is as smooth as the boxes), slightly faster
+  than the .c's 50 fps update cadence; the wave phase still advances by `frames`, so the
+  speed matches.
 - **Palette is random per run** (`h0` and the smooth colormap), so an exact colour match to
   the screenshot is not expected -- only the character (full-saturation hue-loop blobs,
   per-box smooth-colormap tint) matches.

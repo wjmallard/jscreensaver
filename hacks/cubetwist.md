@@ -87,8 +87,8 @@ Render every rAF. The oscillator ratios advance CONTINUOUSLY by `frames = dt*eff
 (the .c's per-frame step, sampled smoothly), while the spin/wander rotator and the
 1/60 "start a new oscillation" check tick once per original-frame (at `effFps`) with
 interpolation for a smooth render (the geometry-track convention, as cubestack /
-dangerball). `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (xml default delay
-30000 -> ~15fps). The rotator (`make_rotator(0.05,0.05,0.05, 1.0, 0.005, True)`) is
+dangerball). `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (delay-limited, measured 2026-07-01;
+xml default delay 30000 -> ~33fps). The rotator (`make_rotator(0.05,0.05,0.05, 1.0, 0.005, True)`) is
 built once at full speed; the `spin`/`wander` checkboxes gate its OUTPUT live (the
 dangerball pattern -- the randomize path consumes the same RNG regardless of speed, so
 the stream stays in step). **OPEN:** `OVERHEAD` is the family default, not a per-hack

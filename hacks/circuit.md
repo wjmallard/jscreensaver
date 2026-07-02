@@ -135,10 +135,10 @@ label on its body (the .c leaves that quad's texture unset -- a latent bug -- so
 `effFps = 1e6/(config.delay + OVERHEAD)`; render every rAF. Continuous motion (drift, tumble,
 scene spin, roving-spot travel) advances by `frames = dt*effFps`; discrete per-frame events
 (the 5% spawn roll, the roving-spot start roll) run in a catch-up loop ticked at `effFps`
-(capped at 8, the engine.js pattern). **`OVERHEAD = 0`** -- the GL family's shared default
-(live GL is unmeasurable under this machine's XQuartz Apple-DRI block). xml default delay
-20000 -> `effFps = 1e6/57500 ~= 17.4fps`. See framerate-calibration. (This is ~3x slower than
-the original's ~50fps, so drift is slow -- another reason the `initialFill` seed matters.)
+(capped at 8, the engine.js pattern). **`OVERHEAD = 0`** -- delay-limited
+(recalibrated 2026-07-01: render is negligible on real hardware; the old shared 37500 ran
+this ~3x slower than the original's ~50fps). xml default delay
+20000 -> `effFps = 1e6/20000 = 50fps`. See framerate-calibration.
 
 ## Config (params transcribed 1:1 from hacks/circuit.xml)
 

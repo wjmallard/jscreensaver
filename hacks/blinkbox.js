@@ -51,8 +51,8 @@
 //
 // PACING -- the .c advances the ball by `mo` and steps the tile fade counters once per
 // frame: a DISCRETE per-frame sim. We tick it at effFps = 1e6/(delay+OVERHEAD),
-// OVERHEAD = 0us (xml default delay 30000 -> ~15fps; the geometry-track family
-// default), and interpolate the ball position (lerp) and the tumble (slerp) between
+// OVERHEAD = 0us (xml default delay 30000 -> ~33fps delay-limited; measured
+// 2026-07-01), and interpolate the ball position (lerp) and the tumble (slerp) between
 // ticks so the render is smooth at any rAF rate.
 
 import * as THREE from 'three';

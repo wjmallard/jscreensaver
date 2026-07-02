@@ -56,9 +56,10 @@ The 1D sine texture (4096-sample, GL_LINEAR in the `.c`) is evaluated directly a
 The `.c` builds spin with `make_rotator(0, 0, 0.01, ...)`, but the rotator's max
 angular velocity (`d_max`) derives from the **X** speed, which is 0 here -- so
 the spin clamps to **near-zero**. The real quasicrystal barely rotates; it mostly
-**slides** (wander, very slow) and **breathes** (pscale 1->5, ~140s cycle). The
+**slides** (wander, very slow) and **breathes** (pscale 1->5, ~63s cycle). The
 first port's obvious rotation was fabricated. Sim is ticked at the original's
-effective rate (`1e6/(delay+OVERHEAD)`, ~15fps), not 60.
+delay-limited rate (`1e6/(delay+OVERHEAD)`, `OVERHEAD = 0` -> ~33fps; recalibrated
+2026-07-01), not 60.
 
 ## Config (params 1:1 from quasicrystal.xml)
 

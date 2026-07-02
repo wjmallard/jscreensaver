@@ -55,7 +55,8 @@ spike phase. (Winding is irrelevant here -- DoubleSide + explicit per-vertex nor
   solid; it does not cycle between solids (that's the xlock `change` hook, mouse-only).
   Faithful: `count` 0 = random 1-5, else the chosen solid.
 - Pacing model as in gears.js / dangerball (`effFps = 1e6/(delay+OVERHEAD)`, `OVERHEAD =
-  37500`; xml default delay 40000 -> ~13fps; `step` advances `0.05 * frames`).
+  0`, delay-limited -- recalibrated 2026-07-01; xml default delay 40000 -> 25fps; `step`
+  advances `0.05 * frames`).
 - Config from `hacks/config/morph3d.xml`: `delay` (0-100000, def 40000) + `object`
   (the .xml `select`; exposed here as a 0-5 range, 0=random, rebuilds on change).
 

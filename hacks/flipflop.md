@@ -110,9 +110,9 @@ No `colormap.js`: flipflop uses no colormap, just the fixed `(i+j)%3` RGB triple
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 0` (the GL family's shared measured overhead; live GL timing is
-blocked under this machine's XQuartz). xml `delay` default `20000` ->
-`effFps = 1e6/57500 ~= 17.4 fps`. Continuous motion (flip angle, board spin)
+`OVERHEAD = 0` (delay-limited; recalibrated 2026-07-01 -- render is negligible
+on real hardware). xml `delay` default `20000` ->
+`effFps = 1e6/20000 = 50 fps`. Continuous motion (flip angle, board spin)
 advances by `frames = dt*effFps`; discrete move attempts tick at `effFps`
 (`40` per tick, catch-up capped at `8`). Per-frame advances match the `.c`
 (flip `0.03*PI/frame`, spin `0.01*spin/frame`) at the calibrated fps, so the

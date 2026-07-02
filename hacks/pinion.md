@@ -64,7 +64,8 @@ yarandom.js.
 ## Pacing / config
 
 Pacing model as in gears.js / dangerball (`effFps = 1e6/(delay+OVERHEAD)`, `OVERHEAD =
-37500`, continuous scroll/spin). Motion-blur advances the strobe counter by `frames`
+0`, delay-limited -- recalibrated 2026-07-01; xml default delay 15000 -> ~67fps,
+continuous scroll/spin). Motion-blur advances the strobe counter by `frames`
 continuously (the half-tooth-per-frame strobe is somewhat smoothed at high render rates).
 Config transcribed 1:1 from `hacks/config/pinion.xml`: `delay` (0-100000, def **15000**),
 `spin` (0.1-7, def 1.0), `scroll` (0.1-8, def 1.0), `size` (0.1-3, def 1.0; rebuilds),

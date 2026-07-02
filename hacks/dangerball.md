@@ -24,9 +24,11 @@ getStats, reinit, config, params }`.
 
 - **Pacing = continuous VELOCITY, not a sim-step rate.** Render every rAF; motion =
   velocity * dt, so it stays smooth at *any* speed (a step-rate knob jitters at the low
-  end). `delay` (us) -> `effFps = 1e6/(delay + OVERHEAD)`, with `OVERHEAD = 0`
+  end). `delay` (us) -> `effFps = 1e6/(delay + OVERHEAD)`, with `OVERHEAD = 37500`
   calibrating the xml default 30000 to the measured ~15fps. Each render frame advances
-  `frames = dt * effFps` original-frames of motion.
+  `frames = dt * effFps` original-frames of motion. (2026-07-01: the rest of the GL
+  track was recalibrated to delay-limited `OVERHEAD = 0`; dangerball deliberately KEEPS
+  its per-hack video-measured 37500 -- the only GL ground-truth pace measurement.)
 - **The rotator is a DISCRETE random-walk**, so it is ticked once per original-frame at
   effFps and **interpolated** between ticks (shortest-path lerp on the [0,1) rotation
   circle). That keeps the render smooth AND preserves the original's per-frame event

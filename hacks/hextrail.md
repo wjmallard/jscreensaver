@@ -77,8 +77,8 @@ off -- the triangles paint in submission order, exactly as the GL painter did.
 ## Pacing / config
 
 Pacing as in `dangerball.js`: render every rAF, but the **simulation ticks at the
-original cadence** `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (family
-default; xml default delay 30000 -> ~14.8fps). Each tick is one full
+original cadence** `effFps = 1e6/(delay + OVERHEAD)`, `OVERHEAD = 0` (delay-limited,
+measured 2026-07-01; xml default delay 30000 -> ~33fps). Each tick is one full
 `tick_hexagons()` frame -- so growth speed, the border 1/50 flicker, the re-seed
 draws and the fade all run at the original per-frame rate, and the RNG-driven
 *structure* stays faithful. The slow spin/wander `rotator` is ticked once per sim

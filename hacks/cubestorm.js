@@ -48,8 +48,8 @@
 // PACING -- render every rAF; the storm's "motion" is the discrete trail (each snapshot
 // is frozen once pushed), so we tick the SIMULATION (rotator advance + clear decision +
 // push_hist) at the original cadence effFps = 1e6/(delay+OVERHEAD) and just re-draw the
-// static history in between -- no interpolation (the trail is inherently frame-by-frame,
-// and the original runs at the same ~15fps). OVERHEAD = 0 as across the track.
+// static history in between -- no interpolation (the trail is inherently frame-by-frame
+// in the .c too). OVERHEAD = 0 -> the delay-limited ~33fps (measured 2026-07-01).
 
 import * as THREE from 'three';
 import { makeYaRandom } from './yarandom.js';

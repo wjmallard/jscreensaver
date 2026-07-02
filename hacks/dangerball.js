@@ -69,7 +69,10 @@ export function start(hostCanvas, opts = {}) {
   const DIAM = 0.2;            // draw_spikes: spike thickness scale
   const ROT_SCALE = 22;        // randomize_spikes quantization
   const DEG = Math.PI / 180;
-  const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
+  const OVERHEAD = 37500;   // us; PER-HACK VIDEO-MEASURED (2.7s pulse ~= 15fps effective, youtube
+                            // QU0aPwWwHbg, autocorrelation -- see dangerball.md). Deliberately KEPT
+                            // when the rest of the GL track went delay-limited OVERHEAD=0 (2026-07-01):
+                            // this is the one GL hack with a ground-truth pace measurement.
 
   // Live config. Keys/ranges/defaults/labels transcribed 1:1 from
   // hacks/config/dangerball.xml (the host renders the box from `params` and

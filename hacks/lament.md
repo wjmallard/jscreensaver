@@ -221,10 +221,9 @@ converted `lament-model.js` geometry. No jsm / `three/addons`.
 
 `effFps = 1e6/(config.delay + OVERHEAD)`; render every rAF; the rotator + the per-frame
 `animate()` step are ticked at `effFps` in a catch-up loop (capped at 8), with spin +
-`anim_*` interpolated between ticks. **`OVERHEAD = 0`** -- the GL family's shared
-default (live GL is unmeasurable under this machine's XQuartz Apple-DRI block, so every
-three.js port adopts the same measured overhead). xml default delay 20000 -> `effFps =
-1e6/57500 ~= 17.4fps`. See framerate-calibration.
+`anim_*` interpolated between ticks. **`OVERHEAD = 0`** -- delay-limited
+(recalibrated 2026-07-01: render is negligible on real hardware). xml default delay
+20000 -> `effFps = 1e6/20000 = 50fps`. See framerate-calibration.
 
 ## Config (params transcribed 1:1 from hacks/lament.xml)
 

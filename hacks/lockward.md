@@ -80,9 +80,10 @@ small loop so a slow frame can't desync them.
   original's `delay 20000` (`~50fps` nominal, no overhead) its `fps=60` assumption made
   durations run ~20% slow; `effFps` lands them on the nominal seconds, which is closer to
   intent than the literal-60 behaviour.
-- **OPEN:** `OVERHEAD = 0` is the track's family default, not a per-hack measurement
-  (the GL originals are runtime-blocked here). If the spin/blink cadence reads off, pin it
-  against jwz's demo video (youtube `MGwySGVQZ2M`); no eyeball-tuning otherwise.
+- **OPEN:** `OVERHEAD = 0` is the delay-limited recalibration (2026-07-01), not a
+  per-hack pace measurement (the GL originals are runtime-blocked here). If the
+  spin/blink cadence reads off, pin it against jwz's demo video (youtube `MGwySGVQZ2M`);
+  no eyeball-tuning otherwise.
 - **Colour space:** three's colour management is **disabled** (`ColorManagement.enabled =
   false`), matching GL's fixed pipeline (no sRGB encoding), so spinner colours (`setRGB`,
   now a no-op) and the white blink are written RAW to the 8-bit drawbuffer -- so the alpha

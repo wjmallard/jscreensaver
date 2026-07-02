@@ -129,10 +129,9 @@ the glknots.js convention.
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 0` (the GL family's shared value -- live GL can't be timed under
-this machine's XQuartz Apple-DRI block, so every three.js port adopts the same
-measured overhead). `effFps = 1e6/(delay + OVERHEAD) = 1e6/77500 ~= 12.9 fps` at
-the xml default `delay = 40000`. Slab forward speed is `0.1 * effFps ~= 1.3
+`OVERHEAD = 0` (delay-limited; recalibrated 2026-07-01 -- render is negligible on
+real hardware). `effFps = 1e6/(delay + OVERHEAD) = 1e6/40000 = 25 fps` at
+the xml default `delay = 40000`. Slab forward speed is `0.1 * effFps = 2.5
 units/s`; the color hold/change (1000/200 ticks) run off the same tick rate.
 
 ## Config (params transcribed 1:1 from hacks/blocktube.xml)

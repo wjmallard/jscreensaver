@@ -73,13 +73,13 @@ are the shared faithful util ports.
 
 Same model as `dangerball` (see `framerate-calibration` memory): render every rAF,
 motion is continuous. `delay` (us) -> `effFps = 1e6/(delay + OVERHEAD)`,
-`OVERHEAD = 0` (xml default 30000 -> ~15fps effective). Gear spin
+`OVERHEAD = 0` (delay-limited, measured 2026-07-01; xml default 30000 -> ~33fps). Gear spin
 (`th += ratio*5*speed` per original-frame) advances continuously; the whole-scene rotator
 is a discrete random-walk ticked once per original-frame and interpolated.
 
-OPEN: `OVERHEAD` is inherited from dangerball's measured rate, not measured for gears
-specifically (the gears demo video, youtube `OHamiC1tcdg`, would pin the spin rate). The
-spin reads reasonable; recalibrate against that video if it feels off.
+OPEN: `OVERHEAD = 0` is the delay-limited recalibration (2026-07-01), not a per-hack
+pace measurement (the gears demo video, youtube `OHamiC1tcdg`, would pin the spin
+rate). Recalibrate against that video if the spin reads off.
 
 ## Config (params transcribed 1:1 from hacks/config/gears.xml)
 

@@ -134,13 +134,11 @@ left at full strength (their `c` normal has magnitude ~0.95, a <5% effect, ignor
 
 ## Pacing / OVERHEAD
 
-`OVERHEAD = 0` (the shared GL-family default -- live GL hacks can't be timed under
-this machine's XQuartz Apple-DRI block). xml `delay = 15000` ->
-`effFps = 1e6/(15000+37500) ~= 19 fps`. The frame-locked physics therefore advances at
-19 ticks/s (interpolated to 60 Hz for display). Because the integration is per-tick
-(`dir += gravity` each tick), the real-time briskness scales with `effFps`; at 19 fps
-the motion is a touch calmer than a 60 fps original would be -- an inherent property of
-porting a frame-locked hack under the pacing convention, not a tuning choice.
+`OVERHEAD = 0` (delay-limited; recalibrated 2026-07-01 -- render is negligible on
+real hardware). xml `delay = 15000` -> `effFps = 1e6/15000 ~= 67 fps`. The
+frame-locked physics therefore advances at ~67 ticks/s (interpolated for display).
+Because the integration is per-tick (`dir += gravity` each tick), the real-time
+briskness scales with `effFps`; 67 fps is the .c's own delay-limited nominal pace.
 
 ## Config (params transcribed 1:1 from hacks/boxed.xml)
 

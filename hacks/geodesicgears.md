@@ -76,14 +76,14 @@ pre-transform is a pure rotation (det +1), so winding is preserved.
 ## Pacing / config
 
 Pacing as in `dangerball.js` / `moebiusgears.js` (`effFps = 1e6/(delay + OVERHEAD)`,
-`OVERHEAD = 0`); xml default delay 30000 -> ~15fps, gear spin `0.7 deg/frame`,
+`OVERHEAD = 0`, delay-limited); xml default delay 30000 -> ~33fps, gear spin `0.7 deg/frame`,
 whole-sphere tumble via `rotator.js` (`spin 0.25`, `wander 0.01`, accel 0.2). The
 rotator is built once (both spin + wander enabled) and its output is gated live by the
 `spin` / `wander` checkboxes (the dangerball pattern); the rotator's discrete
 random-walk is ticked at `effFps` and interpolated for smooth render. **OPEN:**
-`OVERHEAD` is the family default, not a per-hack measurement -- the GL originals are
-runtime-blocked here, so pin it against the demo video (youtube `gd_nTnJQ4Ps`) if the
-spin/transition rate reads off.
+`OVERHEAD = 0` is the delay-limited recalibration (2026-07-01), not a per-hack pace
+measurement -- the GL originals are runtime-blocked here, so pin it against the demo
+video (youtube `gd_nTnJQ4Ps`) if the spin/transition rate reads off.
 
 Config transcribed from `hacks/config/geodesicgears.xml`: `delay`, `timeout` (5-120 s
 per arrangement), `wander`, `spin`, `wire`. **OMITTED** (need a font atlas, like
