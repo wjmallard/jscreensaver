@@ -97,11 +97,11 @@ export function start(hostCanvas, opts = {}) {
   const BLOCK = { x: 0.15, y: 1.2, z: 5.25 };   // cube_vertices(0.15, 1.2, 5.25)
   const MAX_TICKS = 8;             // color catch-up cap (avoids a burst after a stall)
   const DEG2RAD = Math.PI / 180;
-  // us; the GL family's shared overhead default. Live GL hacks can't be timed under
-  // this machine's XQuartz Apple-DRI block, so every three.js port adopts the same
-  // measured 37500 (gears/pipes/dangerball/glknots/...). xml delay 40000 ->
-  // effFps = 1e6/77500 ~= 12.9fps. See framerate-calibration.
-  const OVERHEAD = 37500;
+  // Recalibrated 2026-07-01 (was 37500). The fly-through + colour cycle are FRAME-COUPLED
+  // (advanced by dt*effFps per frame), so 37500's ~12.9fps ran the tunnel at ~half speed.
+  // delay 40000 implies ~25fps for this light hack (the author's slow, calm pace), so
+  // OVERHEAD=0 -> effFps = 1e6/40000 = 25 (the .c's delay-intended rate). See blocktube.md.
+  const OVERHEAD = 0;         // us; effFps = 1e6/delay = 25fps at the xml delay of 40000
 
   // Knobs transcribed 1:1 from hacks/blocktube.xml (the host renders the box from
   // `params` and mutates `config` in place). Fog has no xml knob (always on except

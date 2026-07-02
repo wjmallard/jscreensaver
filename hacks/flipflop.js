@@ -90,9 +90,12 @@ export const info = {
 
 export function start(hostCanvas, opts = {}) {
   // ---- constants (flipflop.c DEFAULTS / #defines) ----
-  const OVERHEAD = 37500;     // us; the GL family's shared measured overhead (see
-                              // glknots.js / framerate-calibration). xml delay 20000
-                              // -> effFps = 1e6/57500 ~= 17.4 fps.
+  // Recalibrated 2026-07-01 (was 37500). The tile-flip cadence is FRAME-COUPLED (ENERGY
+  // move-attempts per sim-tick), so 37500's ~17.4fps starved the flip density vs the
+  // reference's busy board. delay 20000 already implies ~50fps for this light hack, so
+  // OVERHEAD=0 -> effFps = 1e6/20000 = 50 (the .c's delay-intended rate; live rate can't
+  // be timed under this machine's XQuartz block). See flipflop.md.
+  const OVERHEAD = 0;         // us; effFps = 1e6/delay = 50fps at the xml delay of 20000
   const ENERGY = 40;          // c->energy: move ATTEMPTS per frame
   const FLIPSPEED = 0.03;     // c->flipspeed: rot per frame = FLIPSPEED*PI
   const RELDIST = 1;          // c->reldist: camera distance = reldist*board_avg

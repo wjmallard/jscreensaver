@@ -84,10 +84,11 @@ export function start(hostCanvas, opts = {}) {
   const ZPOS = -18.0;
   const DEG = Math.PI / 180;
   const PI = Math.PI;
-  // The GL family's shared overhead default (live GL hacks can't be timed under this
-  // machine's XQuartz Apple-DRI block, so every three.js port adopts the measured
-  // 37500). xml delay 20000 -> effFps = 1e6/57500 ~= 17.4fps.
-  const OVERHEAD = 37500;
+  // Recalibrated 2026-07-01 (was 37500). The spin/move animation is FRAME-COUPLED
+  // (advanced by dt*effFps), so 37500's ~17.4fps ran the puzzle ~3x too slow. delay 20000
+  // implies ~50fps for this light hack, so OVERHEAD=0 -> effFps = 1e6/20000 = 50 (the .c's
+  // delay-intended rate; live rate untimed under the XQuartz block). See cube21.md.
+  const OVERHEAD = 0;         // us; effFps = 1e6/delay = 50fps at the xml delay of 20000
 
   // color modes (cube21_cmode) and states (cube21_state)
   const COLOR_WHITE = 0, COLOR_RANDOM = 1, COLOR_SILVER = 2, COLOR_TWORND = 3, COLOR_CLASSIC = 4, COLOR_SIXRND = 5;

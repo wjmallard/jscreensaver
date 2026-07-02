@@ -59,8 +59,9 @@
 // that cancels three's Lambert/specular normalization); ColorManagement off so raw
 // glColor values are matched.
 //
-// PACING: OVERHEAD = 37500 (the GL family's shared measured value, since these can't
-// be timed under this machine's XQuartz block). effFps = 1e6/(delay+OVERHEAD).
+// PACING: OVERHEAD = 0 (recalibrated 2026-07-01, was 37500). effFps = 1e6/(delay+OVERHEAD)
+// = 1e6/20000 = 50fps -- the .c's delay-intended rate for this light hack (37500's ~17.4fps
+// ran the shuffle/solve ~3x too slow; live rate can't be timed under the XQuartz block).
 // The draw_rubik state machine is ticked at effFps (frame-counted delays 5 and 20
 // are faithful only at the original cadence); spin/drift/turn are interpolated for
 // 60fps smoothness.
@@ -96,7 +97,7 @@ export function start(hostCanvas, opts = {}) {
   const MINSIZE = 2;
   const MAXRAND = 2147483648.0;
   const MAX_TICKS = 8;
-  const OVERHEAD = 37500;   // us; GL family shared overhead (see header)
+  const OVERHEAD = 0;       // us; effFps = 1e6/delay = 50fps at delay 20000 (see header)
 
   // beveled-cube dimensions (rubik.c)
   const CUBELEN = 0.50, CUBEROUND = CUBELEN - 0.05;                 // 0.45
