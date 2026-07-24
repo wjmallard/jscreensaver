@@ -1,0 +1,64 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.1/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!vendor",
+      "!xscreensaver-6.15",
+      "!docs",
+      "!hacks/shelved",
+      "!catalog.json",
+      "!package-lock.json"
+    ]
+  },
+  // The hacks hand-mirror their .c sources' layout; no machine formatting.
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        // String concat and Math.pow() read straight across to the C originals.
+        "useTemplate": "off",
+        "useExponentiationOperator": "off"
+      },
+      "suspicious": {
+        // while ((x = next())) is used idiomatically, in ported and host code alike.
+        "noAssignInExpressions": "off"
+      }
+    }
+  },
+  "assist": {
+    "enabled": false
+  },
+  "overrides": [
+    {
+      // Faithful C transcription trips these; they stay armed outside hacks/.
+      // precision-loss: C double tables (morph3d); approx-constant: the C's own
+      // 3.14159 literals; self-compare: rnd()===rnd() chance rolls (wormhole);
+      // misrefactored-assign: boundary-clamp arithmetic (rubik); shadowing: C
+      // tables named after globals (lisa's Function[]).
+      "includes": ["hacks/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noPrecisionLoss": "off"
+          },
+          "suspicious": {
+            "noApproximativeNumericConstant": "off",
+            "noSelfCompare": "off",
+            "noMisrefactoredShorthandAssign": "off",
+            "noShadowRestrictedNames": "off"
+          }
+        }
+      }
+    }
+  ]
+}

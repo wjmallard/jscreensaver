@@ -1,5 +1,5 @@
-push.sh
 docs/
 node_modules/
+scratch/
 xscreensaver-*
 .DS_Store

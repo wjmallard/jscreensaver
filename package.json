@@ -1,0 +1,12 @@
+{
+  "name": "jscreensaver",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dev tooling for jscreensaver (Biome, lint only). The site itself is buildless; these are dev-time-only tools and never ship.",
+  "scripts": {
+    "lint": "biome lint ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.1"
+  }
+}
