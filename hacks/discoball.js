@@ -312,7 +312,7 @@ export function start(hostCanvas, opts = {}) {
             if (angle < dropsy) { skip = true; break; }   // drop near the dent apex
             pX *= s; pY *= s; pZ *= s;
             // normalize(direction), then bend the normal away from the dent.
-            let dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            const dl = Math.sqrt(dx * dx + dy * dy + dz * dz);
             let ux = 0, uy = 0, uz = 0;
             if (dl >= 0.0000001) { ux = dx / dl; uy = dy / dl; uz = dz / dl; }
             const n2x = nX - ux, n2y = nY - uy, n2z = nZ - uz;

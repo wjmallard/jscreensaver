@@ -274,7 +274,7 @@ export function start(canvas) {
     // points per pass = functions^(detail-1); guard the budget so a high
     // "Detail" on a small machine can't lock the tab (the C trusts the user).
     let count = Math.pow(lensnum, length - 1);
-    if (!isFinite(count) || count < 1) count = 1;
+    if (!Number.isFinite(count) || count < 1) count = 1;
     count = Math.min(count, 4000000);
 
     for (let i = 0; i < lensnum; i++) {

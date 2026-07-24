@@ -107,8 +107,8 @@ export function start(canvas) {
   // hsv (h 0-359, s/v 0-1) -> r,g,b 0-255. Stand-in for the C's hsv_to_rgb.
   function fsRollRgb(fs) {
     let h = fs.h % 360; if (h < 0) h += 360;
-    let s = fs.s < 0 ? 0 : fs.s > 1 ? 1 : fs.s;
-    let v = fs.v < 0 ? 0 : fs.v > 1 ? 1 : fs.v;
+    const s = fs.s < 0 ? 0 : fs.s > 1 ? 1 : fs.s;
+    const v = fs.v < 0 ? 0 : fs.v > 1 ? 1 : fs.v;
     let r, g, b;
     if (s === 0) {
       r = g = b = v;

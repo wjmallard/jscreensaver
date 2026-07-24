@@ -162,7 +162,7 @@ export function start(canvas) {
   function initmode(mode) {
     const VARIATION_LEN = 14;
 
-    let mv = halfrandom(VARIATION_LEN);
+    const mv = halfrandom(VARIATION_LEN);
     // Re-weight to 0,0,1,1,2,2,3,4,4,5,5,6,6,6 (favours the cheaper variations).
     majorVariation = ((mv >= (VARIATION_LEN >> 1)) && (mv < VARIATION_LEN - 1))
       ? (mv + 1) >> 1
@@ -247,7 +247,7 @@ export function start(canvas) {
   // the C's divergence guard (reset the point + re-fuse if it blows up).
   function iter() {
     const i = frandom(nxforms);
-    let nc = i ? (c + 1.0) / 2.0 : c / 2.0;
+    const nc = i ? (c + 1.0) / 2.0 : c / 2.0;
 
     let nx = f[IDX(0, 0, i)] * x + f[IDX(0, 1, i)] * y + f[IDX(0, 2, i)];
     let ny = f[IDX(1, 0, i)] * x + f[IDX(1, 1, i)] * y + f[IDX(1, 2, i)];

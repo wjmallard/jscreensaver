@@ -135,7 +135,7 @@ export function start(canvas) {
         x[mp] = x[0]; y[mp] = y[0];
       });
       // lissajous 3:1 (both axes use ry)
-      add((x, y, mx, my, mp, rx, ry) => {
+      add((x, y, mx, my, mp, _rx, ry) => {
         for (let q = 0; q < numPoints; q++) {
           x[q] = mx / 2 + ry * Math.sin(3 * TWO_PI * q / mp);
           y[q] = my / 2 + ry * Math.cos(1 * TWO_PI * q / mp);
@@ -143,7 +143,7 @@ export function start(canvas) {
         x[mp] = x[0]; y[mp] = y[0];
       });
       // 30-lobe flower
-      add((x, y, mx, my, mp, rx, ry) => {
+      add((x, y, mx, my, mp, _rx, ry) => {
         for (let q = 0; q < numPoints; q++) {
           const r = ry * (0.8 - 0.2 * Math.sin(30 * TWO_PI * q / mp));
           x[q] = mx / 2 + r * Math.sin(TWO_PI * q / mp);
@@ -152,7 +152,7 @@ export function start(canvas) {
         x[mp] = x[0]; y[mp] = y[0];
       });
       // circle
-      add((x, y, mx, my, mp, rx, ry) => {
+      add((x, y, mx, my, mp, _rx, ry) => {
         for (let q = 0; q < numPoints; q++) {
           x[q] = mx / 2 + ry * Math.sin(TWO_PI * q / mp);
           y[q] = my / 2 + ry * Math.cos(TWO_PI * q / mp);
@@ -193,14 +193,14 @@ export function start(canvas) {
         }
       });
       // spiral, one endpoint at bottom
-      add((x, y, mx, my, mp, rx, ry) => {
+      add((x, y, mx, my, mp, _rx, ry) => {
         for (let q = 0; q < numPoints; q++) {
           x[q] = mx / 2 + ry * Math.sin(5 * TWO_PI * q / mp) * (q / mp);
           y[q] = my / 2 + ry * Math.cos(5 * TWO_PI * q / mp) * (q / mp);
         }
       });
       // spiral, one endpoint at top
-      add((x, y, mx, my, mp, rx, ry) => {
+      add((x, y, mx, my, mp, _rx, ry) => {
         for (let q = 0; q < numPoints; q++) {
           x[q] = mx / 2 + ry * Math.sin(6 * TWO_PI * q / mp) * (q / mp);
           y[q] = my / 2 - ry * Math.cos(6 * TWO_PI * q / mp) * (q / mp);

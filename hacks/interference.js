@@ -294,7 +294,7 @@ export function start(canvas) {
         const py = j * g + (g >> 1);
         const dy = py - sy;
         const px0 = g >> 1;
-        let dx = px0 - sx;
+        const dx = px0 - sx;
         let dist0 = dx * dx + dy * dy;       // squared distance at column 0
         const ddist = -2 * g * sx;           // C's per-step bias term
         let px2g = g2;                        // C's px2g = g2, then += g2 each col

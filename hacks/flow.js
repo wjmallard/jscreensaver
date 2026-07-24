@@ -557,7 +557,7 @@ export function start(canvas) {
     M[1][0] = x2 * px - xp * fx; M[1][1] = x2 * py - xp * fy; M[1][2] = x2 * pz - xp * fz;  // (XxP)xX
     M[2][0] = fy * pz - fz * py; M[2][1] = -fx * pz + fz * px; M[2][2] = fx * py - fy * px; // XxP
     for (let r = 0; r < 3; r++) {
-      let a = Math.sqrt(M[r][0] * M[r][0] + M[r][1] * M[r][1] + M[r][2] * M[r][2]);
+      const a = Math.sqrt(M[r][0] * M[r][0] + M[r][1] * M[r][1] + M[r][2] * M[r][2]);
       if (a > 0) { M[r][0] /= a; M[r][1] /= a; M[r][2] /= a; }
     }
     // Pin the wingbee (bee 1) just off bee 0 along the camera "up" axis.

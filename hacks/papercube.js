@@ -250,7 +250,7 @@ export function start(hostCanvas, opts = {}) {
   function updateArrow() {
     const a = angles[5][2];
     // height: NULL/not-inserting => 1; inserting => 2*cos(pi - pi*angle/180).
-    let height = a.inserting ? 2.0 * Math.cos(Math.PI - Math.PI * a.angle / 180) : 1.0;
+    const height = a.inserting ? 2.0 * Math.cos(Math.PI - Math.PI * a.angle / 180) : 1.0;
     let drawArrow, rectH;
     if (height > ARROW_HEIGHT) { drawArrow = true; rectH = ARROW_HEIGHT; }
     else { drawArrow = false; rectH = height; }

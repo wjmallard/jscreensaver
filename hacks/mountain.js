@@ -207,7 +207,7 @@ export function start(canvas) {
     h = new Int32Array(WORLDWIDTH * WORLDWIDTH);   // all zero == flat ground
 
     // Drop `count` tall random peaks at random interior cells.
-    let j = Math.max(1, Math.round(config.count));
+    const j = Math.max(1, Math.round(config.count));
     for (let i = 0; i < j; i++) {
       setH(rangeRand(1, WORLDWIDTH - 1), rangeRand(1, WORLDWIDTH - 1), nrand(maxHeight));
     }

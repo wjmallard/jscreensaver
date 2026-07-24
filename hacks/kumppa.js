@@ -194,8 +194,8 @@ export function start(canvas) {
         chks[k] = 0;
         l = c;
         while (l >= Xrottable[a]) {
-          if (l != Xrottable[a]) Xrotations[l] = Xrotations[l - 1];
-          if (k > Xrotations[l] || l == Xrottable[a]) {
+          if (l !== Xrottable[a]) Xrotations[l] = Xrotations[l - 1];
+          if (k > Xrotations[l] || l === Xrottable[a]) {
             Xrotations[l] = k;
             c++;
             l = Xrottable[a];
@@ -248,8 +248,8 @@ export function start(canvas) {
         chks[k] = 0;
         l = c;
         while (l >= Yrottable[a]) {
-          if (l != Yrottable[a]) Yrotations[l] = Yrotations[l - 1];
-          if (k > Yrotations[l] || l == Yrottable[a]) {
+          if (l !== Yrottable[a]) Yrotations[l] = Yrotations[l - 1];
+          if (k > Yrotations[l] || l === Yrottable[a]) {
             Yrotations[l] = k;
             c++;
             l = Yrottable[a];
@@ -322,11 +322,11 @@ export function start(canvas) {
     for (x = 0; x <= rx; x++)
       rotateX[x] = x ? midx - 1 - Xrotations[Xrottable[stateX + 1] - x] : 0;
     for (x = 0; x <= rx; x++)
-      rotateX[x + rx + 1] = (x == rx) ? sizx - 1 : midx + Xrotations[Xrottable[stateX] + x];
+      rotateX[x + rx + 1] = (x === rx) ? sizx - 1 : midx + Xrotations[Xrottable[stateX] + x];
     for (y = 0; y <= ry; y++)
       rotateY[y] = y ? midy - 1 - Yrotations[Yrottable[stateY + 1] - y] : 0;
     for (y = 0; y <= ry; y++)
-      rotateY[y + ry + 1] = (y == ry) ? sizy - 1 : midy + Yrotations[Yrottable[stateY] + y];
+      rotateY[y + ry + 1] = (y === ry) ? sizy - 1 : midy + Yrotations[Yrottable[stateY] + y];
 
     x = (rx > ry) ? rx : ry;
     for (dy = 0; dy < ((x + 1) << 1); dy++)
@@ -345,9 +345,9 @@ export function start(canvas) {
           }
       }
     stateX++;
-    if (stateX == rotsizeX) stateX = 0;
+    if (stateX === rotsizeX) stateX = 0;
     stateY++;
-    if (stateY == rotsizeY) stateY = 0;
+    if (stateY === rotsizeY) stateY = 0;
   }
 
   // cosilines ON: advance the eight oscillators, rebuild the four line

@@ -104,7 +104,7 @@ export function start(canvas) {
     }
 
     const rotMax = rotv * 2;
-    let rota = 0.0004 + frand(0.0002);
+    const rota = 0.0004 + frand(0.0002);
 
     // Occasionally make it smaller (bell curve 0.3..1.0, avg 0.65).
     if (irand(20) === 0) {
@@ -126,7 +126,7 @@ export function start(canvas) {
     const defZoom = irand(skip === 2 ? 3 : 12) === 0;
 
     let maxR = size;
-    let minR = 5 * S;
+    const minR = 5 * S;
     if (maxR <= minR) maxR = minR + 1;  // guard a tiny field
 
     const x = W / 2;

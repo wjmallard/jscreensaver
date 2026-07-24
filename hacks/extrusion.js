@@ -373,7 +373,7 @@ export function start(hostCanvas, opts = {}) {
     };
     // seed Y from up projected perpendicular to the first ring's tangent.
     const upv = up ? norm3(up) : [0, 1, 0];
-    let tn0 = tnAt(0);
+    const tn0 = tnAt(0);
     let y = sub(upv, [tn0[0] * dot(upv, tn0), tn0[1] * dot(upv, tn0), tn0[2] * dot(upv, tn0)]);
     if (Math.hypot(y[0], y[1], y[2]) < 1e-6) {   // up parallel to tangent -> fallback
       y = Math.abs(tn0[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
@@ -442,7 +442,7 @@ export function start(hostCanvas, opts = {}) {
         // this is identity, for taper's scaled rotation it removes the scale.
         const a = xf[0][0], b = xf[0][1], c = xf[1][0], d = xf[1][1];
         if (b !== 0 || c !== 0 || a !== d) {
-          let pnx = d * nx - c * ny, pny = -b * nx + a * ny;
+          const pnx = d * nx - c * ny, pny = -b * nx + a * ny;
           const l = 1.0 / (Math.hypot(pnx, pny) || 1);
           nx = pnx * l; ny = pny * l;
         }

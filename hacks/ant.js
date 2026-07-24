@@ -581,7 +581,7 @@ export function start(canvas) {
     lastFill = '#000';
 
     // All ants start at the centre, facing a random shape-aligned direction.
-    let row = idiv(nrows, 2);
+    const row = idiv(nrows, 2);
     let col = idiv(ncols, 2);
     if (col > 0 && ((neighbors % 2) || neighbors === 12) && lbit()) col--;
     const dir = rnd(neighbors) * ANGLES / neighbors;

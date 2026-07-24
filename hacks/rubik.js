@@ -271,7 +271,7 @@ export function start(hostCanvas, opts = {}) {
       position = j * row + i;
       ({ row, col } = faceSizes(face));
     }
-    let i = position % row, j = Math.floor(position / row);
+    const i = position % row, j = Math.floor(position / row);
     let h = (direction === TOP || direction === BOTTOM) ? i : j;
     let sizeOnAxis, sizeOnOppAxis;
     if (direction === TOP || direction === BOTTOM) { sizeOnAxis = col; sizeOnOppAxis = row; }

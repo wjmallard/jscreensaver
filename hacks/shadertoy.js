@@ -210,7 +210,7 @@ export function startShadertoy(hostCanvas, { source, passes, config, params, nam
   const internalFormat = floatExt ? gl.RGBA16F : gl.RGBA8;
   const texType = floatExt ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
 
-  const buffers = passList.map((p, i) =>
+  const buffers = passList.map((_, i) =>
     needsFbo[i]
       ? { fbo: gl.createFramebuffer(), textures: [], needsPrev: needsPrev[i], cur: 0 }
       : null,

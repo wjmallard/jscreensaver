@@ -343,8 +343,8 @@ export function start(canvas) {
     // each column, which over-amplifies the bloom into a white-hot flare. The
     // CSS-res image is then drawImage-upscaled to the device canvas (the same
     // softness the live binary has when the OS scales its window to a hidpi display).
-    let lw = Math.max(2, Math.round(W / S));
-    let lh = Math.max(2, Math.round(H / S));
+    const lw = Math.max(2, Math.round(W / S));
+    const lh = Math.max(2, Math.round(H / S));
     let fw = lw >> 1;
     let fh = lh >> 1;
     if (fw * fh > MAX_CELLS) {

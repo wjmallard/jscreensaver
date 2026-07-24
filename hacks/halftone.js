@@ -219,10 +219,10 @@ export function start(canvas) {
 
     // Sanitize the speed/mass ranges the way the C does (clamp negatives, and
     // raise max to min if a max slider was dragged below its min).
-    let minSpeed = config.minSpeed < 0 ? 0 : config.minSpeed;
+    const minSpeed = config.minSpeed < 0 ? 0 : config.minSpeed;
     let maxSpeed = config.maxSpeed < 0 ? 0 : config.maxSpeed;
     if (maxSpeed < minSpeed) maxSpeed = minSpeed;
-    let minMass = config.minMass < 0 ? 0 : config.minMass;
+    const minMass = config.minMass < 0 ? 0 : config.minMass;
     let maxMass = config.maxMass < 0 ? 0 : config.maxMass;
     if (maxMass < minMass) maxMass = minMass;
 

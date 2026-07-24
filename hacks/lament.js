@@ -1071,7 +1071,7 @@ export function start(hostCanvas, opts = {}) {
 
     const dt = Math.min(frame / 1000, 0.25);
     const effFps = 1e6 / (config.delay + OVERHEAD);
-    let frames = dt * effFps;
+    const frames = dt * effFps;
 
     // discrete per-original-frame ticks (rotator + animate), catch-up capped.
     animAccum += frames;

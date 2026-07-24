@@ -272,7 +272,7 @@ export function start(hostCanvas, opts = {}) {
     const T = new Array(N + 1);
     for (let i = 0; i <= N; i++) {
       const a = P[ix(i + 1)], b = P[ix(i - 1)];
-      let tx = a.x - b.x, ty = a.y - b.y, tz = a.z - b.z;
+      const tx = a.x - b.x, ty = a.y - b.y, tz = a.z - b.z;
       const L = Math.hypot(tx, ty, tz) || 1;
       T[i] = { x: tx / L, y: ty / L, z: tz / L };
     }
@@ -284,7 +284,7 @@ export function start(hostCanvas, opts = {}) {
     {
       const t = T[0], u = pickUp(t);
       const d = u.x * t.x + u.y * t.y + u.z * t.z;
-      let px = u.x - d * t.x, py = u.y - d * t.y, pz = u.z - d * t.z;
+      const px = u.x - d * t.x, py = u.y - d * t.y, pz = u.z - d * t.z;
       const L = Math.hypot(px, py, pz) || 1;
       cur = { x: px / L, y: py / L, z: pz / L };
     }

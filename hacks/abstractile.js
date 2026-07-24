@@ -128,7 +128,7 @@ export function start(canvas) {
   let ncolors = 1, shades = 1;
   let colors = ['#000'];
   let cmap = 0, emap = 0, dmap = 0, dvar = 0, evar = 0, ddir = 1, edir = 1, layers = 2;
-  let rco = new Int32Array(MAXCOLORS);
+  const rco = new Int32Array(MAXCOLORS);
   let d3d = D3D_NONE, round = 0, outline = 0;
 
   // per-layer arrays (several persist across screens via += rotation, as in the C)

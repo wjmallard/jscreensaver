@@ -48,6 +48,11 @@
       "includes": ["hacks/**"],
       "linter": {
         "rules": {
+          "complexity": {
+            // Explicit case labels mirror the C's enum dispatch (xrayswarm's
+            // COLOR_TRAILS) or double as type documentation (celtic's 'grid').
+            "noUselessSwitchCase": "off"
+          },
           "correctness": {
             "noPrecisionLoss": "off"
           },

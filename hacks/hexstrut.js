@@ -123,7 +123,7 @@ export function start(hostCanvas, opts = {}) {
 
   // 64-entry smooth colormap, brightened (used raw -- colour management off), as a per-index LUT.
   const _c = new THREE.Color();
-  let lut = new Float32Array(NCOLORS * 3);
+  const lut = new Float32Array(NCOLORS * 3);
   function rebuildLut() {
     const cm = makeSmoothColormap(rng, NCOLORS);
     for (let i = 0; i < NCOLORS; i++) {

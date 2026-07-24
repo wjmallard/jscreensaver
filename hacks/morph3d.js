@@ -285,8 +285,8 @@ function pentagonFace(Edge, Amp, Div, Z, out) {
         pushVert(strip, vX, vY, vZ, F1 * Xa - vX, F1 * Yf - vY, F1 * Zf - vZ, F2 * Xf - vX, F2 * Yb - vY, F2 * Zf - vZ);
         Factor = Fa;
       }
-      let Xf = Ri * x[Fi + 1], Yf = Ri * y[Fi + 1];
-      let Xa = Xf + 0.001, Yb = Yf + 0.001;
+      const Xf = Ri * x[Fi + 1], Yf = Ri * y[Fi + 1];
+      const Xa = Xf + 0.001, Yb = Yf + 0.001;
       const Xf2 = Xf * Xf, Yf2 = Yf * Yf;
       const Fa = 1 - ((Xf2 + Yf2) * AmpVr2);
       const F1 = 1 - ((Xa * Xa + Yf2) * AmpVr2);

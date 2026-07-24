@@ -638,7 +638,7 @@ export function start(canvas) {
     if (nGood <= 0) { done = true; return; }
 
     // Pick the (nrand(nGood))-th still-good candidate.
-    let pick = nrand(nGood);
+    const pick = nrand(nGood);
     let j = 0;
     for (let i = 0; i <= pick; i++, j++) {
       while (noGood[j]) j++;
@@ -690,7 +690,7 @@ export function start(canvas) {
     }
 
     // Edge length: size in logical px, retina-scaled, clamped MINSIZE..min/2.
-    let size = config.size * S;
+    const size = config.size * S;
     lineWidth = Math.max(1, Math.round(S));
     const minSizeS = MINSIZE * S;
     const halfMin = Math.max(minSizeS, Math.min(width, height) / 2);
@@ -779,7 +779,7 @@ export function start(canvas) {
       if (addForcedTile(chosen)) failures = 0; else failures++;
     } else {
       // No forced vertices: add a random tile to a random visible fringe node.
-      let n = nrand(fringeN);
+      const n = nrand(fringeN);
       let fp = fringeNode;
       for (let i = 0; i <= n; i++) {
         do { fp = fp.next; } while (fp.offScreen);

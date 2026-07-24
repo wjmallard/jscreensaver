@@ -310,7 +310,7 @@ export function start(canvas) {
       pending.push({ kind: 'line', x1: geo.x1, y1: geo.y1, x2: geo.x2, y2: geo.y2, ci, label: null, caption: null });
       return;
     }
-    if (!isFinite(geo.cx) || !isFinite(geo.cy) || !isFinite(geo.r) || geo.r <= 0) return;
+    if (!Number.isFinite(geo.cx) || !Number.isFinite(geo.cy) || !Number.isFinite(geo.r) || geo.r <= 0) return;
 
     const outerRing = c.e < 0.0;
 

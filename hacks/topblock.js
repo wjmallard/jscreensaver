@@ -176,9 +176,9 @@ export function start(hostCanvas, opts = {}) {
           e[2] * px + e[6] * py + e[10] * pz + e[14],
         );
         const nx0 = N[k][0], ny0 = N[k][1], nz0 = N[k][2];
-        let nx = n[0] * nx0 + n[3] * ny0 + n[6] * nz0;
-        let ny = n[1] * nx0 + n[4] * ny0 + n[7] * nz0;
-        let nz = n[2] * nx0 + n[5] * ny0 + n[8] * nz0;
+        const nx = n[0] * nx0 + n[3] * ny0 + n[6] * nz0;
+        const ny = n[1] * nx0 + n[4] * ny0 + n[7] * nz0;
+        const nz = n[2] * nx0 + n[5] * ny0 + n[8] * nz0;
         const L = Math.hypot(nx, ny, nz) || 1;
         nrm.push(nx / L, ny / L, nz / L);
       }

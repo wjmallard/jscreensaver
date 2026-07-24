@@ -75,7 +75,7 @@ export function buildTeapot(grid = 12) {
         if (fn) return fn;
         const ex = b.p[0] - a.p[0], ey = b.p[1] - a.p[1], ez = b.p[2] - a.p[2];
         const fx = c.p[0] - a.p[0], fy = c.p[1] - a.p[1], fz = c.p[2] - a.p[2];
-        let gx = ey * fz - ez * fy, gy = ez * fx - ex * fz, gz = ex * fy - ey * fx;
+        const gx = ey * fz - ez * fy, gy = ez * fx - ex * fz, gz = ex * fy - ey * fx;
         const l = Math.hypot(gx, gy, gz) || 1;
         return (fn = [gx / l, gy / l, gz / l]);
       };

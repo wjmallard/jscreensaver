@@ -307,7 +307,7 @@ export function start(hostCanvas, opts = {}) {
   //  simulation state
   // ===================================================================
   let cubeColors = [];        // NCOLORS THREE.Color (smooth colormap, used raw -- CM off)
-  let texPal = new Uint8Array(NCOLORS * 3);   // texture_colors as 8-bit RGB
+  const texPal = new Uint8Array(NCOLORS * 3);   // texture_colors as 8-bit RGB
   let heights = new Int32Array(1);            // init_wave heights[] (size waveRadius+1)
   let curRadius = -1;                         // last radius heights[] was built for
 

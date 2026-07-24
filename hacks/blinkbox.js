@@ -407,8 +407,8 @@ export function start(hostCanvas, opts = {}) {
       window.removeEventListener('resize', syncSize);
       ballGeo.dispose();
       tileGeo.dispose();
-      ghosts.forEach((g) => g.material.dispose());
-      sides.forEach((s) => s.mat.dispose());
+      ghosts.forEach((g) => { g.material.dispose(); });
+      sides.forEach((s) => { s.mat.dispose(); });
       renderer.dispose();
       renderer.forceContextLoss?.();
       canvas.remove();

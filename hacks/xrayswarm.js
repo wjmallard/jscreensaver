@@ -419,7 +419,7 @@ export function start(canvas) {
     for (let j = 0; j < 5; j++) {
       checkIndex = (checkIndex + 1) % nbugs;
       const b = bugs[checkIndex];
-      let c = targets[b.closest];
+      const c = targets[b.closest];
       let ax = c.pos[0] - b.pos[0];
       let ay = c.pos[1] - b.pos[1];
       let temp = ax * ax + ay * ay;

@@ -147,7 +147,7 @@ export function start(canvas) {
   // black->blue->red->yellow->white as heat rises. The base channel step is
   // 65535/iColorCount; we pack straight into ABGR (no X colormap allocation).
   function buildPalette() {
-    let n = Math.max(16, Math.min(256, Math.round(config.ncolors)));
+    const n = Math.max(16, Math.min(256, Math.round(config.ncolors)));
     iColorCount = n;
     palette = new Uint32Array(n);
 

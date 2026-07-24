@@ -179,7 +179,7 @@ export function start(hostCanvas, opts = {}) {
   const _n = new THREE.Vector3();
 
   function makeBuilder(win) {
-    let mtx = new THREE.Matrix4();
+    const mtx = new THREE.Matrix4();
     const stack = [];
     let cur = null;
     const buckets = [];

@@ -116,8 +116,8 @@ export function start(canvas) {
       return;
     }
 
-    let dx = x2 - x1;
-    let dy = y2 - y1;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
 
     if (Math.abs(dx) > Math.abs(dy)) {
       if (x2 < x1) { let t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
