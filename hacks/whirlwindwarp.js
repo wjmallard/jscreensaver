@@ -60,7 +60,6 @@ export function start(canvas) {
   // pace knob, not a fidelity item.
   const DELAY_US = 10000;
 
-  let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
   let starsize;         // square side in device px (scrhei/480, min 1)
 
@@ -313,7 +312,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 

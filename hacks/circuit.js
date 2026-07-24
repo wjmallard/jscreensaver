@@ -352,7 +352,7 @@ export function start(hostCanvas, opts = {}) {
   //  per-component builders (New* value pick + Draw* geometry, merged)
   // ===================================================================
 
-  function buildResistor(B, norm) {
+  function buildResistor(B) {
     // NewResistor: value/multiplier/tolerance -> 4 band colour indices.
     const v = RAND(9), m = RAND(5), t = (RAND(10) < 5) ? 10 : 11;
     const b = [VALUES[v][0], VALUES[v][1], m, t];
@@ -703,7 +703,7 @@ export function start(hostCanvas, opts = {}) {
     const url = new URL('./fonts/luximr.ttf', import.meta.url).href;
     const face = new FontFace(FONT_FAMILY, 'url(' + url + ')');
     face.load().then((f) => { document.fonts.add(f); fontReady = true; }).catch(() => {});
-  } catch (e) { /* fall back to platform monospace */ }
+  } catch { /* fall back to platform monospace */ }
 
   function makeDecalMesh(text, w, h) {
     const lines = String(text).split('\n');

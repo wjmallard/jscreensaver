@@ -64,7 +64,7 @@ export function start(canvas) {
   const BLACK = 0xFF000000;
   const HALF_PI = Math.PI / 2;
 
-  let W, H, S;                 // canvas size (device px) and devicePixelRatio
+  let W, H;                    // canvas size (device px)
   let imageData, pixels;       // persistent Uint32 accumulation buffer
   let board;                   // Uint8 per-pixel "drawn this frame?" dedupe map
   let palette;                 // ncolors packed-ABGR palette values
@@ -302,7 +302,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     width8 = W << 8;

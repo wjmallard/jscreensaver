@@ -68,7 +68,7 @@ export function start(canvas) {
   const MAXKINDS = 10;    // number of nonlinear variations (C: MAXKINDS)
   const BLACK = 0xFF000000;
 
-  let W, H, S;            // canvas size (device px) and devicePixelRatio
+  let W, H;               // canvas size (device px)
   let imageData, pixels;  // persistent Uint32 image buffer (overwrite / GXcopy)
   let palette;            // ncolors packed-ABGR smooth-colormap values
 
@@ -301,7 +301,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 

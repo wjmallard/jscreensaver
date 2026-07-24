@@ -101,7 +101,7 @@ export function start(canvas) {
   ];
 
   // --- State ----------------------------------------------------------------
-  let W, H, S;            // canvas size (device px) and devicePixelRatio
+  let W, H;               // canvas size (device px)
   let lineWidth;          // stroke width (1, or 3 on retina) -- matches flow.c
 
   let bees;               // [{ tail: [{x,y,z} * taillen] }]; tail[0] is the head
@@ -113,7 +113,7 @@ export function start(canvas) {
   const range = { x: 0, y: 0, z: 0 };   // initial-condition spread
 
   const par = makeVecArray(N_PARS);     // active ODE parameters
-  let size, stepSize, lyap;             // bounding-box extent, RK2 step, Lyapunov
+  let size, stepSize;                   // bounding-box extent, RK2 step
   const mid = { x: 0, y: 0, z: 0 };     // bounding-box centre
 
   // Parallel "discover" search state (alternate variable set).
@@ -335,7 +335,6 @@ export function start(canvas) {
   // Mirrors init_flow(); does NOT touch the canvas (render() repaints), so a
   // mid-run re-seed shows the old frame once before the new flow takes over.
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     lineWidth = (W > 2560 || H > 2560) ? 3 : 1;   // flow.c's retina rule
@@ -360,7 +359,6 @@ export function start(canvas) {
     chaseto = rotatep ? ORBIT : BEE;
     chasetime = 1;
 
-    lyap = 0;
     yperiod = 0;
     searchStepSize = INITIALSTEP;
     zeroPar(par2);
@@ -429,7 +427,6 @@ export function start(canvas) {
 
     // Frame the attractor (bounding box + step size), then install par2 -> par.
     discover();
-    lyap = lyap2;
     size = size2;
     mid.x = mid2.x; mid.y = mid2.y; mid.z = mid2.z;
     stepSize = searchStepSize;
@@ -512,7 +509,6 @@ export function start(canvas) {
       } else if (count2 > 1000000) {
         // A keeper. Install it and re-seed the bees onto it.
         count2 = 0;
-        lyap = lyap2;
         size = size2;
         mid.x = mid2.x; mid.y = mid2.y; mid.z = mid2.z;
         stepSize = searchStepSize;

@@ -412,21 +412,21 @@ export function start(hostCanvas, opts = {}) {
     while (true) {   // labeled AGAIN loop (growth-zone reset)
       if (++guard > 100) return;   // doomed
       let g = null;
-      let triedCoax = false, coaxialP = false;
+      let triedCoax = false;
 
       if (parent && parent.rpm > config.maxRpm) parent = null;   // ludicrous speed -> unhook
       if (pp.current_blur_length >= 10) parent = null;           // blurpocalypse -> bail
 
       if (parent && !parent.coax_p && RND(40) === 0) {   // sometimes try coaxial
-        triedCoax = true; coaxialP = true;
+        triedCoax = true;
         g = placeNewGear(parent, true);
       }
-      if (!g) { coaxialP = false; g = placeNewGear(parent, false); }   // regular
+      if (!g) { g = placeNewGear(parent, false); }   // regular
       if (!g && !triedCoax && parent && !parent.coax_p) {              // coaxial fallback
-        triedCoax = true; coaxialP = true;
+        triedCoax = true;
         g = placeNewGear(parent, true);
       }
-      if (!g) { coaxialP = false; parent = null; g = placeNewGear(null, false); }   // dead end -> new train
+      if (!g) { parent = null; g = placeNewGear(null, false); }   // dead end -> new train
 
       if (!g) {
         // Backed into a corner: wipe gears still in the growth zone, retry.

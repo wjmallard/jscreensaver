@@ -116,7 +116,6 @@ export function start(canvas) {
   const newcols = true;
 
   // ---- state ----
-  let S = 1;                                              // devicePixelRatio
   let cw = 0, ch = 0;                                     // canvas size, device px
   let dialog = 0;                                         // 1 on small windows
   let ii = 0, mode = MODE_CREATE, bi = 1;
@@ -1105,7 +1104,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     cw = canvas.width;
     ch = canvas.height;
     dialog = (cw < 500) ? 1 : 0;

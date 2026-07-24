@@ -86,7 +86,6 @@ export function start(canvas) {
   const blueSIndex = new Int32Array(MAX_TRAIL_LEN);
   const randomIndex = new Int32Array(MAX_TRAIL_LEN);
 
-  let S = 1;            // devicePixelRatio
   let W, H;             // canvas size, device px
   let lw;               // line width, device px
   let maxx, maxy;       // realspace extent (maxx=1, maxy=H/W)
@@ -579,7 +578,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     maxx = 1.0;

@@ -71,7 +71,6 @@ export const info = {
 };
 
 export function start(hostCanvas, opts = {}) {
-  const DEG = Math.PI / 180;
   const OVERHEAD = 0;   // us; delay-limited pace (measured 2026-07-01; render negligible on real HW; was 37500)
   const NCOLORS = 64;                 // bp->ncolors
   const LENGTH = Math.sqrt(3) / 3;    // draw_triangles: leg length factor

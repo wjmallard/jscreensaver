@@ -74,7 +74,7 @@ function ensureFont(fontUrl, baseFamily) {
       document.fonts.add(f);
       return family;
     }).catch(() => null);
-  } catch (e) {
+  } catch {
     ready = Promise.resolve(null);
   }
   const rec = { family, ready };
@@ -142,7 +142,7 @@ export function makeHudLabel(parentEl, opts = {}) {
         const m = resolved.match(/[\d.]+/g);
         if (m) { r = +m[0]; g = +m[1]; b = +m[2]; }
       }
-    } catch (e) { /* keep defaults */ }
+    } catch { /* keep defaults */ }
     const luma = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255;
     return luma > 0.4 ? '#000000' : '#ffffff';
   }

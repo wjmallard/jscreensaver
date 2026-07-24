@@ -59,7 +59,6 @@ export function start(canvas) {
   // in a handful of tries, but cap it so a pathological config can never hang.
   const MAX_TRIES = 200;
 
-  let S = 1;                 // devicePixelRatio
   let W, H;                  // canvas size, device px
   let hWidth, hHeight;       // half extents (figure centre + radius)
 
@@ -237,7 +236,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     hWidth = W / 2;

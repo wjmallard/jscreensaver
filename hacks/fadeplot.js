@@ -49,7 +49,6 @@ export function start(canvas) {
     { key: 'ncolors', label: 'Colors', type: 'range', min: 1, max: 255, step: 1, default: 64, lowLabel: 'two', highLabel: 'many', live: false },
   ];
 
-  let S = 1;          // devicePixelRatio
   let W, H;           // canvas size, device px
   let palette;        // ncolors uniform-colormap CSS strings (full hue ramp)
 
@@ -101,7 +100,6 @@ export function start(canvas) {
 
   // Seed all state (the C's init_fadeplot). Clears to black.
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
 

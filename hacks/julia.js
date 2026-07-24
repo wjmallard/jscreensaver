@@ -60,7 +60,7 @@ export function start(canvas) {
   // 10000 = 7606. See julia.md "Timing" and [[framerate-calibration]].
   const OVERHEAD = 7606;
 
-  let W, H, S;             // canvas size (device px) and devicePixelRatio
+  let W, H;                // canvas size (device px)
   let centerx, centery;    // screen centre (W/2, H/2)
   let depth, numpoints;    // tree depth and 2^(depth+1)-1 points per frame
   let nbuffers;            // ring length = cycles + 1
@@ -181,7 +181,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     centerx = (W / 2) | 0;

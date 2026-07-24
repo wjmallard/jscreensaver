@@ -68,7 +68,7 @@ export function start(canvas) {
   const NSTEPS = 7;
   const COUNT = 1 << NSTEPS;   // 128
 
-  let W, H, S;                 // canvas size (device px) and devicePixelRatio
+  let W, H;                    // canvas size (device px)
   let imageData, displayBuf;   // persistent display buffer (Uint32 view) + ImageData
   let cell;                    // height/colour-index field (Uint16), xmax*ymax
   let palette;                 // ncolors packed-ABGR colour-map values
@@ -225,7 +225,6 @@ export function start(canvas) {
   }
 
   function init() {
-    S = window.devicePixelRatio || 1;
     W = canvas.width;
     H = canvas.height;
     imageData = ctx.createImageData(W, H);

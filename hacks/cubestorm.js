@@ -136,7 +136,7 @@ export function start(hostCanvas, opts = {}) {
     M.multiply(Rx(180)); faceMats.push(M.clone());  // Rx(180) draw_face
 
     const pos = [], nrm = [];
-    const vtmp = new THREE.Vector3(), ntmp = new THREE.Vector3();
+    const ntmp = new THREE.Vector3();
     const emitQuad = (mat, quad) => {
       ntmp.set(quad.n[0], quad.n[1], quad.n[2]).transformDirection(mat);
       const vs = quad.v.map(([x, y, z]) => new THREE.Vector3(x, y, z).applyMatrix4(mat));

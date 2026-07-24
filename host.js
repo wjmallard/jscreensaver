@@ -707,7 +707,7 @@ function maybeShowHint() {
   try {
     if (localStorage.getItem('jscr-hinted')) return;
     localStorage.setItem('jscr-hinted', '1');
-  } catch (e) { return; }                                   // private mode: just skip it
+  } catch { return; }                                       // private mode: just skip it
   hint.hidden = false;
   void hint.offsetWidth;
   hint.classList.add('show');

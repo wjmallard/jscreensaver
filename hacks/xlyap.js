@@ -137,7 +137,6 @@ export function start(canvas) {
   let scratch, sctx;                   // offscreen grid canvas, upscaled to main
   let palette;                          // Uint32 smooth colormap, MAXCOLOR entries
 
-  let preset;                           // the active preset object
   let forcing;                          // active forcing sequence as 0/1 array
   let maxindex;                         // forcing.length
   let settle, dwell;                    // per-preset iteration counts
@@ -240,7 +239,6 @@ export function start(canvas) {
   // parameter window onto the grid, rebuild the colormap (init_color cadence),
   // then reset the progressive build to row 0.
   function applyPreset(p) {
-    preset = p;
     forcing = [...p.forcing].map((c) => (c === 'b' ? 1 : 0));
     maxindex = forcing.length;
     settle = p.settle;
