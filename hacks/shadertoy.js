@@ -163,13 +163,10 @@ export function startShadertoy(hostCanvas, { source, passes, config, params, nam
   });
 
   if (!gl) {
-    // No WebGL2 (very unlikely in 2026): fail soft so the host doesn't throw.
-    console.error(`${name}: WebGL2 is required but unavailable in this browser.`);
-    return {
-      stop() { canvas.remove(); },
-      config,
-      params,
-    };
+    // No WebGL2 (disabled, or wedged after browser GPU crashes): throw so the
+    // host paints its visible load-error message instead of a silent black.
+    canvas.remove();
+    throw new Error(`${name}: WebGL2 unavailable`);
   }
 
   // Normalize to a pass list. A bare { source } is one pass straight to screen;

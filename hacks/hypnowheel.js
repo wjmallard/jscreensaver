@@ -137,8 +137,8 @@ export function start(canvas) {
 
   const gl = cv.getContext('webgl2', { alpha: false, antialias: false, depth: false, powerPreference: 'high-performance' });
   if (!gl) {
-    console.error('hypnowheel: WebGL2 unavailable.');
-    return { stop() { cv.remove(); }, config, params };
+    cv.remove();
+    throw new Error('hypnowheel: WebGL2 unavailable');
   }
 
   const prog = gl.createProgram();

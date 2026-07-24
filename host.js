@@ -206,6 +206,10 @@ function showLoadError(name, err) {
   console.error(`jscreensaver: failed to load hack "${name}":`, err);
   cancelFade();
   handle = null; currentModule = null;
+  // A start() that threw mid-setup (e.g. no WebGL) can strand its opaque GL
+  // overlay canvas above the host canvas, hiding this message. Nothing is
+  // running now, so every canvas but the host's own is an orphan.
+  document.querySelectorAll('canvas').forEach((c) => { if (c !== canvas) c.remove(); });
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
   const ctx = canvas.getContext('2d');
@@ -216,6 +220,13 @@ function showLoadError(name, err) {
   ctx.font = '14px ui-monospace, Menlo, monospace';
   ctx.textAlign = 'center';
   ctx.fillText(`could not load "${name}"`, canvas.width / 2, canvas.height / 2);
+  // Both the GL harnesses' thrown errors and three.js's own context-creation
+  // error mention "WebGL" -- browsers disable it session-wide after GPU crashes,
+  // and a restart fixes it, so say so instead of leaving a mystery.
+  if (/webgl/i.test((err && err.message) || '')) {
+    ctx.fillStyle = '#3f9a5e';
+    ctx.fillText('WebGL unavailable \u2014 try restarting your browser', canvas.width / 2, canvas.height / 2 + 22);
+  }
 }
 
 // View-mode left/right cycle within the genre the current hack was chosen from

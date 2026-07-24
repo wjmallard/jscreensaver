@@ -415,8 +415,8 @@ export function startAnalogTV(hostCanvas, opts) {
     powerPreference: 'high-performance', preserveDrawingBuffer: false,
   });
   if (!gl) {
-    console.error(`${name}: WebGL2 required but unavailable.`);
-    return { stop() { canvas.remove(); }, pause() {}, resume() {}, reinit() {}, getStats: () => ({}), config, params };
+    canvas.remove();
+    throw new Error(`${name}: WebGL2 unavailable`);
   }
   gl.getExtension('EXT_color_buffer_float');
   gl.getExtension('OES_texture_float_linear');
