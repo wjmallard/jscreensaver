@@ -1,10 +1,11 @@
 #!/bin/sh
-# jscreensaver pre-push guard.
+# jscreensaver pre-push guard: a fast local preflight of what lint CI checks.
 #
-# Refuses to push when the generated catalog (catalog.json) is stale, or when a
-# hack module it references isn't committed -- an imported-but-untracked module
-# 404s on the deployed site, and its failed lazy import would surface the broken-
-# hack tile (an uncommitted module once blanked the whole page, before lazy load).
+# Refuses to push when Biome lint fails, when the generated catalog
+# (catalog.json) is stale, or when a hack module it references isn't
+# committed -- an imported-but-untracked module 404s on the deployed site, and
+# GitHub Pages deploys the push whether or not CI is green, so this hook is the
+# only gate that runs BEFORE the deploy.
 #
 # Regenerate the catalog after adding/editing a hack or its info:
 #   node tools/build-catalog.mjs
@@ -13,4 +14,10 @@
 #   git config core.hooksPath .githooks
 #
 # Requires node on PATH. Exits non-zero (blocking the push) on any problem.
+set -e
+if [ -x node_modules/.bin/biome ]; then
+  node_modules/.bin/biome lint .
+else
+  echo "pre-push: Biome not installed (npm ci); skipping lint" >&2
+fi
 exec node tools/build-catalog.mjs --check
