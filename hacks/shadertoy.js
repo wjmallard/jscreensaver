@@ -171,7 +171,7 @@ export function startShadertoy(hostCanvas, { source, passes, config, params, nam
 
   // Normalize to a pass list. A bare { source } is one pass straight to screen;
   // this keeps the single-pass path (and its compiled source) identical to v1.
-  const passList = (passes && passes.length) ? passes : [{ name, source }];
+  const passList = (passes?.length) ? passes : [{ name, source }];
   const multipass =
     passList.length > 1 ||
     passList.some((p) => p.channels && Object.keys(p.channels).length > 0);
@@ -384,7 +384,7 @@ export function startShadertoy(hostCanvas, { source, passes, config, params, nam
     }
 
     // This frame's writes become next frame's "prev".
-    for (const b of buffers) if (b && b.needsPrev) b.cur ^= 1;
+    for (const b of buffers) if (b?.needsPrev) b.cur ^= 1;
 
     frame++;
     rafId = requestAnimationFrame(render);

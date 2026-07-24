@@ -941,7 +941,7 @@ export function start(hostCanvas, opts = {}) {
     c.group = group;
     c.disposables = disposables;
     c.led = led;
-    if (led && led.lit) { lightActive = true; litComp = c; }
+    if (led?.lit) { lightActive = true; litComp = c; }
     componentsGroup.add(group);
     return c;
   }

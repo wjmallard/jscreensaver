@@ -17,7 +17,7 @@
     window.__hack = mod.start(c);
     window.__ready = true;
   } catch (e) {
-    window.__error = String(e && e.stack || e);
+    window.__error = String(e?.stack || e);
     document.title = 'ERROR';
     console.error('mount failed:', e);
   }

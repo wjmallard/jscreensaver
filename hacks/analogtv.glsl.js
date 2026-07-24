@@ -439,7 +439,7 @@ export function startAnalogTV(hostCanvas, opts) {
   // An images[] entry is either a URL string (a PNG, loaded once) or { canvas }
   // for a hack-drawn live texture that the harness re-uploads every frame (e.g.
   // xanalogtv's station ID + running clock). uImagesReady waits only on the URLs.
-  const imgCanvas = images.map((x) => (x && x.canvas) ? x.canvas : null);
+  const imgCanvas = images.map((x) => (x?.canvas) ? x.canvas : null);
   let imagesReady = 0, staticImages = 0;
   images.forEach((url, i) => {
     if (imgCanvas[i]) return;
@@ -602,9 +602,9 @@ void main(){
       gl.bindFramebuffer(gl.FRAMEBUFFER, sig2Fbo); gl.viewport(0, 0, ATV_NS, ATV_NL);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sigTex);
       gl.uniform1i(loc(pGhost, 'uSig'), 0);
-      const gf = (frameState && frameState.ghostfir) || [0, 0, 0, 0];
+      const gf = (frameState?.ghostfir) || [0, 0, 0, 0];
       gl.uniform4f(loc(pGhost, 'uGhostFir'), gf[0], gf[1], gf[2], gf[3]);
-      gl.uniform1f(loc(pGhost, 'uHfloss'), (frameState && frameState.hfloss) || 0);
+      gl.uniform1f(loc(pGhost, 'uHfloss'), (frameState?.hfloss) || 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       decSrcTex = sig2Tex;
     }

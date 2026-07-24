@@ -153,7 +153,7 @@ function mount(name) {
   if (!byName[name] || name === currentName) return;
   const entry = byName[name];
   const wasRunning = !!handle;
-  const wasGL = !!(handle && handle.getStats);   // 3D renders to its own overlay (removed on stop), not #c
+  const wasGL = !!(handle?.getStats);   // 3D renders to its own overlay (removed on stop), not #c
   cancelFade();
   if (handle) { handle.stop(); handle = null; currentModule = null; }
   currentName = name;
@@ -223,7 +223,7 @@ function showLoadError(name, err) {
   // Both the GL harnesses' thrown errors and three.js's own context-creation
   // error mention "WebGL" -- browsers disable it session-wide after GPU crashes,
   // and a restart fixes it, so say so instead of leaving a mystery.
-  if (/webgl/i.test((err && err.message) || '')) {
+  if (/webgl/i.test((err?.message) || '')) {
     ctx.fillStyle = '#3f9a5e';
     ctx.fillText('WebGL unavailable \u2014 try restarting your browser', canvas.width / 2, canvas.height / 2 + 22);
   }
@@ -266,7 +266,7 @@ function togglePause() {
 // dim it for hacks that expose no pause handler so it never looks like a dead
 // control. A no-op on desktop, where the bar is hidden.
 function syncPauseBtn() {
-  const canPause = !!(handle && handle.pause);
+  const canPause = !!(handle?.pause);
   barPause.classList.toggle('disabled', !canPause);
   barPause.classList.toggle('is-paused', canPause && paused);
 }
@@ -464,7 +464,7 @@ function openConfig() {
   closeAbout(); closeHelp(); closeInfo(); closeSearch();
   const ttl = document.getElementById('config-title');
   const body = document.getElementById('config-body');
-  if (handle && handle.params) {
+  if (handle?.params) {
     ttl.textContent = currentName;
     renderConfig(body, { config: handle.config, params: handle.params, onReinit: handle.reinit });
   } else {
@@ -642,7 +642,7 @@ function commitSearch() {
 // settings or a faster frame rate (more steps/frame); reads ~0 when idle.
 let fpsRaf = 0, fpsSamples = [], fpsLast = 0;
 function fpsLoop(now) {
-  if (handle && handle.getStats) {            // 3D: shadertoy harness telemetry
+  if (handle?.getStats) {            // 3D: shadertoy harness telemetry
     const s = handle.getStats();
     fps.textContent = `res ${s.scale.toFixed(2)}\u00D7   ${s.ms.toFixed(1)} ms   ${s.w}\u00D7${s.h}`;
     fpsRaf = requestAnimationFrame(fpsLoop);
@@ -784,7 +784,7 @@ canvas.addEventListener('pointerdown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.defaultPrevented) return;
-  if (e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (e.target.closest?.('input, select, textarea')) return;
 
   // '/' (find by name) works from ANY context: openSearch tears down whichever
   // overlay is up (config / about / help / info / picker) and shows the search box.

@@ -472,7 +472,7 @@ export function start(hostCanvas, opts = {}) {
   function disposeBuilt() {
     if (crankGroup) center.remove(crankGroup);
     if (banksGroup) center.remove(banksGroup);
-    if (boomMesh && boomMesh.parent) boomMesh.parent.remove(boomMesh);
+    if (boomMesh?.parent) boomMesh.parent.remove(boomMesh);
     for (const g of built.geoms) g.dispose();
     built.geoms = [];
     crankGroup = banksGroup = boomMesh = null;
