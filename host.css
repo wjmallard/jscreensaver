@@ -65,7 +65,7 @@ canvas { display: block; touch-action: none; }
    list. The filter box and the genre-name header share a row, both 30px tall so
    their bottom borders line up across the divider. */
 .sel-main { display: flex; flex: 1; min-height: 0; }
-.sel-left { display: flex; flex-direction: column; width: 118px; flex: none; min-height: 0; border-right: 1px solid var(--phosphor-divider); }
+.sel-left { display: flex; flex-direction: column; width: 130px; flex: none; min-height: 0; border-right: 1px solid var(--phosphor-divider); }
 .sel-dims { height: 30px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 0 12px; font-size: 11px; color: var(--phosphor-dim); border-bottom: 1px solid var(--phosphor-divider); }
 .sel-dims label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; letter-spacing: 0.04em; }
 .sel-dims label:hover { color: var(--phosphor-mid); }
