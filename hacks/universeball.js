@@ -14,7 +14,7 @@
 // a nested folding loop) is exactly what makes this a WebGL piece and not a
 // canvas2d one - there is no CPU-side simulation at all.
 
-import { startShadertoy } from '../shadertoy.js';
+import { startShadertoy } from './shadertoy.js';
 
 export const title = 'universeball';
 

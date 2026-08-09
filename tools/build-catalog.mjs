@@ -79,12 +79,11 @@ const problems = [];
 const entries = [];
 for (const [slug, t] of Object.entries(HACK_TAXONOMY)) {
   if (t.shelved) continue;                              // classified but parked
-  // resolve the module file: hacks/<slug>.js, else hacks/shelved/<slug>.js
-  let module = `./hacks/${slug}.js`;
+  // resolve the module file — hacks/<slug>.js only; hacks/shelved/ is never served
+  const module = `./hacks/${slug}.js`;
   if (!existsSync(resolve(ROOT, module.slice(2)))) {
-    const alt = `./hacks/shelved/${slug}.js`;
-    if (existsSync(resolve(ROOT, alt.slice(2)))) module = alt;
-    else { problems.push(`${slug}: no module file (hacks/${slug}.js or hacks/shelved/${slug}.js)`); continue; }
+    problems.push(`${slug}: no module file (hacks/${slug}.js)`);
+    continue;
   }
   let meta;
   try { meta = readHackMeta(resolve(ROOT, module.slice(2))); }

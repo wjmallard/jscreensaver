@@ -166,8 +166,8 @@ export const HACK_TAXONOMY = {
   xrayswarm: { dimension: '2d', categories: ['particles'] },
   xspirograph: { dimension: '2d', categories: ['curves'] },
 
-  // --- 3D / WebGL shader hacks (registered in host.js; the heavy tier lives in
-  //     hacks/shelved/). Categories read from each shader's info.description. ---
+  // --- 3D / WebGL shader hacks (registered in host.js; the GPU-heavy ones carry
+  //     info.heavy). Categories read from each shader's info.description. ---
   alienbeacon: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   batteredplanet: { dimension: '3d', categories: ['worlds', 'surfaces'] },
   bestill: { dimension: '3d', categories: ['worlds', 'surfaces'] },

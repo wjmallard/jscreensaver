@@ -14,7 +14,7 @@
     },
     {
       "title": "alienbeacon",
-      "module": "./hacks/shelved/alienbeacon.js",
+      "module": "./hacks/alienbeacon.js",
       "dim": "3d",
       "categories": [
         "worlds",
@@ -97,7 +97,7 @@
     },
     {
       "title": "bestill",
-      "module": "./hacks/shelved/bestill.js",
+      "module": "./hacks/bestill.js",
       "dim": "3d",
       "categories": [
         "worlds",
@@ -201,7 +201,7 @@
     },
     {
       "title": "bubblecolors",
-      "module": "./hacks/shelved/bubblecolors.js",
+      "module": "./hacks/bubblecolors.js",
       "dim": "3d",
       "categories": [
         "plasma"
@@ -665,7 +665,7 @@
     },
     {
       "title": "fluxcore",
-      "module": "./hacks/shelved/fluxcore.js",
+      "module": "./hacks/fluxcore.js",
       "dim": "3d",
       "categories": [
         "worlds"
@@ -1439,7 +1439,7 @@
     },
     {
       "title": "rigrekt",
-      "module": "./hacks/shelved/rigrekt.js",
+      "module": "./hacks/rigrekt.js",
       "dim": "3d",
       "categories": [
         "worlds",
@@ -1791,7 +1791,7 @@
     },
     {
       "title": "universeball",
-      "module": "./hacks/shelved/universeball.js",
+      "module": "./hacks/universeball.js",
       "dim": "3d",
       "categories": [
         "cosmic"

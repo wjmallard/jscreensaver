@@ -20,7 +20,7 @@
 // textures, no multi-pass buffers — the per-pixel raymarch is the whole cost,
 // with no CPU-side simulation at all.
 
-import { startShadertoy } from '../shadertoy.js';
+import { startShadertoy } from './shadertoy.js';
 
 export const title = 'bestill';
 
