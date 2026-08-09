@@ -25,7 +25,7 @@ Two figure types are chosen at random each round (the C's `dstate = (random()&1)
 `NEW_FIGURE → DRAW → LINGER → CLEAR → NEW_FIGURE`.
 - **NEW_FIGURE** rolls fresh geometry + colour for the current `figtype` (`random_helix`/`random_trig`), clears the screen, and goes to DRAW.
 - **DRAW** advances the figure by one draw call's worth of segments — **10** `helix()` steps or **5** `trig()` steps, matching the C's `DRAW_HELIX`/`DRAW_TRIG` batched loops (both break early on completion) — and goes to LINGER once the figure closes.
-- **LINGER** holds the finished figure on screen for `linger` seconds, then CLEAR blanks it, re-rolls the figure type (`random()&1`), and leaves the screen black ~1 s before the next figure (the C's erase transition takes about that long).
+- **LINGER** holds the finished figure on screen for `linger` seconds, then CLEAR runs the ~1 s erase wipe, re-rolls the figure type (`random()&1`), and the next figure begins.
 
 ## Palette
 Colour is **not** a resource and **not** a colormap — helix sets the stroke colour itself, rolling one fresh HSV per figure (in `random_helix`/`random_trig`):
@@ -54,7 +54,7 @@ helix has two stock timescales:
 `step()` returns the ms to wait before the next step — `(subdelay + OVERHEAD)` while drawing, `linger` seconds at the hold, ~1 s of black after the clear — and the rAF lag-accumulator honours it (`acc` is capped at `nextDelay + 1000`, never below `nextDelay`, so a long linger pause always elapses), boxfit/xspirograph-style.
 
 ## Deviations from the C
-- **Erase = instant black, a wipe candidate.** The C runs xscreensaver's `erase_window` transition (an animated wipe) between figures. As instructed — and exactly like `xspirograph.js`'s `clearScreen()` — this port just `fillRect`s the screen black at that point. **Replacing it with a real wipe is a future enhancement** once a shared `wipes.js` module exists.
+- **Erase transition integrated.** The C runs xscreensaver's `erase_window` transition (an animated wipe) between figures; the port runs the same ~1 s wipe via `wipes.js` (the erase.c port), exactly like xspirograph.
 - **`devicePixelRatio`.** The backing store is device-px and the line width is scaled by `dpr` (the C only bumps width to 3 px past 2560). The figure geometry is derived from the canvas size (`radius = min(W,H)/2`, `xmid/ymid = W/2, H/2`), so it auto-scales; no logical-size constants needed scaling, so the closure conditions (`limit` steps for HELIX, `|d_angle| > 360` for TRIG) are unaffected.
 
 (Palette and the draw-step frame rate were both fixed in the fidelity audit — see **Palette** and **Timing** above; they are no longer deviations.)

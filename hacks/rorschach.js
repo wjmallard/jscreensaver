@@ -16,6 +16,8 @@
 // (which holds the blot between steps), so no per-pixel buffer is needed. The
 // canvas itself is the accumulator, like the C's window.
 
+import { wipe } from './wipes.js';
+
 export const title = 'rorschach';
 
 export const info = {
@@ -112,19 +114,40 @@ export function start(canvas) {
     curY = y;
   }
 
+  // The C's erase_window transition between blots, ported in wipes.js: the
+  // wipe repaints on its own rAF while step() idles on the `wiping` flag.
+  let eraser = null;
+  let wiping = false;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
+    wiping = false;
+  }
+
   // One state-machine step — the C's rorschach_draw(). Returns the ms to wait
   // before the next step (the C returns microseconds-until-next-call). The
   // chunk pace is stock CHUNK_DELAY + measured OVERHEAD; the linger is the
   // configured seconds verbatim (the C's sleep_time * 1000000).
   function step() {
     if (lingering) {
-      // The C erases with a random erase_window wipe here; transitions are
-      // the host's domain, so clear to black instantly (noted in the .md) and
-      // begin the next blot — the C's rorschach_draw_start on the same tick.
-      ctx.fillStyle = 'black';
-      ctx.fillRect(0, 0, W, H);
-      startBlot();
-      return (CHUNK_DELAY + OVERHEAD) / 1000;
+      if (wiping) return 50;   // the wipe paints; poll until it lands
+      // The C erases with a random erase_window wipe here (~1 s), seeding the
+      // next blot on the same tick (rorschach_draw_start); the blot starts
+      // walking once the wipe lands.
+      wiping = true;
+      eraser = wipe(canvas, {
+        durationMs: 1000,
+        onDone: () => {
+          eraser = null;
+          wiping = false;
+          lingering = false;
+          startBlot();
+        },
+      });
+      return 50;
     }
 
     if (remaining > 0) {
@@ -203,6 +226,7 @@ export function start(canvas) {
   // Rebuild after a non-live config change (clears the canvas because the dot
   // size / iteration count may have changed, then re-seeds via init()).
   function reinit() {
+    cancelWipe();
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     init();
@@ -214,6 +238,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

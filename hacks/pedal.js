@@ -20,7 +20,9 @@
 // closed-figure curve family) the curve is NOT swept point-by-point on screen;
 // the polygon appears at once, then lingers. We keep the helix/xspirograph
 // state-machine + variable-delay loop (NEW_FIGURE -> LINGER -> CLEAR) so the
-// hold and the (here instant) erase are paced exactly like the C.
+// hold and the erase are paced exactly like the C.
+
+import { wipe } from './wipes.js';
 
 export const title = 'pedal';
 
@@ -190,11 +192,22 @@ export function start(canvas) {
     ctx.fill(path, 'evenodd');
   }
 
-  // Instant clear to black. (The C runs xscreensaver's erase_window transition
-  // here — a wipe candidate for later; for now we just blank the screen.)
+  // Instant clear to black (the fresh-figure ground; the between-figures erase
+  // is the animated wipe below).
   function clearScreen() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // The C's erase_window transition between figures, ported in wipes.js: the
+  // wipe repaints on its own rAF while step() idles in 'WIPING'.
+  let eraser = null;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
   }
 
   // One state-machine step — the C's pedal_draw(). Returns the ms to wait before
@@ -218,9 +231,25 @@ export function start(canvas) {
         return 0;
 
       case 'CLEAR':
-        clearScreen();
+        // The erase transition (~1 s, erase.c's default eraseSeconds).
+        eraser = wipe(canvas, {
+          durationMs: 1000,
+          onDone: () => {
+            eraser = null;
+            drawstate = 'BLACK';
+          },
+        });
+        drawstate = 'WIPING';
+        return 0;
+
+      case 'WIPING':
+        // The wipe paints; poll until its onDone advances drawstate.
+        return 50;
+
+      case 'BLACK':
         drawstate = 'NEW_FIGURE';
-        // The C's erase transition takes ~1 s; keep the screen black that long.
+        // The C waits a further second once the erase lands (pedal_draw's
+        // `return (st->eraser ? erase_delay : 1000000)`).
         return 1000;
 
       default:
@@ -231,6 +260,7 @@ export function start(canvas) {
 
   // Begin a fresh sequence with the current config.
   function reset() {
+    cancelWipe();
     drawstate = 'NEW_FIGURE';
     clearScreen();
   }
@@ -288,6 +318,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

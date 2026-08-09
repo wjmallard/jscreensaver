@@ -15,6 +15,8 @@
 // (write pixels into a persistent Uint32 ImageData buffer, putImageData once per
 // frame) rather than 2000 fillRect calls/frame. See binaryring.js / thornbird.js.
 
+import { wipe } from './wipes.js';
+
 export const title = 'wander';
 
 export const info = {
@@ -165,10 +167,26 @@ export function start(canvas) {
     }
   }
 
-  // Clear to black + respawn the walker at a fresh spot in a fresh colour. The C
-  // runs an erase transition here; with no X11 GC we clear to black instantly.
+  // The C's erase_window transition at each reset (wander_draw's reset block),
+  // ported in wipes.js: the walk pauses while the wipe paints — exactly as the
+  // C's draw hook only advances the eraser — and the buffer drops the respawned
+  // walker's pre-erase points when it lands, as the erase did on screen.
+  let eraser = null;
+  let wiping = false;
+  let pendingErase = false;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
+    wiping = false;
+    pendingErase = false;
+  }
+
+  // Respawn the walker at a fresh spot in a fresh colour (the C's reset block;
+  // same RNG call order as wander.c — the buffer clears when the wipe lands).
   function resetWalk() {
-    pixels.fill(BLACK);
     colorValue = palette[nrand(palette.length)];
     x = nrand(gw);
     y = nrand(gh);
@@ -215,12 +233,28 @@ export function start(canvas) {
       // ~1/reset chance to wipe and start over.
       if (nrand(resetLimit) === 0) {
         resetWalk();
+        pendingErase = true;
       }
 
       plot(x, y, colorValue);
     }
 
     ctx.putImageData(imageData, 0, 0);
+
+    if (pendingErase) {
+      // Blit done — now run the erase transition (~1 s) over the old walk (plus
+      // the respawned walker's first points, as in the C).
+      pendingErase = false;
+      wiping = true;
+      eraser = wipe(canvas, {
+        durationMs: 1000,
+        onDone: () => {
+          eraser = null;
+          wiping = false;
+          pixels.fill(BLACK);
+        },
+      });
+    }
   }
 
   function init() {
@@ -285,6 +319,14 @@ export function start(canvas) {
   let rafId = 0;
 
   function frame(now) {
+    if (wiping) {
+      // The wipe paints on its own rAF; hold the walk (and its blit, which
+      // would overdraw the wipe) until it lands.
+      lastTime = 0;
+      lag = 0;
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
     if (lastTime === 0) lastTime = now;
     lag += now - lastTime;
     lastTime = now;
@@ -305,6 +347,7 @@ export function start(canvas) {
   // Re-seed with the current config (clears the accumulation buffer because
   // size/circles resize the grid and the stamp).
   function reinit() {
+    cancelWipe();
     init();
   }
 
@@ -314,6 +357,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

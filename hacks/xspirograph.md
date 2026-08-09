@@ -21,7 +21,7 @@ The figure is swept by integer `theta` (degrees), one line segment per step. Clo
 - **NEW_LAYER** increments `counter`. Once it exceeds `2 × layers`, reset to 0 and go to ERASE1; otherwise pick a colour and draw.
 - Geometry is chosen by `pick_new()` only on the **first** figure of each pair (the odd→even `counter` transition where `flip_p` was 0). The pair's **second** figure reuses the same geometry with `r2` negated, giving a mirror-petalled companion. Each figure (both halves of a pair) gets its *own* fresh colour.
 - So `layers = N` draws `2N` figures = `N` mirror-pairs, each pair a different shape, every figure a different hue.
-- **ERASE1/ERASE2** hold the finished figures (`linger` seconds), clear, then leave the screen black ~1 s before the next set.
+- **ERASE1/ERASE2** hold the finished figures (`linger` seconds), run the ~1 s erase wipe, then leave the screen black ~1 s before the next set.
 
 `flip_p = counter & 1` is recomputed every step from the live `counter` and drives both the `r2` sign in DRAW and the pick-new decision in NEW_LAYER — this port computes it identically at the top of `step()`.
 
@@ -42,7 +42,7 @@ Stock `*subdelay = 20000` µs is the per-draw-step delay; `*delay = 5` is **not*
 **Calibration (delay-bound, not compute-bound).** The live `-fps` overlay reads ~48.9–52.9 fps at Load ~24–33 % while drawing — delay-bound on `subdelay` (1e6/20000 = 50 fps). So OVERHEAD ≈ 0; a token `OVERHEAD = 500` µs added to `subdelay` pins the draw step at ~48.8/s. Measured port rate: **48.6 steps/s** (mean inter-stroke interval; the 16.8 ms median is rAF quantization). `config.subdelay` default = the stock **20000** — the previous port shipped `60000` (3× too slow), contradicting its own slider default of 20000.
 
 ## Deviations from the C
-- **Erase = instant black, a wipe candidate.** The C calls xscreensaver's `erase_window` transition (a fancy animated wipe) between figure-sets. As instructed, this port just `fillRect`s the screen black at that point. **Replacing it with a real wipe is a future enhancement** once a shared wipes module exists.
+- **Erase transition integrated.** The C calls xscreensaver's `erase_window` transition (a fancy animated wipe) between figure-sets; the port runs the same ~1 s wipe via `wipes.js` (the erase.c port), keeping the C's 1 s black hold after it.
 - **Linger honours the config.** The C's ERASE1 hard-codes a 5 s hold (with a source comment questioning why it ignores the configured delay). This port uses the configured `linger` value (1–60 s, the xml's "Linger" slider) so the slider actually does something; the post-erase black hold stays ~1 s as in the C.
 - **devicePixelRatio.** `r2`'s `+5`, the pen distance `d`, and the line width are scaled by `dpr`, and the backing store is device-px, so the figures keep their size and the strokes stay crisp on retina (the C only bumps line width to 3 px past 2560). Scaling all geometry uniformly preserves the theta at which a figure closes, so closure detection is unaffected.
 - **No `alwaysfinish` toggle.** The C's `-alwaysfinish` removes the `360*100` theta cap. Since the float-equality closure essentially never fires, the default (cap on) means every figure runs to 36000 segments — which is what the port does — so the toggle is dropped from the UI (it isn't in the xml either).

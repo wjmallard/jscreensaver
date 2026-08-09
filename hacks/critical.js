@@ -17,6 +17,7 @@
 // See [[qix]] (the same moving-trail idiom) and [[squiral]] (the skeleton).
 
 import { makeSmoothColormapRGB } from './colormap.js';
+import { wipe } from './wipes.js';
 
 export const title = 'critical';
 
@@ -145,6 +146,32 @@ export function start(canvas) {
     dIBatch = BATCHCOUNT;
   }
 
+  // The C's restart block also runs an erase_window transition over the old
+  // trail (critical_draw, ~1 s); the walk and its per-frame repaint idle while
+  // the wipe paints, then restart() re-seeds and drawing resumes.
+  let eraser = null;
+  let wiping = false;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
+    wiping = false;
+  }
+
+  function beginErase() {
+    wiping = true;
+    eraser = wipe(canvas, {
+      durationMs: 1000,
+      onDone: () => {
+        eraser = null;
+        wiping = false;
+        restart();
+      },
+    });
+  }
+
   // One simulation step: advance the colour cadence, take a criticality step,
   // append the point, then run the C's batch/restart bookkeeping with the same
   // integer counters (no float tests). No canvas drawing here -- frame() does a
@@ -161,7 +188,7 @@ export function start(canvas) {
     if (dIBatch < 0) {
       dIBatch = BATCHCOUNT;
       iRestart = (iRestart + 1) % RESTART;
-      if (iRestart === 0) restart();
+      if (iRestart === 0) beginErase();
     }
   }
 
@@ -256,6 +283,14 @@ export function start(canvas) {
   let rafId = 0;
 
   function frame(now) {
+    if (wiping) {
+      // The wipe paints on its own rAF; hold the walk and skip the repaint
+      // (which would overdraw the wipe) until it lands.
+      lastTime = 0;
+      lag = 0;
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
     if (lastTime === 0) lastTime = now;
     lag += now - lastTime;
     lastTime = now;
@@ -276,6 +311,7 @@ export function start(canvas) {
 
   // Rebuild after a non-live config change (re-seeds + repaints immediately).
   function reinit() {
+    cancelWipe();
     init();
     repaint();
   }
@@ -286,6 +322,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

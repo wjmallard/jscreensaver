@@ -19,7 +19,7 @@ The rAF loop adds a fixed **`OVERHEAD = 7855 µs`** to the per-sweep `delay2` (n
 
 ## Deviations from the C
 - **Palette** — see above (this was the main fidelity bug; now faithful).
-- **Animated `erase_window` between linger and regrow → instant clear.** The xscreensaver erase wipes are not integrated in this gallery (`wipes.js` is built but unwired); coral clears to black before regrowing.
+- **Animated `erase_window` between linger and regrow.** Integrated via `wipes.js` (the erase.c port): after the linger, a ~1 s wipe clears the finished coral, then the board regrows.
 - **Retina handling.** coral.c sets `scale = 2` above 2560 px and grows at *device* resolution with 2×2 dots. The port instead follows the gallery's "consistent crispness" model: it grows at **logical (CSS-pixel) resolution** (`width = canvas.width / dpr`) and draws each cell as a `dpr × dpr` device-px rect. On a non-retina display (dpr 1) this is the C's `scale = 1` path exactly; on retina the branch structure is ~dpr× coarser than the C's, but the walker count stays in CSS px so it is display-independent (no dpr-scaled count). There is no `scale` resource in the C, and the port exposes none.
 - **Bit-packed board (`x>>5` / `x&31`) → flat `Uint8Array`.** Same map, simpler indexing.
 - **`rand_2()` 2-bit RNG hoarding → `Math.random()`.** Purely a `random()`-call optimization in the C; the distribution (uniform 0–3) is identical.

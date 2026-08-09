@@ -30,6 +30,7 @@
 // grid-graph tiling idiom and [[squiral]] for the module skeleton.
 
 import { makeSmoothColormapRGB } from './colormap.js';
+import { wipe } from './wipes.js';
 
 export const title = 'celtic';
 
@@ -752,7 +753,19 @@ export function start(canvas) {
     }
   }
 
+  // The C's erase_window transition between knots, ported in wipes.js: the
+  // wipe repaints on its own rAF while frame() idles in the 'wiping' state.
+  let eraser = null;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
+  }
+
   function resize() {
+    cancelWipe();
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(window.innerWidth * dpr);
     canvas.height = Math.round(window.innerHeight * dpr);
@@ -785,9 +798,27 @@ export function start(canvas) {
   function frame(now) {
     if (lastTime === 0) lastTime = now;
 
+    if (state === 'wiping') {
+      // The wipe paints; generate() (from its onDone) re-enters 'draw'.
+      lastTime = now;
+      lag = 0;
+      rafId = requestAnimationFrame(frame);
+      return;
+    }
+
     if (state === 'linger') {
       if (now >= lingerEnd) {
-        generate();
+        // The C recolors and runs an erase_window transition before the next
+        // knot (celtic_draw's reset block, ~1 s); generate() then re-rolls the
+        // palette and traces a fresh knot.
+        state = 'wiping';
+        eraser = wipe(canvas, {
+          durationMs: 1000,
+          onDone: () => {
+            eraser = null;
+            generate();   // sets state = 'draw'
+          },
+        });
       }
       lastTime = now;
       lag = 0;
@@ -813,6 +844,7 @@ export function start(canvas) {
 
   // Clear to black and re-seed a fresh knot (for non-live config changes).
   function reinit() {
+    cancelWipe();
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     init();
@@ -826,6 +858,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

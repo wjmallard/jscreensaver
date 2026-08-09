@@ -13,6 +13,7 @@
 // sticks the finished image LINGERS for a few seconds, then clears and regrows.
 
 import { makeColorRampRGB } from './colormap.js';
+import { wipe } from './wipes.js';
 
 export const title = 'coral';
 
@@ -148,6 +149,7 @@ export function start(canvas) {
   }
 
   function resize() {
+    cancelWipe();
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(window.innerWidth * dpr);
     canvas.height = Math.round(window.innerHeight * dpr);
@@ -158,8 +160,22 @@ export function start(canvas) {
   }
 
   function restart() {
+    cancelWipe();
     clear();
     init();
+  }
+
+  // The C's erase_window transition between corals, ported in wipes.js: the
+  // wipe repaints on its own rAF while frame() idles on the `wiping` flag.
+  let eraser = null;
+  let wiping = false;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
+    wiping = false;
   }
 
   // One diffusion sweep (coral.c's coral()): every live walker either sticks or
@@ -207,9 +223,8 @@ export function start(canvas) {
   // leftover time so the pace is identical at any refresh rate; cap catch-up so
   // a backgrounded tab doesn't fire a burst on return. When growth finishes,
   // LINGER (coral.c returns delay*1e6 µs, holding the static image) for
-  // config.delay seconds of real wall time, then clear and regrow. coral.c
-  // animates an erase between linger and regrow; we clear instantly (wipes
-  // aren't integrated — see coral.md).
+  // config.delay seconds of real wall time, then run coral.c's erase transition
+  // (wipes.js, the erase.c port) and regrow.
   //
   // OVERHEAD applies to the per-sweep delay2 only (NOT the linger): the stock
   // delay2 is a sleep floor; the live binary's real sweep rate is lower (delay2 +
@@ -231,10 +246,23 @@ export function start(canvas) {
     if (done) {
       // Hold the finished coral, counting down real elapsed time so the linger
       // is config.delay seconds regardless of frame rate (and pauses cleanly:
-      // resume zeroes lastTime, so the first frame's dt is 0).
-      if (holdRemaining < 0) holdRemaining = config.delay * 1000;
-      holdRemaining -= dt;
-      if (holdRemaining <= 0) restart();
+      // resume zeroes lastTime, so the first frame's dt is 0). Then run the
+      // erase wipe (~1 s) and regrow once it lands.
+      if (!wiping) {
+        if (holdRemaining < 0) holdRemaining = config.delay * 1000;
+        holdRemaining -= dt;
+        if (holdRemaining <= 0) {
+          wiping = true;
+          eraser = wipe(canvas, {
+            durationMs: 1000,
+            onDone: () => {
+              eraser = null;
+              wiping = false;
+              restart();
+            },
+          });
+        }
+      }
       lag = 0;
       rafId = requestAnimationFrame(frame);
       return;
@@ -257,6 +285,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

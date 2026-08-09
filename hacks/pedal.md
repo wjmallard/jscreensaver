@@ -24,7 +24,7 @@ Earlier this port drew a fixed 64-entry `hsl(h,100%,60%)` rainbow indexed at ran
 
 ## Deviations from the C
 - **Even-odd fill** maps directly: Canvas `fill(path, 'evenodd')` == `XFillPolygon` with the `Complex` shape mode (even-odd winding). No deviation — this is the whole point of the hack.
-- **Instant clear instead of the erase transition.** The C runs xscreensaver's `erase_window` wipe between figures; here `clearScreen()` blanks to black instantly, then the loop holds black ~1 s (the wipe's rough duration). Same as helix/xspirograph; a wipe is a later candidate.
+- **Erase transition integrated.** The C runs xscreensaver's `erase_window` wipe between figures; the port runs the same ~1 s transition via `wipes.js` (the erase.c port), then holds black a further second (the C's `return 1000000` on the erase's final tick).
 - **`maxlines` slider** is exposed as **Lines** (xml range 100..5000, default 1000); `delay` is the **Duration** linger (see Timing). These are the only two knobs the original has, and the only two this module exposes.
 - **DPR.** Backing store is sized in device pixels; the figure is centred at `W/2, H/2` and scaled by the half-extents `hWidth/hHeight`, so it fills the screen crisply on retina without any explicit `S` scaling of line widths (it's a fill, not a stroke). `S` is read for convention/parity only.
 - **Anti-aliasing.** X polygon fill has hard edges (live captures show exactly 2 colours: black + the figure hue); Canvas anti-aliases the polygon edges, so the port shows a thin rim of blended pixels. Inherent to canvas vector fills and consistent with the rest of the curve family; not a palette change.

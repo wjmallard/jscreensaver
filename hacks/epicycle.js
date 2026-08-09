@@ -24,6 +24,7 @@
 // on a variable-delay loop).
 
 import { makeSmoothColormapRGB } from './colormap.js';
+import { wipe } from './wipes.js';
 
 export const title = 'epicycle';
 
@@ -87,7 +88,6 @@ export function start(canvas) {
   // The live binary is uncapped; ~99.95% of figures fall under this cap.
   const MAX_DRAW_SEGS = 16000;        // never draw more than this per figure (~4.8 min at 56 seg/s)
   const MAX_PRECALC_SAMPLES = 4000;   // bounding-box samples per figure (the C steps by 1.0)
-  const BLACK_PAUSE_MS = 1000;        // black screen after the erase (the C's ~1 s erase wipe)
 
   // frand(x) — a random double in [0, x), exactly like the C's frand().
   function frand(x) {
@@ -312,11 +312,22 @@ export function start(canvas) {
     return segIndex >= totalSegs;
   }
 
-  // Instant clear to black. (The C runs xscreensaver's erase_window transition
-  // here — a wipe candidate for later; for now we just blank the screen.)
+  // Instant clear to black (the fresh-figure ground; the between-figures erase
+  // is the animated wipe below).
   function clearScreen() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // The C's erase_window transition between figures, ported in wipes.js: the
+  // wipe repaints on its own rAF while step() idles in 'WIPING'.
+  let eraser = null;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
   }
 
   // One state-machine step — the C's epicycle_draw(). Returns the ms to wait
@@ -338,9 +349,20 @@ export function start(canvas) {
         return Math.max(1, Math.round(config.holdtime)) * 1000;
 
       case 'CLEAR':
-        clearScreen();
-        drawstate = 'NEW';
-        return BLACK_PAUSE_MS;
+        // The erase transition (~1 s, erase.c's default eraseSeconds).
+        eraser = wipe(canvas, {
+          durationMs: 1000,
+          onDone: () => {
+            eraser = null;
+            drawstate = 'NEW';
+          },
+        });
+        drawstate = 'WIPING';
+        return 0;
+
+      case 'WIPING':
+        // The wipe paints; poll until its onDone advances drawstate.
+        return 50;
 
       default:
         drawstate = 'NEW';
@@ -350,6 +372,7 @@ export function start(canvas) {
 
   // Begin a fresh sequence with the current config.
   function reset() {
+    cancelWipe();
     buildPalette();
     drawstate = 'NEW';
     clearScreen();
@@ -412,6 +435,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

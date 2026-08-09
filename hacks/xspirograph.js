@@ -19,6 +19,8 @@
 // repaint: like the C, each new segment is drawn over what's already there, so
 // the stacked layers accumulate until the clear.
 
+import { wipe } from './wipes.js';
+
 export const title = 'xspirograph';
 
 export const info = {
@@ -69,7 +71,7 @@ export function start(canvas) {
   let xmid, ymid;            // figure centre
 
   // Current figure-set state (mirrors the C's struct fields).
-  let drawstate;             // 'NEW_LAYER' | 'DRAW' | 'ERASE1' | 'ERASE2'
+  let drawstate;             // 'NEW_LAYER' | 'DRAW' | 'ERASE1' | 'ERASE2' | 'WIPING' | 'BLACK'
   let counter;               // figures drawn so far this screen (1..2*layers)
   let theta;                 // sweep parameter for the current figure
   let radius1, radius2, distance, divisor;   // current figure geometry
@@ -182,11 +184,22 @@ export function start(canvas) {
     return finished;
   }
 
-  // Instant clear to black. (The C runs xscreensaver's erase_window transition
-  // here — a wipe candidate for later; for now we just blank the screen.)
+  // Instant clear to black (the fresh-screen ground; the between-screens erase
+  // is the animated wipe below).
   function clearScreen() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // The C's erase_window transition between screens, ported in wipes.js: the
+  // wipe repaints on its own rAF while step() idles in 'WIPING'.
+  let eraser = null;
+
+  function cancelWipe() {
+    if (eraser) {
+      eraser.cancel();
+      eraser = null;
+    }
   }
 
   // One state-machine step — the C's xspirograph_draw(). Returns the ms to wait
@@ -202,7 +215,22 @@ export function start(canvas) {
         return config.linger * 1000;
 
       case 'ERASE2':
-        clearScreen();
+        // The erase transition (~1 s, erase.c's default eraseSeconds).
+        eraser = wipe(canvas, {
+          durationMs: 1000,
+          onDone: () => {
+            eraser = null;
+            drawstate = 'BLACK';
+          },
+        });
+        drawstate = 'WIPING';
+        return 0;
+
+      case 'WIPING':
+        // The wipe paints; poll until its onDone advances drawstate.
+        return 50;
+
+      case 'BLACK':
         drawstate = 'NEW_LAYER';
         // The C leaves the screen black for 1 s after erasing.
         return 1000;
@@ -238,6 +266,7 @@ export function start(canvas) {
 
   // Begin a fresh screen with the current config.
   function reset() {
+    cancelWipe();
     counter = 0;
     theta = 1;
     drawstate = 'NEW_LAYER';
@@ -302,6 +331,7 @@ export function start(canvas) {
 
   return {
     stop() {
+      cancelWipe();
       cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
     },

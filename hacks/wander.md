@@ -27,7 +27,7 @@ The port reproduces this byte-for-byte: three edges of `trunc(256/3) = 85` colou
 > **Note — this corrects a prior flattening.** The previous port swept hue only `[0, 240/360)` (the red→blue two-thirds) and called that "faithful", which **dropped the entire blue→magenta→red third of the wheel** and broke the loop closure. The full wheel is now restored.
 
 ## Deviations from the C
-- **Erase transition → instant clear.** The C calls `erase_window()` (an animated wipe) on reset and on a keypress. There is no X11 GC / erase machinery here, so `reset` clears the accumulation buffer to black **instantly** (and the host owns the wipe/transition layer). The keypress-triggered reset is dropped (the host owns keys).
+- **Erase transition on reset.** The C calls `erase_window()` (an animated wipe) on reset and on a keypress; the port runs the same ~1 s transition via `wipes.js` — the walk pauses while the wipe paints (as the C's draw hook only advances the eraser) and the accumulation buffer clears when it lands. The keypress-triggered reset is dropped (the host owns keys).
 - **`circles` / spots.** The C blits a precomputed filled-circle pixmap per point; here a disc's pixel offsets within a block are precomputed once (`buildStamp`) and stamped, which only matters when `size > 1`.
 - **Descriptive names.** The C's `width_1`/`height_1`/`color`/`color_index`/`color_count` became `width1`/`height1`/`colorValue`/`colorIndex`/`ncolors` (a loop-local alias for `palette.length`).
 
