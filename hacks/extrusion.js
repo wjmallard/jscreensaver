@@ -95,7 +95,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,         // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     {
       key: 'mode', label: 'Object', type: 'select', default: 'random', live: true,
       options: [

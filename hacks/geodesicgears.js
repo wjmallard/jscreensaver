@@ -144,7 +144,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'timeout', label: 'Duration', type: 'range', min: 5, max: 120, step: 1, default: 20, unit: ' s', lowLabel: '5 seconds', highLabel: '2 minutes', live: true },
     { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },
     { key: 'spin', label: 'Spin', type: 'checkbox', default: true, live: true },

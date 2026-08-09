@@ -438,7 +438,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,       // wireframe (xml --wireframe)
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     { key: 'duration', label: 'Duration', type: 'range', min: 1000, max: 30000, step: 500, default: 5000, unit: ' ms', lowLabel: '1', highLabel: '30 seconds', live: true },
     { key: 'packing', label: 'Packing', type: 'range', min: 0.0, max: 0.5, step: 0.01, default: 0.03, lowLabel: 'Tight', highLabel: 'Loose', live: true },
     { key: 'angvel', label: 'Angular velocity', type: 'range', min: 0.05, max: 5.0, step: 0.05, default: 1.0, lowLabel: 'Slow', highLabel: 'Fast', live: true },

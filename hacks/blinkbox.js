@@ -89,7 +89,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,       // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'boxsize', label: 'Box size', type: 'range', min: 1, max: 8, step: 1, default: 2, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'fade', label: 'Fade', type: 'checkbox', default: true, live: true },
     { key: 'blur', label: 'Motion blur', type: 'checkbox', default: true, live: true },

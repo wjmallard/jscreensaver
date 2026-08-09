@@ -108,8 +108,8 @@ export function start(hostCanvas, opts = {}) {
     rotation: 'Y',       // spin axes (DEF_SPIN "Y")
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.02, max: 5.0, step: 0.01, default: 1.0, lowLabel: 'Slow', highLabel: 'Fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'speed', label: 'Fold speed', type: 'range', min: 0.02, max: 5.0, step: 0.01, default: 1.0, lowLabel: 'Slow', highLabel: 'Fast', live: true },
     { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },
     {
       key: 'rotation', label: 'Rotation', type: 'select', default: 'Y', live: true,

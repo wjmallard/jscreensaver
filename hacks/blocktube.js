@@ -114,7 +114,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,           // wireframe (xml "Wireframe")
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     { key: 'holdtime', label: 'Color hold time', type: 'range', min: 10, max: 2000, step: 10, default: 1000, lowLabel: 'Short', highLabel: 'Long', live: true },
     { key: 'changetime', label: 'Color change time', type: 'range', min: 10, max: 1000, step: 10, default: 200, lowLabel: 'Short', highLabel: 'Long', live: true },
     { key: 'texture', label: 'Textured', type: 'checkbox', default: true, live: true },

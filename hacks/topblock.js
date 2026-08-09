@@ -124,7 +124,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,         // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     { key: 'dropSpeed', label: 'Drop speed', type: 'range', min: 1, max: 9, step: 1, default: 4, lowLabel: 'Slow', highLabel: 'Fast', live: true },
     { key: 'size', label: 'Carpet size', type: 'range', min: 1, max: 10, step: 1, default: 2, lowLabel: 'Small', highLabel: 'Large', live: true },
     { key: 'spawn', label: 'Spawn likelyhood', type: 'range', min: 4, max: 1000, step: 1, default: 50, invert: true, lowLabel: 'Low', highLabel: 'High', live: true },

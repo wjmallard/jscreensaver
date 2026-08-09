@@ -311,7 +311,7 @@ export function start(hostCanvas, opts = {}) {
     object: 0,      // 0 = random, 1=tetra 2=cube 3=octa 4=dodeca 5=icosa
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 40000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'object', label: 'Object (0=random)', type: 'range', min: 0, max: 5, step: 1, default: 0, live: false },
   ];
 

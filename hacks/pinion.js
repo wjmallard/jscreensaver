@@ -85,7 +85,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'spin', label: 'Rotation speed', type: 'range', min: 0.1, max: 7.0, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'scroll', label: 'Scrolling speed', type: 'range', min: 0.1, max: 8.0, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'size', label: 'Gear size', type: 'range', min: 0.1, max: 3.0, step: 0.1, default: 1.0, lowLabel: 'tiny', highLabel: 'huge', live: false },

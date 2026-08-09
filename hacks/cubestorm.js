@@ -91,8 +91,8 @@ export function start(hostCanvas, opts = {}) {
     wire: false,       // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.01, max: 5.0, step: 0.01, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Motion speed', type: 'range', min: 0.01, max: 5.0, step: 0.01, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Cubes', type: 'range', min: 1, max: 20, step: 1, default: 4, lowLabel: 'few', highLabel: 'many', live: true },
     { key: 'length', label: 'Length', type: 'range', min: 20, max: 1000, step: 10, default: 200, lowLabel: 'short', highLabel: 'long', live: true },
     { key: 'thickness', label: 'Struts', type: 'range', min: 0.01, max: 1.0, step: 0.01, default: 0.06, lowLabel: 'thin', highLabel: 'thick', live: true },

@@ -90,8 +90,8 @@ export function start(hostCanvas, opts = {}) {
     wire: false,    // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.1, max: 5, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Spin speed', type: 'range', min: 0.1, max: 5, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Size', type: 'range', min: 10, max: 100, step: 1, default: 30, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },
     { key: 'spin', label: 'Spin', type: 'checkbox', default: false, live: true },

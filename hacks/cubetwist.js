@@ -82,7 +82,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,          // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'speed', label: 'Animation speed', type: 'range', min: 0.1, max: 10, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'thickness', label: 'Thickness', type: 'range', min: 0.0, max: 0.5, step: 0.01, default: 0.0, lowLabel: 'thin', highLabel: 'thick', live: true },
     { key: 'displacement', label: 'Displacement', type: 'range', min: 0.0, max: 0.5, step: 0.01, default: 0.0, lowLabel: 'tight', highLabel: 'wide', live: true },

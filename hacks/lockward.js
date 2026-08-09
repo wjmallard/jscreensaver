@@ -108,7 +108,7 @@ export function start(hostCanvas, opts = {}) {
     blink: true,           // xml --blink / DEF_BLINK
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'rotateidleMin', label: 'Minimum rotator idle time', type: 'range', min: 500, max: 10000, step: 100, default: 1000, unit: ' ms', lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'rotateidleMax', label: 'Maximum rotator idle time', type: 'range', min: 500, max: 10000, step: 100, default: 6000, unit: ' ms', lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'blinkidleMin', label: 'Minimum blink idle time', type: 'range', min: 500, max: 20000, step: 100, default: 1000, unit: ' ms', lowLabel: 'low', highLabel: 'high', live: true },

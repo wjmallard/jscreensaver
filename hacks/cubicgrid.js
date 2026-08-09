@@ -63,8 +63,8 @@ export function start(hostCanvas) {
     bigdots: true,    // big vs fine dots (xml --bigdots, default on)
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.2, max: 10, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Rotation speed', type: 'range', min: 0.2, max: 10, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'zoom', label: 'Dot spacing', type: 'range', min: 15, max: 100, step: 1, default: 20, lowLabel: 'close', highLabel: 'far', live: true },
     { key: 'bigdots', label: 'Big dots', type: 'checkbox', default: true, live: true },
   ];

@@ -101,7 +101,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 10000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'cycles', label: 'Number of pipes', type: 'range', min: 1, max: 100, step: 1, default: 5, live: false },
     { key: 'size', label: 'Pipe length', type: 'range', min: 0, max: 3000, step: 50, default: 500, lowLabel: 'short', highLabel: 'long', live: false },
     { key: 'factory', label: 'Gadgetry', type: 'range', min: 0, max: 10, step: 1, default: 2, lowLabel: 'none', highLabel: 'lots', live: false },

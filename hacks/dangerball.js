@@ -87,7 +87,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,        // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
     { key: 'spikespeed', label: 'Spike growth', type: 'range', min: 0.001, max: 0.25, step: 0.001, default: 0.05, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Number of spikes', type: 'range', min: 1, max: 100, step: 1, default: 30, lowLabel: 'few', highLabel: 'ouch', live: true },
     { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },

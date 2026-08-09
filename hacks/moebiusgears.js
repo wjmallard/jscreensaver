@@ -78,8 +78,8 @@ export function start(hostCanvas, opts = {}) {
     wire: false,
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.01, max: 5.0, step: 0.01, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' µs', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Rotation speed', type: 'range', min: 0.01, max: 5.0, step: 0.01, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Number of gears', type: 'range', min: 13, max: 99, step: 1, default: 17, live: false },
     { key: 'teeth', label: 'Number of teeth', type: 'range', min: 7, max: 49, step: 1, default: 15, live: false },
     { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },

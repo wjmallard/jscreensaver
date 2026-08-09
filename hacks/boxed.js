@@ -116,8 +116,8 @@ export function start(hostCanvas, opts = {}) {
     wire: false,       // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.001, max: 4.0, step: 0.001, default: 0.5, lowLabel: 'Slow', highLabel: 'Fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 15000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'speed', label: 'Simulation speed', type: 'range', min: 0.001, max: 4.0, step: 0.001, default: 0.5, lowLabel: 'Slow', highLabel: 'Fast', live: true },
     { key: 'balls', label: 'Number of balls', type: 'range', min: 3, max: 40, step: 1, default: 20, lowLabel: 'Few', highLabel: 'Lots', live: true },
     { key: 'ballsize', label: 'Ball size', type: 'range', min: 1.0, max: 5.0, step: 0.1, default: 3.0, lowLabel: 'Tiny', highLabel: 'Huge', live: true },
     { key: 'explosion', label: 'Explosion force', type: 'range', min: 1.0, max: 50.0, step: 0.5, default: 15.0, lowLabel: 'Popcorn', highLabel: 'Nuke', live: true },

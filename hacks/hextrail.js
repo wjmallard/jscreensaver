@@ -138,8 +138,8 @@ export function start(hostCanvas, opts = {}) {
     wire: false,        // wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
-    { key: 'speed', label: 'Speed', type: 'range', min: 0.1, max: 20, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 30000, unit: ' \u00B5s', invert: true, lowLabel: 'low', highLabel: 'high', live: true },
+    { key: 'speed', label: 'Growth speed', type: 'range', min: 0.1, max: 20, step: 0.1, default: 1.0, lowLabel: 'slow', highLabel: 'fast', live: true },
     { key: 'count', label: 'Hexagon size', type: 'range', min: 2, max: 80, step: 1, default: 20, invert: true, lowLabel: 'small', highLabel: 'large', live: true },
     { key: 'thickness', label: 'Line thickness', type: 'range', min: 0.01, max: 0.5, step: 0.01, default: 0.15, lowLabel: 'thin', highLabel: 'thick', live: true },
     { key: 'wander', label: 'Wander', type: 'checkbox', default: true, live: true },

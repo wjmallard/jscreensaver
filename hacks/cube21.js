@@ -112,7 +112,7 @@ export function start(hostCanvas, opts = {}) {
     wire: false,         // --wireframe
   };
   const params = [
-    { key: 'delay', label: 'Frame rate', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
+    { key: 'delay', label: 'Speed', type: 'range', min: 0, max: 100000, step: 1000, default: 20000, unit: ' \u00B5s', invert: true, lowLabel: 'Low', highLabel: 'High', live: true },
     { key: 'size', label: 'Cube size', type: 'range', min: 0.4, max: 1.0, step: 0.05, default: 0.7, lowLabel: 'Small', highLabel: 'Large', live: true },
     { key: 'rotspeed', label: 'Rotation', type: 'range', min: 1.0, max: 10.0, step: 0.1, default: 3.0, lowLabel: 'Slow', highLabel: 'Fast', live: true },
     {
